@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scrum Calendar · Retro</title>
+    <link rel="stylesheet" href="styles.css?v=20260115" />
+  </head>
+  <body data-page="retro-public">
+    <div class="bg-ambient">
+      <span class="orb orb-a"></span>
+      <span class="orb orb-b"></span>
+      <span class="orb orb-c"></span>
+      <span class="grid-lines"></span>
+    </div>
+
+    <main class="page page-narrow">
+      <section class="section">
+        <div class="retro-public-card" id="retro-public">
+          <h1 id="retro-public-title">Retrospectiva</h1>
+          <p class="helper">Carga tus aportes para la retro del sprint.</p>
+          <p class="retro-phase" id="retro-public-phase"></p>
+          <form class="daily-form retro-public-form" id="retro-public-form">
+            <label id="retro-public-type-wrap">
+              Tipo
+              <select id="retro-public-type" required>
+                <option value="bien">Que hicimos bien</option>
+                <option value="mal">Que hicimos mal</option>
+              </select>
+            </label>
+            <label>
+              Detalle
+              <textarea id="retro-public-detail" rows="3" required></textarea>
+            </label>
+            <label>
+              Tu nombre
+              <select id="retro-public-author"></select>
+            </label>
+            <div id="retro-public-commitment" class="retro-commitment hidden">
+              <label>
+                Asignado
+                <select id="retro-public-assignee"></select>
+              </label>
+              <label>
+                Fecha compromiso
+                <input type="date" id="retro-public-due" />
+              </label>
+            </div>
+            <div class="form-actions">
+              <button class="btn" type="submit">Enviar</button>
+            </div>
+            <p class="form-status" id="retro-public-status"></p>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js?v=dev"></script>
+  </body>
+</html>

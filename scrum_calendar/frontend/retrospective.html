@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scrum Calendar · Retrospectiva</title>
+    <link rel="stylesheet" href="styles.css?v=20260115" />
+  </head>
+  <body data-page="retro">
+    <div class="bg-ambient">
+      <span class="orb orb-a"></span>
+      <span class="orb orb-b"></span>
+      <span class="orb orb-c"></span>
+      <span class="grid-lines"></span>
+    </div>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <button class="menu-toggle" id="menu-toggle" aria-label="Colapsar menu">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z" />
+          </svg>
+        </button>
+        <div class="brand">
+          <p class="brand-title">Scrum Calendar</p>
+          <span>Panel operativo</span>
+        </div>
+        <div class="cell-selector">
+          <label>
+            Celula activa
+            <select id="cell-filter">
+              <option value="">Todas</option>
+            </select>
+          </label>
+        </div>
+        <nav class="menu">
+          <a href="index.html"><span class="menu-text">Dashboard</span></a>
+          <a href="daily.html" data-role="admin"><span class="menu-text">Daily</span></a>
+          <a href="one-to-one.html" data-role="admin"><span class="menu-text">1:1</span></a>
+          <a href="poker-planning.html" data-role="admin"><span class="menu-text">Poker Planning</span></a>
+          <a href="retrospective.html" class="active" data-role="admin"><span class="menu-text">Retrospectiva</span></a>
+          <div class="menu-group" data-role="admin">
+            <div class="menu-parent">
+              <a href="data-entry.html"><span class="menu-text">Carga de datos</span></a>
+              <button class="submenu-toggle" type="button" aria-label="Mostrar sub menu">▾</button>
+            </div>
+            <div class="submenu">
+              <a href="data-entry.html#celulas">Celulas</a>
+              <a href="data-entry.html#personas">Personas</a>
+              <a href="data-entry.html#sprints">Sprints</a>
+              <a href="data-entry.html#releases">Importar Releases</a>
+              <a href="data-entry.html#feriados">Feriados</a>
+              <a href="data-entry.html#tipos-evento">Tipos de evento</a>
+              <a href="data-entry.html#eventos">Eventos</a>
+              <a href="data-entry.html#releases">Importacion CSV</a>
+            </div>
+          </div>
+          <a href="admin.html" data-role="admin"><span class="menu-text">Administracion</span></a>
+          <a href="ux.html" data-role="admin"><span class="menu-text">Flujo UX</span></a>
+          <a href="capacity.html" data-role="admin"><span class="menu-text">Panel de capacidad</span></a>
+          <a href="connect.html" data-role="admin"><span class="menu-text">Conectar API</span></a>
+          <button class="menu-logout" id="logout-btn" type="button"><span class="menu-text">Salir</span></button>
+        </nav>
+      </aside>
+
+      <main class="page">
+        <header class="hero">
+          <div class="hero-copy">
+            <p class="pill">Retrospectiva · Sprint</p>
+          </div>
+        </header>
+
+        <section class="section retro" id="retro-page">
+          <div class="daily-head">
+            <div>
+              <h2>Retrospectiva</h2>
+              <p>Registra lo que hicimos bien, mal y los compromisos por sprint.</p>
+            </div>
+            <div class="filters">
+              <label>
+                Sprint
+                <select id="retro-sprint-select"></select>
+              </label>
+            </div>
+          </div>
+
+          <div class="daily-grid retro-grid">
+            <article class="admin-card daily-card">
+              <div class="card-head">
+                <h3>Link y QR para el Dev Team</h3>
+                <p class="daily-subtitle">Comparte para que el equipo cargue aportes.</p>
+              </div>
+              <div class="retro-share">
+                <input id="retro-share-url" type="text" readonly />
+                <button class="btn small ghost" type="button" id="retro-share-copy">Copiar link</button>
+              </div>
+              <div class="retro-qr">
+                <img id="retro-share-qr" alt="QR Retro" />
+              </div>
+              <p class="helper">El QR usa un servicio externo para generar la imagen.</p>
+            </article>
+
+            <article class="admin-card daily-card">
+              <div class="card-head">
+                <h3>Control de dinamica</h3>
+                <p class="daily-subtitle" id="retro-phase-status">Sin retro creada.</p>
+                <p class="daily-subtitle" id="retro-open-sprint">Sprint abierto: -</p>
+              </div>
+              <div class="retro-phase-actions">
+                <button class="btn small ghost" type="button" id="retro-create">Preparar link</button>
+                <button class="btn small" type="button" id="retro-start-good">Iniciar</button>
+                <button class="btn small" type="button" id="retro-start-bad">Mejoras</button>
+                <button class="btn small ghost" type="button" id="retro-close">Cerrar retro</button>
+              </div>
+              <div class="retro-presence">
+                <div class="retro-presence-head">
+                  <span>Conectados</span>
+                  <span class="retro-presence-count" id="retro-connected-count">0</span>
+                </div>
+                <ul class="retro-presence-list" id="retro-connected-list">
+                  <li class="empty">Sin conexiones</li>
+                </ul>
+              </div>
+            </article>
+
+            <article class="admin-card daily-card daily-span-2">
+              <div class="card-head">
+                <h3>Resumen por sprint</h3>
+                <p class="daily-subtitle">Conteo de aportes por tipo.</p>
+                <button class="btn small ghost" type="button" id="retro-close-summary">
+                  Cerrar retros
+                </button>
+              </div>
+              <div class="admin-table" id="retro-summary-table"></div>
+            </article>
+
+            <article class="admin-card daily-card daily-span-2">
+              <div class="card-head">
+                <h3>Aportes del sprint</h3>
+                <p class="daily-subtitle">Bien · Mal · Compromisos</p>
+              </div>
+              <div class="admin-table" id="retro-items-table"></div>
+            </article>
+
+            <article class="admin-card daily-card daily-span-2">
+              <div class="card-head">
+                <h3>Compromisos</h3>
+                <p class="daily-subtitle">Seguimiento con fecha y responsable.</p>
+                <div class="filters">
+                  <label>
+                    Filtro
+                    <select id="retro-commitment-filter">
+                      <option value="pendiente">Pendientes</option>
+                      <option value="cerrado">Cerrados</option>
+                      <option value="todos">Todos</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+              <div class="admin-table" id="retro-commitments-table"></div>
+            </article>
+
+            <article class="admin-card daily-card daily-span-2">
+              <div class="card-head">
+                <h3>Agregar nuevo aporte</h3>
+                <p class="daily-subtitle">Usa el formulario para cargar retro.</p>
+              </div>
+              <form class="daily-form retro-form" id="retro-form">
+                <label>
+                  Tipo
+                  <select id="retro-type">
+                    <option value="bien">Que hicimos bien</option>
+                    <option value="mal">Que hicimos mal</option>
+                    <option value="compromiso">Compromiso</option>
+                  </select>
+                </label>
+                <label>
+                  Detalle
+                  <textarea id="retro-detail" rows="2" required></textarea>
+                </label>
+                <label>
+                  Autor (opcional)
+                  <select id="retro-author"></select>
+                </label>
+                <div id="retro-commitment-fields" class="retro-commitment hidden">
+                  <label>
+                    Asignado
+                    <select id="retro-assignee"></select>
+                  </label>
+                  <label>
+                    Fecha compromiso
+                    <input type="date" id="retro-due" />
+                  </label>
+                </div>
+                <div class="form-actions">
+                  <button class="btn" type="submit">Agregar</button>
+                  <button class="btn ghost" type="button" id="retro-form-cancel">Cancelar</button>
+                </div>
+                <p class="form-status" id="retro-status"></p>
+              </form>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js?v=dev"></script>
+  </body>
+</html>

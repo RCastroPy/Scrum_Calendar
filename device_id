@@ -1,0 +1,5 @@
+rafaelcastro@MacBook-Air-de-Rafael jarvis % curl -X POST http://localhost:8000/api/v1/auth/register-device \
+  -H "Content-Type: application/json" \
+  -d '{"device_public_key":"BASE64","device_name":"Rafa iPhone"}'
+
+{"device_id":"8a1a8433-8df2-4172-b5e8-a609c3589cf5","jwt":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJkZXZpY2VfaWQiOiI4YTFhODQzMy04ZGYyLTQxNzItYjVlOC1hNjA5YzM1ODljZjUiLCJkZXZpY2VfbmFtZSI6IlJhZmEgaVBob25lIiwiZXhwIjoxNzY4MjQ0NzI3fQ.ALeEJv84n-7IWWqK5tfkAwVa04bV7GZMESINy9T9prg"}%    

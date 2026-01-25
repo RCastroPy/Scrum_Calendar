@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scrum Calendar · Panel de capacidad</title>
+    <link rel="stylesheet" href="styles.css?v=20260110" />
+  </head>
+  <body data-page="capacity">
+    <div class="bg-ambient">
+      <span class="orb orb-a"></span>
+      <span class="orb orb-b"></span>
+      <span class="orb orb-c"></span>
+      <span class="grid-lines"></span>
+    </div>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <button class="menu-toggle" id="menu-toggle" aria-label="Colapsar menu">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z" />
+          </svg>
+        </button>
+        <div class="brand">
+          <p class="brand-title">Scrum Calendar</p>
+          <span>Panel operativo</span>
+        </div>
+        <div class="cell-selector">
+          <label>
+            Celula activa
+            <select id="cell-filter">
+              <option value="">Todas</option>
+            </select>
+          </label>
+        </div>
+        <nav class="menu">
+          <a href="index.html"><span class="menu-text">Dashboard</span></a>
+          <a href="daily.html" data-role="admin"><span class="menu-text">Daily</span></a>
+          <a href="one-to-one.html" data-role="admin"><span class="menu-text">1:1</span></a>
+          <a href="poker-planning.html" data-role="admin"><span class="menu-text">Poker Planning</span></a>
+          <a href="retrospective.html" data-role="admin"><span class="menu-text">Retrospectiva</span></a>
+          <div class="menu-group" data-role="admin">
+            <div class="menu-parent">
+              <a href="data-entry.html"><span class="menu-text">Carga de datos</span></a>
+              <button class="submenu-toggle" type="button" aria-label="Mostrar sub menu">▾</button>
+            </div>
+            <div class="submenu">
+              <a href="data-entry.html#celulas">Celulas</a>
+              <a href="data-entry.html#personas">Personas</a>
+              <a href="data-entry.html#sprints">Sprints</a>
+              <a href="data-entry.html#feriados">Feriados</a>
+              <a href="data-entry.html#tipos-evento">Tipos de evento</a>
+              <a href="data-entry.html#eventos">Eventos</a>
+              <a href="data-entry.html#releases">Importacion CSV</a>
+            </div>
+          </div>
+          <a href="admin.html" data-role="admin"><span class="menu-text">Administracion</span></a>
+          <a href="ux.html" data-role="admin"><span class="menu-text">Flujo UX</span></a>
+          <a href="capacity.html" data-role="admin"><span class="menu-text">Panel de capacidad</span></a>
+          <a href="connect.html" data-role="admin"><span class="menu-text">Conectar API</span></a>
+          <button class="menu-logout" id="logout-btn" type="button"><span class="menu-text">Salir</span></button>
+        </nav>
+      </aside>
+
+      <main class="page">
+        <section class="section page-title">
+          <h1>Panel de capacidad</h1>
+          <p>Vista resumida para sprint planning y seguimiento.</p>
+        </section>
+
+        <section class="section split" id="capacity-panel">
+          <div>
+            <h2>Panel de capacidad</h2>
+            <p>
+              Un tablero compacto con indicadores de riesgo, detalle por persona y
+              eventos solapados.
+            </p>
+            <ul class="list">
+              <li>Semaforo automatico por rango de capacidad.</li>
+              <li>Impacto diario maximo del 100%.</li>
+              <li>Eventos parciales AM/PM listos.</li>
+            </ul>
+          </div>
+          <div class="timeline">
+            <div class="line"></div>
+            <div class="checkpoint">
+              <strong>Hoy</strong>
+              <span>Evita sobrecarga en planning.</span>
+            </div>
+            <div class="checkpoint">
+              <strong>Sprint</strong>
+              <span>Capacidad real en horas.</span>
+            </div>
+            <div class="checkpoint">
+              <strong>Riesgo</strong>
+              <span>Alertas por debajo de 80%.</span>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js?v=dev"></script>
+  </body>
+</html>

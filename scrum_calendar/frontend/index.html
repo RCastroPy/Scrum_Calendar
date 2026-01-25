@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scrum Calendar · Dashboard</title>
+    <link rel="stylesheet" href="styles.css?v=20260110" />
+  </head>
+  <body data-page="dashboard" class="dashboard-adminlte">
+    <div class="bg-ambient">
+      <span class="orb orb-a"></span>
+      <span class="orb orb-b"></span>
+      <span class="orb orb-c"></span>
+      <span class="grid-lines"></span>
+    </div>
+
+    <div class="layout app-wrapper">
+      <nav class="dashboard-topbar app-header navbar navbar-expand bg-body" aria-label="Navbar">
+        <div class="container-fluid">
+          <ul class="navbar-nav">
+            <li class="nav-item">
+              <button class="nav-link topbar-toggle" id="menu-toggle" type="button" aria-label="Colapsar menu">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/></svg>
+              </button>
+            </li>
+            <li class="nav-item navbar-cell">
+              <label>
+                Celula activa
+                <select id="cell-filter">
+                  <option value="">Todas</option>
+                </select>
+              </label>
+            </li>
+            <li class="nav-item navbar-search">
+              <input type="search" placeholder="Buscar" aria-label="Buscar" />
+              <button type="button" aria-label="Buscar">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 14h-.8l-.3-.3a6 6 0 1 0-.7.7l.3.3v.8l5 5 1.5-1.5-5-5zm-5.5 0a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/></svg>
+              </button>
+            </li>
+          </ul>
+          <ul class="navbar-nav ms-auto navbar-end">
+            <li class="nav-item">
+              <button class="nav-link nav-icon" type="button" aria-label="Notificaciones">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22a2 2 0 0 0 2-2H10a2 2 0 0 0 2 2zm6-6V11a6 6 0 1 0-12 0v5L4 18v2h16v-2z"/></svg>
+                <span class="navbar-badge">3</span>
+              </button>
+            </li>
+            <li class="nav-item nav-profile">
+              <div class="avatar">SM</div>
+              <div>
+                <strong>Scrum Master</strong>
+                <span>Admin</span>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </nav>
+
+      <aside class="sidebar app-sidebar bg-body-secondary shadow adminlte-sidebar" data-bs-theme="dark">
+        <div class="sidebar-brand">
+          <a href="index.html" class="brand-link">
+            <span class="brand-text fw-light">Scrum Calendar</span>
+          </a>
+        </div>
+        <div class="sidebar-wrapper">
+          <nav class="mt-2">
+            <ul class="nav sidebar-menu flex-column" role="navigation" aria-label="Menu principal">
+              <li class="nav-header">MENU</li>
+              <li class="nav-item">
+                <a href="index.html" class="nav-link active">
+                  <span class="nav-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z"/></svg>
+                  </span>
+                  <p>Dashboard</p>
+                </a>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="daily.html" class="nav-link">
+                  <span class="nav-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M7 2h2v2h6V2h2v2h3v18H4V4h3V2zm12 6H5v12h14V8z"/></svg>
+                  </span>
+                  <p>Daily</p>
+                </a>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="one-to-one.html" class="nav-link">
+                  <span class="nav-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm0 2c-4.4 0-8 2-8 4.5V21h16v-2.5C20 16 16.4 14 12 14z"/></svg>
+                  </span>
+                  <p>1:1</p>
+                </a>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="poker-planning.html" class="nav-link">
+                  <span class="nav-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M12 2c4 4 8 6 8 10a5 5 0 0 1-8 4 5 5 0 0 1-8-4c0-4 4-6 8-10zm-1 12v3H9v2h6v-2h-2v-3h-2z"/></svg>
+                  </span>
+                  <p>Poker Planning</p>
+                </a>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="retrospective.html" class="nav-link">
+                  <span class="nav-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M12 6V2L7 7l5 5V8a4 4 0 1 1-4 4H6a6 6 0 1 0 6-6z"/></svg>
+                  </span>
+                  <p>Retrospectiva</p>
+                </a>
+              </li>
+              <li class="nav-item menu-group" data-role="admin">
+                <a href="#" class="nav-link">
+                  <span class="nav-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M12 2c4.4 0 8 1.8 8 4v12c0 2.2-3.6 4-8 4s-8-1.8-8-4V6c0-2.2 3.6-4 8-4zm0 2c-3.9 0-6 1.5-6 2s2.1 2 6 2 6-1.5 6-2-2.1-2-6-2zm0 6c-2.5 0-4.7-.6-6-1.5V12c0 .5 2.1 2 6 2s6-1.5 6-2V8.5c-1.3.9-3.5 1.5-6 1.5zm0 6c-2.5 0-4.7-.6-6-1.5V18c0 .5 2.1 2 6 2s6-1.5 6-2v-3.5c-1.3.9-3.5 1.5-6 1.5z"/></svg>
+                  </span>
+                  <p>
+                    Carga de datos
+                    <span class="nav-arrow" aria-hidden="true">></span>
+                  </p>
+                </a>
+                <ul class="nav nav-treeview submenu">
+                  <li class="nav-item">
+                    <a href="data-entry.html" class="nav-link">
+                      <span class="nav-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle></svg>
+                      </span>
+                      <p>Inicio</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="data-entry.html#celulas" class="nav-link">
+                      <span class="nav-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle></svg>
+                      </span>
+                      <p>Celulas</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="data-entry.html#personas" class="nav-link">
+                      <span class="nav-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle></svg>
+                      </span>
+                      <p>Personas</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="data-entry.html#sprints" class="nav-link">
+                      <span class="nav-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle></svg>
+                      </span>
+                      <p>Sprints</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="data-entry.html#releases" class="nav-link">
+                      <span class="nav-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle></svg>
+                      </span>
+                      <p>Importar Releases</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="data-entry.html#feriados" class="nav-link">
+                      <span class="nav-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle></svg>
+                      </span>
+                      <p>Feriados</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="data-entry.html#tipos-evento" class="nav-link">
+                      <span class="nav-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle></svg>
+                      </span>
+                      <p>Tipos de evento</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="data-entry.html#eventos" class="nav-link">
+                      <span class="nav-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle></svg>
+                      </span>
+                      <p>Eventos</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="data-entry.html#releases" class="nav-link">
+                      <span class="nav-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle></svg>
+                      </span>
+                      <p>Importacion CSV</p>
+                    </a>
+                  </li>
+                </ul>
+              </li>
+              <li class="nav-header">CONFIGURACION</li>
+              <li class="nav-item" data-role="admin">
+                <a href="admin.html" class="nav-link">
+                  <span class="nav-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 4 4 4 4 0 0 0-4-4zm9 4a7 7 0 0 0-.1-1l2.1-1.6-2-3.4-2.5 1a7 7 0 0 0-1.7-1l-.4-2.7H9.6l-.4 2.7a7 7 0 0 0-1.7 1l-2.5-1-2 3.4L4.1 11a7 7 0 0 0 0 2l-2.1 1.6 2 3.4 2.5-1a7 7 0 0 0 1.7 1l.4 2.7h4.8l.4-2.7a7 7 0 0 0 1.7-1l2.5 1 2-3.4L20.9 13a7 7 0 0 0 .1-1z"/></svg>
+                  </span>
+                  <p>Administracion</p>
+                </a>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="ux.html" class="nav-link">
+                  <span class="nav-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M3 4h18v16H3V4zm2 2v4h6V6H5zm8 0v4h6V6h-6zM5 12v6h6v-6H5zm8 0v6h6v-6h-6z"/></svg>
+                  </span>
+                  <p>Flujo UX</p>
+                </a>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="capacity.html" class="nav-link">
+                  <span class="nav-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M4 20h16v2H4v-2zM6 10h3v8H6v-8zm5-4h3v12h-3V6zm5 6h3v6h-3v-6z"/></svg>
+                  </span>
+                  <p>Panel de capacidad</p>
+                </a>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="connect.html" class="nav-link">
+                  <span class="nav-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M10 7H7a5 5 0 0 0 0 10h3v-2H7a3 3 0 0 1 0-6h3V7zm7 0h-3v2h3a3 3 0 0 1 0 6h-3v2h3a5 5 0 0 0 0-10zM8 11h8v2H8v-2z"/></svg>
+                  </span>
+                  <p>Conectar API</p>
+                </a>
+              </li>
+              <li class="nav-item">
+                <button class="nav-link menu-logout" id="logout-btn" type="button">
+                  <span class="nav-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M11 2h2v10h-2V2zm5.3 2.7 1.4-1.4A10 10 0 1 1 7.3 3.3l1.4 1.4A8 8 0 1 0 16.3 4.7z"/></svg>
+                  </span>
+                  <p>Salir</p>
+                </button>
+              </li>
+            </ul>
+          </nav>
+        </div>
+      </aside>
+
+      <main class="page app-main">
+        <header class="hero">
+          <div class="hero-copy">
+            <p class="pill">Calendario Scrum • Capacidad real por sprint</p>
+          </div>
+        </header>
+
+        <section class="section dashboard" id="dashboard">
+          <div class="dash-head">
+            <div>
+              <h2>Agile Sprint Dashboard</h2>
+              <p>Datos de capacidad y riesgo del sprint activo.</p>
+              <p class="dash-sprint" id="dashboard-sprint"></p>
+            </div>
+            <div class="filters">
+              <label>
+                Sprint
+                <select id="filter-sprint">
+                  <option>Seleccionar</option>
+                </select>
+              </label>
+              <label>
+                Celula
+                <select id="filter-cell">
+                  <option>Todas</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="dashboard-row">
+            <div class="calendar-card" id="calendar-card">
+              <div class="calendar-head">
+                <div>
+                  <h3>Calendario</h3>
+                  <p>Mes actual</p>
+                </div>
+                <div class="calendar-controls">
+                  <button class="calendar-btn" type="button" id="calendar-prev" aria-label="Mes anterior">‹</button>
+                  <div class="calendar-month" id="calendar-month"></div>
+                  <button class="calendar-btn" type="button" id="calendar-next" aria-label="Mes siguiente">›</button>
+                </div>
+              </div>
+              <div class="calendar-grid" id="calendar-grid"></div>
+            </div>
+          </div>
+
+          <div class="dashboard-row two-col">
+            <div class="health-card">
+              <div class="health-head">
+                <div>
+                  <h3>Salud del sprint</h3>
+                  <p>Resumen del sprint actual</p>
+                </div>
+                <span class="health-status" id="kpi-status">HEALTHY</span>
+              </div>
+              <div class="health-metrics">
+                <div>
+                  <span>Dias del sprint</span>
+                  <strong id="kpi-theoretical">-</strong>
+                </div>
+                <div>
+                  <span>Capacidad del sprint</span>
+                  <strong id="kpi-capacity">-</strong>
+                  <span class="sub" id="kpi-capacity-detail">-</span>
+                </div>
+                <div>
+                  <span>Eventos</span>
+                  <strong id="kpi-events" class="kpi-tooltip" data-tooltip="">-</strong>
+                </div>
+                <div>
+                  <span>Riesgo</span>
+                  <strong id="kpi-risk">-</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="birthday-card">
+              <div>
+                <h3>Cumpleaños próximos</h3>
+                <p>Mes actual y proximos 15 dias.</p>
+              </div>
+              <ul id="birthday-list"></ul>
+            </div>
+          </div>
+
+              <div class="charts-grid">
+                <article class="chart-card">
+                  <h3>Sprint Actual / Remaining Days</h3>
+                  <div class="remaining-days" id="remaining-days">-</div>
+                  <span class="remaining-label">dias</span>
+                </article>
+                <article class="chart-card">
+                  <h3>% avance célula</h3>
+                  <div class="kpi-advance">
+                    <div class="kpi-advance-current" id="dashboard-kpi-advance">—%</div>
+                    <div class="kpi-advance-expected">
+                      Esperado <span id="dashboard-kpi-advance-expected">—%</span>
+                    </div>
+                  </div>
+                </article>
+                <article class="chart-card">
+                  <h3>Promedio por Story Points</h3>
+                  <p class="text-muted small mb-2">Promedio de cierre (incluye en curso).</p>
+                  <div class="storypoints-alerts" id="dashboard-kpi-storypoints"></div>
+                </article>
+                <article class="chart-card compact-bars">
+                  <h3>Capacidad por sprint</h3>
+                  <div class="hbar-chart" data-chart="capacityBySprint"></div>
+                </article>
+            <article class="chart-card">
+              <h3>Eventos por tipo <span class="sprint-label" id="events-type-sprint"></span></h3>
+              <div class="pie-chart" data-chart="eventsByType">
+                <div class="pie"></div>
+                <ul class="legend"></ul>
+              </div>
+            </article>
+            <article class="chart-card">
+              <h3>Estado de eventos <span class="sprint-label" id="events-status-sprint"></span></h3>
+              <div class="donut-chart" data-chart="eventsStatus">
+                <div class="donut"></div>
+                <ul class="legend"></ul>
+              </div>
+            </article>
+            <article class="chart-card compact-bars">
+              <h3>Eventos por persona <span class="sprint-label" id="events-person-sprint"></span></h3>
+              <div class="hbar-chart" data-chart="eventsByPerson"></div>
+            </article>
+            <article class="chart-card span-2">
+              <h3>Detalle por persona <span class="sprint-label" id="person-summary-sprint"></span></h3>
+              <div class="person-summary" id="person-summary"></div>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js?v=dev"></script>
+    <div class="modal" id="day-modal">
+      <div class="modal-content">
+        <div class="modal-head">
+          <h3 id="day-modal-title">Detalle del dia</h3>
+          <button class="modal-close" type="button" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="modal-body">
+          <ul id="day-modal-list"></ul>
+          <div class="modal-actions">
+            <button class="btn ghost" type="button" id="day-event-toggle">Agregar evento</button>
+          </div>
+          <form class="entry-card modal-form is-hidden" id="day-event-form">
+            <label>
+              Tipo de evento
+              <select name="tipo" required></select>
+            </label>
+            <div class="modal-fields is-hidden">
+              <label>
+                Persona
+                <select name="persona" required></select>
+              </label>
+              <label>
+                Sprint (opcional)
+                <select name="sprint">
+                  <option value="">Sin sprint</option>
+                </select>
+              </label>
+              <label>
+                Jornada
+                <select name="jornada">
+                  <option value="completo">Completo</option>
+                  <option value="am">AM</option>
+                  <option value="pm">PM</option>
+                </select>
+              </label>
+              <label>
+                Descripcion
+                <input type="text" name="descripcion" />
+              </label>
+              <p class="modal-date">Fecha seleccionada: <strong id="day-event-date"></strong></p>
+              <button class="btn primary" type="submit">Guardar evento</button>
+              <div class="form-status" id="day-event-status"></div>
+            </div>
+            <input type="hidden" name="fecha_inicio" />
+            <input type="hidden" name="fecha_fin" />
+          </form>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

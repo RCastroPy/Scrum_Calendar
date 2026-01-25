@@ -1,0 +1,46 @@
+{
+  "filters": {
+    "sprints": [{ "id": 1, "nombre": "Sprint 1" }, { "id": 2, "nombre": "Sprint 2" }],
+    "cells": ["Celula Alpha", "Celula Beta"]
+  },
+  "kpis": {
+    "teorica": "162 h",
+    "riesgo": "2.16%",
+    "eventos": "4",
+    "capacidad": "97.84%",
+    "estado": "HEALTHY"
+  },
+  "capacityByPerson": {
+    "labels": ["Ana", "Luis", "Marta"],
+    "series": [
+      { "name": "Teorica", "values": [54, 63, 45] },
+      { "name": "Real", "values": [54, 59.5, 45] }
+    ]
+  },
+  "capacityOverSprints": {
+    "labels": ["Sprint 1", "Sprint 2", "Sprint 3"],
+    "series": [{ "name": "Capacidad %", "values": [97.84, 88.5, 92.1] }]
+  },
+  "eventsByType": {
+    "labels": ["Vacaciones", "Reposo", "Feriado", "Permiso"],
+    "values": [4, 2, 1, 3],
+    "colors": ["#4ba3ff", "#49d1cc", "#ff6b6b", "#a7f36a"]
+  },
+  "eventsStatus": {
+    "labels": ["Planificado", "No planificado", "Sin impacto"],
+    "values": [6, 3, 2],
+    "colors": ["#4ba3ff", "#ffc857", "#a7f36a"]
+  },
+  "eventsByPerson": {
+    "labels": ["Ana", "Luis", "Marta"],
+    "values": [1, 3, 2]
+  },
+  "eventsByJornada": {
+    "labels": ["Sprint 1", "Sprint 2", "Sprint 3"],
+    "series": [
+      { "name": "Completo", "values": [3, 2, 4], "color": "#4ba3ff" },
+      { "name": "AM", "values": [2, 1, 2], "color": "#49d1cc" },
+      { "name": "PM", "values": [1, 2, 1], "color": "#ff6b6b" }
+    ]
+  }
+}

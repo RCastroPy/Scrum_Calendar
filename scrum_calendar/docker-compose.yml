@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: scrum_user
+      POSTGRES_PASSWORD: scrum_pass
+      POSTGRES_DB: scrum_calendar
+    ports:
+      - "5433:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  api:
+    build: .
+    env_file:
+      - .env.example
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./frontend:/app/frontend:delegated
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  db_data:

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scrum Calendar · Poker Planning</title>
+    <link rel="stylesheet" href="styles.css?v=20260115" />
+  </head>
+  <body data-page="poker">
+    <div class="bg-ambient">
+      <span class="orb orb-a"></span>
+      <span class="orb orb-b"></span>
+      <span class="orb orb-c"></span>
+      <span class="grid-lines"></span>
+    </div>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <button class="menu-toggle" id="menu-toggle" aria-label="Colapsar menu">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z" />
+          </svg>
+        </button>
+        <div class="brand">
+          <p class="brand-title">Scrum Calendar</p>
+          <span>Panel operativo</span>
+        </div>
+        <div class="cell-selector">
+          <label>
+            Celula activa
+            <select id="cell-filter">
+              <option value="">Todas</option>
+            </select>
+          </label>
+        </div>
+        <nav class="menu">
+          <a href="index.html"><span class="menu-text">Dashboard</span></a>
+          <a href="daily.html" data-role="admin"><span class="menu-text">Daily</span></a>
+          <a href="one-to-one.html" data-role="admin"><span class="menu-text">1:1</span></a>
+          <a href="poker-planning.html" class="active" data-role="admin"><span class="menu-text">Poker Planning</span></a>
+          <a href="retrospective.html" data-role="admin"><span class="menu-text">Retrospectiva</span></a>
+          <div class="menu-group" data-role="admin">
+            <div class="menu-parent">
+              <a href="data-entry.html"><span class="menu-text">Carga de datos</span></a>
+              <button class="submenu-toggle" type="button" aria-label="Mostrar sub menu">▾</button>
+            </div>
+            <div class="submenu">
+              <a href="data-entry.html#celulas">Celulas</a>
+              <a href="data-entry.html#personas">Personas</a>
+              <a href="data-entry.html#sprints">Sprints</a>
+              <a href="data-entry.html#releases">Importar Releases</a>
+              <a href="data-entry.html#feriados">Feriados</a>
+              <a href="data-entry.html#tipos-evento">Tipos de evento</a>
+              <a href="data-entry.html#eventos">Eventos</a>
+              <a href="data-entry.html#releases">Importacion CSV</a>
+            </div>
+          </div>
+          <a href="admin.html" data-role="admin"><span class="menu-text">Administracion</span></a>
+          <a href="ux.html" data-role="admin"><span class="menu-text">Flujo UX</span></a>
+          <a href="capacity.html" data-role="admin"><span class="menu-text">Panel de capacidad</span></a>
+          <a href="connect.html" data-role="admin"><span class="menu-text">Conectar API</span></a>
+          <button class="menu-logout" id="logout-btn" type="button"><span class="menu-text">Salir</span></button>
+        </nav>
+      </aside>
+
+      <main class="page">
+        <header class="hero">
+          <div class="hero-copy">
+            <p class="pill">Poker Planning · Equipo</p>
+          </div>
+        </header>
+
+        <section class="section" id="poker-panel">
+          <div class="daily-head">
+            <div>
+              <h2>Poker Planning</h2>
+              <p>Coordina la votacion del equipo y muestra el consenso.</p>
+            </div>
+          </div>
+
+          <div class="daily-grid">
+            <article class="admin-card daily-card">
+              <div class="card-head">
+                <h3>Link y QR para el Dev Team</h3>
+                <p class="daily-subtitle">Comparte para que el equipo vote.</p>
+              </div>
+              <div class="retro-share">
+                <input id="poker-share-url" type="text" readonly />
+                <button class="btn small ghost" type="button" id="poker-share-copy">Copiar link</button>
+              </div>
+              <div class="retro-qr">
+                <img id="poker-share-qr" alt="QR Poker" />
+              </div>
+              <p class="helper">El QR usa un servicio externo para generar la imagen.</p>
+            </article>
+
+            <article class="admin-card daily-card">
+              <div class="card-head">
+                <h3>Control de votacion</h3>
+                <p class="daily-subtitle" id="poker-phase-status">Sin sesion creada.</p>
+              </div>
+              <div class="retro-phase-actions">
+                <button class="btn small ghost" type="button" id="poker-create">Preparar link</button>
+                <button class="btn small" type="button" id="poker-start">Iniciar votacion</button>
+                <button class="btn small" type="button" id="poker-reveal">Mostrar resultados</button>
+                <button class="btn small ghost" type="button" id="poker-close">Cerrar sesion</button>
+              </div>
+              <div class="retro-presence">
+                <div class="retro-presence-head">
+                  <span>Conectados</span>
+                  <span class="retro-presence-count" id="poker-connected-count">0</span>
+                </div>
+                <ul class="retro-presence-list" id="poker-connected-list">
+                  <li class="empty">Sin conexiones</li>
+                </ul>
+              </div>
+            </article>
+
+            <article class="admin-card daily-card daily-span-2">
+              <div class="card-head">
+                <h3>Resultados</h3>
+                <p class="daily-subtitle">Consenso del equipo en tiempo real.</p>
+              </div>
+              <div class="admin-table" id="poker-results-table"></div>
+            </article>
+          </div>
+
+          <p class="form-status" id="poker-status"></p>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js?v=dev"></script>
+  </body>
+</html>

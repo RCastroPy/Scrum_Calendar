@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scrum Calendar · Conectar API</title>
+    <link rel="stylesheet" href="styles.css?v=20260110" />
+  </head>
+  <body data-page="connect">
+    <div class="bg-ambient">
+      <span class="orb orb-a"></span>
+      <span class="orb orb-b"></span>
+      <span class="orb orb-c"></span>
+      <span class="grid-lines"></span>
+    </div>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <button class="menu-toggle" id="menu-toggle" aria-label="Colapsar menu">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z" />
+          </svg>
+        </button>
+        <div class="brand">
+          <p class="brand-title">Scrum Calendar</p>
+          <span>Panel operativo</span>
+        </div>
+        <div class="cell-selector">
+          <label>
+            Celula activa
+            <select id="cell-filter">
+              <option value="">Todas</option>
+            </select>
+          </label>
+        </div>
+        <nav class="menu">
+          <a href="index.html"><span class="menu-text">Dashboard</span></a>
+          <a href="daily.html" data-role="admin"><span class="menu-text">Daily</span></a>
+          <a href="one-to-one.html" data-role="admin"><span class="menu-text">1:1</span></a>
+          <a href="poker-planning.html" data-role="admin"><span class="menu-text">Poker Planning</span></a>
+          <a href="retrospective.html" data-role="admin"><span class="menu-text">Retrospectiva</span></a>
+          <div class="menu-group" data-role="admin">
+            <div class="menu-parent">
+              <a href="data-entry.html"><span class="menu-text">Carga de datos</span></a>
+              <button class="submenu-toggle" type="button" aria-label="Mostrar sub menu">▾</button>
+            </div>
+            <div class="submenu">
+              <a href="data-entry.html#celulas">Celulas</a>
+              <a href="data-entry.html#personas">Personas</a>
+              <a href="data-entry.html#sprints">Sprints</a>
+              <a href="data-entry.html#feriados">Feriados</a>
+              <a href="data-entry.html#tipos-evento">Tipos de evento</a>
+              <a href="data-entry.html#eventos">Eventos</a>
+              <a href="data-entry.html#releases">Importacion CSV</a>
+            </div>
+          </div>
+          <a href="admin.html" data-role="admin"><span class="menu-text">Administracion</span></a>
+          <a href="ux.html" data-role="admin"><span class="menu-text">Flujo UX</span></a>
+          <a href="capacity.html" data-role="admin"><span class="menu-text">Panel de capacidad</span></a>
+          <a href="connect.html" data-role="admin"><span class="menu-text">Conectar API</span></a>
+          <button class="menu-logout" id="logout-btn" type="button"><span class="menu-text">Salir</span></button>
+        </nav>
+      </aside>
+
+      <main class="page">
+        <section class="section page-title">
+          <h1>Conectar API</h1>
+          <p>Integra datos en tiempo real y habilita tu dashboard final.</p>
+        </section>
+
+        <section class="section cta" id="cta">
+          <div>
+            <h2>Listo para conectar con la API</h2>
+            <p>Integra datos en tiempo real y habilita tu dashboard final.</p>
+          </div>
+          <a class="btn primary" href="index.html">Volver al dashboard</a>
+        </section>
+
+        <section class="section api-catalog">
+          <div class="section-head">
+            <div>
+              <h2>Catalogo de APIs</h2>
+              <p>Resumen de endpoints clave y su funcion principal.</p>
+            </div>
+          </div>
+          <div class="api-grid">
+            <article class="api-card">
+              <h3>Celulas</h3>
+              <ul>
+                <li><span class="api-method">GET</span> /celulas · Lista celulas.</li>
+                <li><span class="api-method">POST</span> /celulas · Crea celula.</li>
+                <li><span class="api-method">PUT</span> /celulas/{id} · Actualiza celula.</li>
+                <li><span class="api-method">DELETE</span> /celulas/{id} · Elimina celula.</li>
+              </ul>
+            </article>
+            <article class="api-card">
+              <h3>Personas</h3>
+              <ul>
+                <li><span class="api-method">GET</span> /personas · Lista personas.</li>
+                <li><span class="api-method">POST</span> /personas · Crea persona.</li>
+                <li><span class="api-method">PUT</span> /personas/{id} · Actualiza persona.</li>
+                <li><span class="api-method">DELETE</span> /personas/{id} · Elimina persona.</li>
+              </ul>
+            </article>
+            <article class="api-card">
+              <h3>Sprints</h3>
+              <ul>
+                <li><span class="api-method">GET</span> /sprints · Lista sprints.</li>
+                <li><span class="api-method">POST</span> /sprints · Crea sprint.</li>
+                <li><span class="api-method">PUT</span> /sprints/{id} · Actualiza sprint.</li>
+                <li><span class="api-method">DELETE</span> /sprints/{id} · Elimina sprint.</li>
+              </ul>
+            </article>
+            <article class="api-card">
+              <h3>Feriados</h3>
+              <ul>
+                <li><span class="api-method">GET</span> /feriados · Lista feriados.</li>
+                <li><span class="api-method">POST</span> /feriados · Crea feriado.</li>
+                <li><span class="api-method">PUT</span> /feriados/{id} · Actualiza feriado.</li>
+                <li><span class="api-method">DELETE</span> /feriados/{id} · Elimina feriado.</li>
+              </ul>
+            </article>
+            <article class="api-card">
+              <h3>Eventos</h3>
+              <ul>
+                <li><span class="api-method">GET</span> /eventos · Lista eventos.</li>
+                <li><span class="api-method">POST</span> /eventos · Crea evento.</li>
+                <li><span class="api-method">PUT</span> /eventos/{id} · Actualiza evento.</li>
+                <li><span class="api-method">DELETE</span> /eventos/{id} · Elimina evento.</li>
+              </ul>
+            </article>
+            <article class="api-card">
+              <h3>Tipos de evento</h3>
+              <ul>
+                <li><span class="api-method">GET</span> /eventos-tipo · Lista tipos de evento.</li>
+                <li><span class="api-method">POST</span> /eventos-tipo · Crea tipo de evento.</li>
+                <li><span class="api-method">PUT</span> /eventos-tipo/{id} · Actualiza tipo de evento.</li>
+                <li><span class="api-method">DELETE</span> /eventos-tipo/{id} · Elimina tipo de evento.</li>
+              </ul>
+            </article>
+            <article class="api-card">
+              <h3>Capacidad</h3>
+              <ul>
+                <li><span class="api-method">GET</span> /capacidad · Calcula capacidad por sprint.</li>
+              </ul>
+            </article>
+            <article class="api-card">
+              <h3>Dashboard</h3>
+              <ul>
+                <li><span class="api-method">GET</span> /dashboard · KPIs del sprint actual.</li>
+              </ul>
+            </article>
+            <article class="api-card">
+              <h3>Sprint Items</h3>
+              <ul>
+                <li><span class="api-method">GET</span> /sprint-items · Lista items importados.</li>
+                <li><span class="api-method">POST</span> /imports/sprint-items · Importa CSV/XLSX.</li>
+              </ul>
+            </article>
+            <article class="api-card">
+              <h3>Autenticacion</h3>
+              <ul>
+                <li><span class="api-method">POST</span> /auth/login · Inicia sesion.</li>
+                <li><span class="api-method">POST</span> /auth/logout · Cierra sesion.</li>
+                <li><span class="api-method">GET</span> /auth/me · Usuario actual.</li>
+                <li><span class="api-method">POST</span> /auth/bootstrap · Crea admin inicial.</li>
+              </ul>
+            </article>
+            <article class="api-card">
+              <h3>Usuarios</h3>
+              <ul>
+                <li><span class="api-method">GET</span> /usuarios · Lista usuarios.</li>
+                <li><span class="api-method">POST</span> /usuarios · Crea usuario.</li>
+              </ul>
+            </article>
+            <article class="api-card">
+              <h3>Healthcheck</h3>
+              <ul>
+                <li><span class="api-method">GET</span> / · Verifica estado de API.</li>
+                <li><span class="api-method">GET</span> /time · Hora base UTC-3 (PY).</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js?v=dev"></script>
+  </body>
+</html>

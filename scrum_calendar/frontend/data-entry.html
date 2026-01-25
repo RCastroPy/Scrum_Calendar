@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scrum Calendar · Carga rapida</title>
+    <link rel="stylesheet" href="styles.css?v=20260110" />
+  </head>
+  <body data-page="data-entry">
+    <div class="bg-ambient">
+      <span class="orb orb-a"></span>
+      <span class="orb orb-b"></span>
+      <span class="orb orb-c"></span>
+      <span class="grid-lines"></span>
+    </div>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <button class="menu-toggle" id="menu-toggle" aria-label="Colapsar menu">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z" />
+          </svg>
+        </button>
+        <div class="brand">
+          <p class="brand-title">Scrum Calendar</p>
+          <span>Panel operativo</span>
+        </div>
+        <div class="cell-selector">
+          <label>
+            Celula activa
+            <select id="cell-filter">
+              <option value="">Todas</option>
+            </select>
+          </label>
+        </div>
+        <nav class="menu">
+          <a href="index.html"><span class="menu-text">Dashboard</span></a>
+          <a href="daily.html" data-role="admin"><span class="menu-text">Daily</span></a>
+          <a href="one-to-one.html" data-role="admin"><span class="menu-text">1:1</span></a>
+          <a href="poker-planning.html" data-role="admin"><span class="menu-text">Poker Planning</span></a>
+          <a href="retrospective.html" data-role="admin"><span class="menu-text">Retrospectiva</span></a>
+          <div class="menu-group" data-role="admin">
+            <div class="menu-parent">
+              <a href="data-entry.html"><span class="menu-text">Carga de datos</span></a>
+              <button class="submenu-toggle" type="button" aria-label="Mostrar sub menu">▾</button>
+            </div>
+            <div class="submenu">
+              <a href="data-entry.html#celulas">Celulas</a>
+              <a href="data-entry.html#personas">Personas</a>
+              <a href="data-entry.html#sprints">Sprints</a>
+              <a href="data-entry.html#releases">Importar Releases</a>
+              <a href="data-entry.html#feriados">Feriados</a>
+              <a href="data-entry.html#tipos-evento">Tipos de evento</a>
+              <a href="data-entry.html#eventos">Eventos</a>
+              <a href="data-entry.html#importacion">Importacion CSV</a>
+            </div>
+          </div>
+          <a href="admin.html" data-role="admin"><span class="menu-text">Administracion</span></a>
+          <a href="ux.html" data-role="admin"><span class="menu-text">Flujo UX</span></a>
+          <a href="capacity.html" data-role="admin"><span class="menu-text">Panel de capacidad</span></a>
+          <a href="connect.html" data-role="admin"><span class="menu-text">Conectar API</span></a>
+          <button class="menu-logout" id="logout-btn" type="button"><span class="menu-text">Salir</span></button>
+        </nav>
+      </aside>
+
+      <main class="page">
+        <section class="section page-title">
+          <h1>Carga rapida</h1>
+          <p>Registra datos base para empezar a planificar sprints.</p>
+        </section>
+
+        <section class="section data-entry" id="data-entry">
+          <div class="section-head">
+            <h2>Carga rapida de datos</h2>
+            <p>Completa una entidad a la vez para alimentar el dashboard.</p>
+          </div>
+
+          <div class="entry-grid">
+            <div class="section-block" data-section="celulas" id="celulas">
+              <form class="entry-card" id="form-celula">
+                <h3>1. Celulas</h3>
+                <label>
+                  Nombre
+                  <input type="text" name="nombre" required />
+                </label>
+                <label>
+                  Codigo JIRA
+                  <input type="text" name="jira_codigo" placeholder="SMP" required />
+                </label>
+                <button class="btn primary" type="submit">Crear celula</button>
+                <div class="form-status" id="status-celula"></div>
+              </form>
+            </div>
+
+            <div class="section-block" data-section="personas" id="personas">
+              <form class="entry-card" id="form-persona">
+                <h3>2. Personas</h3>
+                <label>
+                  Nombre
+                  <input type="text" name="nombre" required />
+                </label>
+                <label>
+                  Apellido
+                  <input type="text" name="apellido" required />
+                </label>
+                <label>
+                  Usuario JIRA
+                  <input type="text" name="jira_usuario" placeholder="rafael.castro" />
+                </label>
+                <label>
+                  Rol
+                  <input type="text" name="rol" placeholder="SM / PO / Dev" required />
+                </label>
+                <label>
+                  Activo
+                  <select name="activo">
+                    <option value="true" selected>Si</option>
+                    <option value="false">No</option>
+                  </select>
+                </label>
+                <label>
+                  Capacidad diaria (h)
+                  <input type="number" name="capacidad" min="0" step="0.5" required />
+                </label>
+                <label>
+                  Cumpleaños
+                  <div class="split-input">
+                    <select name="cumple_dia">
+                      <option value="">Dia</option>
+                    </select>
+                    <select name="cumple_mes">
+                      <option value="">Mes</option>
+                    </select>
+                  </div>
+                </label>
+                <label class="toggle">
+                  <input type="checkbox" name="sin_celula" />
+                  Sin celula (externo)
+                </label>
+                <label>
+                  Celulas
+                  <select name="celulas" multiple required></select>
+                </label>
+                <button class="btn primary" type="submit">Crear persona</button>
+                <div class="form-status" id="status-persona"></div>
+              </form>
+            </div>
+
+            <div class="section-block" data-section="sprints" id="sprints">
+              <form class="entry-card" id="form-sprint">
+                <h3>3. Sprints</h3>
+                <label>
+                  Nombre
+                  <input type="text" name="nombre" required />
+                </label>
+                <label>
+                  Celula
+                  <select name="celula" required></select>
+                </label>
+                <label>
+                  Rango de fechas
+                  <div class="date-range" data-multi-date>
+                    <input type="text" name="fecha_rango" readonly placeholder="Selecciona fechas" />
+                    <div class="date-panel">
+                      <div class="date-controls">
+                        <button class="date-prev" type="button" aria-label="Mes anterior">‹</button>
+                        <div class="date-month"></div>
+                        <button class="date-next" type="button" aria-label="Mes siguiente">›</button>
+                      </div>
+                      <div class="date-grid"></div>
+                      <div class="date-actions">
+                        <button class="date-clear" type="button">Limpiar</button>
+                      </div>
+                    </div>
+                    <input type="hidden" name="fecha_inicio" required />
+                    <input type="hidden" name="fecha_fin" required />
+                  </div>
+                </label>
+                <button class="btn primary" type="submit">Crear sprint</button>
+                <div class="form-status" id="status-sprint"></div>
+              </form>
+            </div>
+
+            <div class="section-block" data-section="releases" id="releases">
+              <form class="entry-card" id="form-release-import">
+                <h3>4. Importar Releases (CSV/XLSX)</h3>
+                <label>
+                  Archivo CSV/XLSX
+                  <input type="file" name="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required />
+                </label>
+                <label>
+                  Tipo de release
+                  <select name="tipo_release" required>
+                    <option value="comprometido">Release Comprometido</option>
+                    <option value="nuevo">Release Nuevo</option>
+                  </select>
+                </label>
+                <button class="btn primary" type="submit">Subir</button>
+                <div class="form-status" id="status-release-import"></div>
+              </form>
+            </div>
+
+            <div class="section-block" data-section="feriados" id="feriados">
+              <form class="entry-card" id="form-feriado">
+                <h3>5. Feriados</h3>
+              <p class="helper">Aplica a todas las celulas (actuales y futuras).</p>
+              <label>
+                Fecha
+                <input type="date" name="fecha" required />
+              </label>
+                <label>
+                  Nombre
+                  <input type="text" name="nombre" required />
+                </label>
+                <label>
+                  Tipo
+                  <select name="tipo">
+                    <option value="nacional">Nacional</option>
+                    <option value="interno">Interno</option>
+                  </select>
+                </label>
+                <button class="btn primary" type="submit">Crear feriado</button>
+                <div class="form-status" id="status-feriado"></div>
+              </form>
+            </div>
+
+            <div class="section-block" data-section="tipos-evento" id="tipos-evento">
+              <form class="entry-card" id="form-evento-tipo">
+                <h3>6. Tipos de evento</h3>
+                <p class="helper">Define impacto base para el calculo de capacidad.</p>
+                <label>
+                  Nombre
+                  <input type="text" name="nombre" required />
+                </label>
+                <label>
+                  Impacto (%)
+                  <input type="number" name="impacto" min="0" max="100" step="10" required />
+                </label>
+                <label>
+                  Planificado
+                  <select name="planificado">
+                    <option value="true">Si</option>
+                    <option value="false">No</option>
+                  </select>
+                </label>
+                <label>
+                  Activo
+                  <select name="activo">
+                    <option value="true">Si</option>
+                    <option value="false">No</option>
+                  </select>
+                </label>
+                <button class="btn primary" type="submit">Crear tipo</button>
+                <div class="form-status" id="status-evento-tipo"></div>
+              </form>
+            </div>
+
+            <div class="section-block" data-section="eventos" id="eventos">
+              <form class="entry-card" id="form-evento">
+                <h3>7. Eventos</h3>
+                <label>
+                  Persona
+                  <select name="persona" required></select>
+                </label>
+                <label>
+                  Tipo de evento
+                  <select name="tipo" required></select>
+                </label>
+                <label>
+                  Sprint (opcional)
+                  <select name="sprint">
+                    <option value="">Sin sprint</option>
+                  </select>
+                </label>
+                <label>
+                  Rango de fechas
+                  <div class="date-range" data-multi-date>
+                    <input type="text" name="fecha_rango" readonly placeholder="Selecciona fechas" />
+                    <div class="date-panel">
+                      <div class="date-controls">
+                        <button class="date-prev" type="button" aria-label="Mes anterior">‹</button>
+                        <div class="date-month"></div>
+                        <button class="date-next" type="button" aria-label="Mes siguiente">›</button>
+                      </div>
+                      <div class="date-grid"></div>
+                      <div class="date-actions">
+                        <button class="date-clear" type="button">Limpiar</button>
+                      </div>
+                    </div>
+                    <input type="hidden" name="fecha_inicio" required />
+                    <input type="hidden" name="fecha_fin" required />
+                  </div>
+                </label>
+                <label>
+                  Jornada
+                  <select name="jornada">
+                    <option value="completo">Completo</option>
+                    <option value="am">AM</option>
+                    <option value="pm">PM</option>
+                  </select>
+                </label>
+                <label>
+                  Descripcion
+                  <input type="text" name="descripcion" />
+                </label>
+                <button class="btn primary" type="submit">Crear evento</button>
+                <div class="form-status" id="status-evento"></div>
+              </form>
+            </div>
+            <div class="section-block" data-section="importacion" id="importacion">
+              <form class="entry-card" id="form-import">
+                <h3>8. Importar sprint (CSV/XLSX)</h3>
+                <p class="helper">
+                  Exporta desde Jira en CSV o XLSX con columnas: Issue Type, Issue key, Summary,
+                  Status, Custom field (Story Points), Assignee, Sprint.
+                </p>
+                <label>
+                  Archivo CSV/XLSX
+                  <input type="file" name="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required />
+                </label>
+                <div class="form-actions">
+                  <button class="btn primary" type="submit">Importar</button>
+                  <button class="btn ghost" type="button" id="import-clear">Eliminar todo</button>
+                </div>
+                <div class="form-status" id="status-import"></div>
+              </form>
+            </div>
+          </div>
+        </section>
+
+        <section class="section admin-panel" id="admin-panel">
+          <div class="section-head admin-head">
+            <div>
+              <h2>Listado de datos</h2>
+              <p>Visualiza todo lo cargado y edita o elimina registros.</p>
+            </div>
+            <div class="admin-tools">
+              <label class="admin-search">
+                Buscar
+                <input type="search" id="admin-search" placeholder="Buscar por cualquier campo" />
+              </label>
+            </div>
+          </div>
+          <div class="admin-status" id="admin-status"></div>
+          <div class="admin-grid">
+            <div class="admin-card" data-section="celulas">
+              <h3>Celulas</h3>
+              <div class="admin-table" id="admin-celulas"></div>
+            </div>
+            <div class="admin-card" data-section="personas">
+              <h3>Personas</h3>
+              <div class="admin-table" id="admin-personas"></div>
+            </div>
+            <div class="admin-card" data-section="sprints">
+              <h3>Sprints</h3>
+              <div class="admin-table" id="admin-sprints"></div>
+            </div>
+            <div class="admin-card" data-section="feriados">
+              <h3>Feriados</h3>
+              <div class="admin-table" id="admin-feriados"></div>
+            </div>
+            <div class="admin-card" data-section="tipos-evento">
+              <h3>Tipos de evento</h3>
+              <div class="admin-table" id="admin-eventos-tipo"></div>
+            </div>
+            <div class="admin-card" data-section="eventos">
+              <h3>Eventos</h3>
+              <div class="admin-table" id="admin-eventos"></div>
+            </div>
+            <div class="admin-card" data-section="releases">
+              <h3>Releases</h3>
+              <div class="admin-table" id="admin-release-items"></div>
+            </div>
+            <div class="admin-card" data-section="importacion">
+              <h3>Items de sprint</h3>
+              <div class="admin-table" id="admin-sprint-items"></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js?v=dev"></script>
+  </body>
+</html>

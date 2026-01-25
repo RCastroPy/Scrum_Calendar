@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scrum Calendar · 1:1</title>
+    <link rel="stylesheet" href="styles.css?v=20260110" />
+  </head>
+  <body data-page="one-to-one">
+    <div class="bg-ambient">
+      <span class="orb orb-a"></span>
+      <span class="orb orb-b"></span>
+      <span class="orb orb-c"></span>
+      <span class="grid-lines"></span>
+    </div>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <button class="menu-toggle" id="menu-toggle" aria-label="Colapsar menu">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z" />
+          </svg>
+        </button>
+        <div class="brand">
+          <p class="brand-title">Scrum Calendar</p>
+          <span>Panel operativo</span>
+        </div>
+        <div class="cell-selector">
+          <label>
+            Celula activa
+            <select id="cell-filter">
+              <option value="">Todas</option>
+            </select>
+          </label>
+        </div>
+        <nav class="menu">
+          <a href="index.html"><span class="menu-text">Dashboard</span></a>
+          <a href="daily.html" data-role="admin"><span class="menu-text">Daily</span></a>
+          <a href="one-to-one.html" class="active" data-role="admin"><span class="menu-text">1:1</span></a>
+          <a href="poker-planning.html" data-role="admin"><span class="menu-text">Poker Planning</span></a>
+          <a href="retrospective.html" data-role="admin"><span class="menu-text">Retrospectiva</span></a>
+          <div class="menu-group" data-role="admin">
+            <div class="menu-parent">
+              <a href="data-entry.html"><span class="menu-text">Carga de datos</span></a>
+              <button class="submenu-toggle" type="button" aria-label="Mostrar sub menu">▾</button>
+            </div>
+            <div class="submenu">
+              <a href="data-entry.html#celulas">Celulas</a>
+              <a href="data-entry.html#personas">Personas</a>
+              <a href="data-entry.html#sprints">Sprints</a>
+              <a href="data-entry.html#releases">Importar Releases</a>
+              <a href="data-entry.html#feriados">Feriados</a>
+              <a href="data-entry.html#tipos-evento">Tipos de evento</a>
+              <a href="data-entry.html#eventos">Eventos</a>
+              <a href="data-entry.html#releases">Importacion CSV</a>
+            </div>
+          </div>
+          <a href="admin.html" data-role="admin"><span class="menu-text">Administracion</span></a>
+          <a href="ux.html" data-role="admin"><span class="menu-text">Flujo UX</span></a>
+          <a href="capacity.html" data-role="admin"><span class="menu-text">Panel de capacidad</span></a>
+          <a href="connect.html" data-role="admin"><span class="menu-text">Conectar API</span></a>
+          <button class="menu-logout" id="logout-btn" type="button"><span class="menu-text">Salir</span></button>
+        </nav>
+      </aside>
+
+      <main class="page page-wide">
+        <section class="section page-title">
+          <h1>1:1</h1>
+          <p>Espacio privado para seguimiento individual por celula.</p>
+        </section>
+
+        <section class="section oneonone" id="oneonone-page">
+          <div class="section-head">
+            <div>
+              <h2>Sesiones individuales</h2>
+              <p>Selecciona una persona para ver su contexto mensual y KPIs.</p>
+            </div>
+          </div>
+          <div class="oneonone-layout">
+            <div class="oneonone-row">
+              <div class="oneonone-panel oneonone-panel--list">
+                <label class="oneonone-search">
+                  Buscar integrante
+                  <input type="text" id="oneonone-search" placeholder="Nombre o apellido" />
+                </label>
+                <p class="helper" id="oneonone-cell-hint"></p>
+                <ul class="member-list" id="oneonone-members"></ul>
+              </div>
+              <div class="oneonone-panel oneonone-panel--calendar">
+                <div class="oneonone-header">
+                  <div>
+                    <h3 id="oneonone-name">Selecciona una persona</h3>
+                    <p id="oneonone-role"></p>
+                  </div>
+                  <div class="calendar-controls">
+                    <button class="calendar-btn" type="button" id="oneonone-prev" aria-label="Mes anterior">‹</button>
+                    <div class="calendar-month" id="oneonone-month"></div>
+                    <button class="calendar-btn" type="button" id="oneonone-next" aria-label="Mes siguiente">›</button>
+                  </div>
+                </div>
+                <div class="oneonone-calendar" id="oneonone-calendar"></div>
+              </div>
+            </div>
+            <div class="oneonone-row oneonone-row--full">
+              <div class="oneonone-panel" id="oneonone-detail">
+                <div class="oneonone-kpis" id="oneonone-kpis"></div>
+                <div class="oneonone-events">
+                  <h4>Eventos del mes</h4>
+                  <ul id="oneonone-events"></ul>
+                  <h4 class="mt-3">Eventos anual</h4>
+                  <ul id="oneonone-events-annual"></ul>
+                  <p class="helper" id="oneonone-empty"></p>
+                </div>
+                <div class="oneonone-notes">
+                  <div class="note-card">
+                    <h4>Formulario 1:1</h4>
+                    <div class="oneonone-form-grid">
+                      <div class="form-col">
+                        <label class="form-label">Checklist corto</label>
+                        <div class="note-list" id="oneonone-checklist"></div>
+                        <div class="note-actions">
+                          <button class="btn small ghost" type="button" id="oneonone-checklist-add">Agregar item</button>
+                        </div>
+                        <label class="form-label">Acuerdos y tareas</label>
+                        <div class="note-list" id="oneonone-agreements"></div>
+                        <div class="note-actions">
+                          <button class="btn small ghost" type="button" id="oneonone-agreements-add">
+                            Agregar acuerdo
+                          </button>
+                        </div>
+                      </div>
+                      <div class="form-col">
+                        <label class="form-label">Estado de animo</label>
+                        <div class="mood-row">
+                          <select id="oneonone-mood">
+                            <option value="">Seleccionar</option>
+                            <option value="1">1 · Muy bajo</option>
+                            <option value="2">2 · Bajo</option>
+                            <option value="3">3 · Medio</option>
+                            <option value="4">4 · Alto</option>
+                            <option value="5">5 · Muy alto</option>
+                          </select>
+                          <span class="mood-label" id="oneonone-mood-label"></span>
+                        </div>
+                        <label class="form-label">
+                          Feedback positivo
+                          <textarea id="oneonone-feedback-pos" rows="3"></textarea>
+                        </label>
+                        <label class="form-label">
+                          Feedback negativo
+                          <textarea id="oneonone-feedback-neg" rows="3"></textarea>
+                        </label>
+                      </div>
+                      <div class="form-col">
+                        <label class="form-label">
+                          Habilidades/Competencias a mejorar.
+                          <textarea id="oneonone-growth" rows="3"></textarea>
+                        </label>
+                        <div class="note-actions form-actions">
+                          <button class="btn small" type="button" id="oneonone-session-save">Registrar 1:1</button>
+                          <button class="btn small ghost" type="button" id="oneonone-session-cancel">Cancelar</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="oneonone-history">
+                  <div class="section-head">
+                    <div>
+                      <h4>Historial de 1:1</h4>
+                      <p class="helper">Registro historico de acuerdos, feedback y seguimiento.</p>
+                    </div>
+                  </div>
+                  <div class="oneonone-history-table" id="oneonone-history-table"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js?v=dev"></script>
+    <div class="modal" id="oneonone-day-modal">
+      <div class="modal-content">
+        <div class="modal-head">
+          <h3 id="oneonone-day-modal-title">Eventos del dia</h3>
+          <button class="modal-close" type="button" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="modal-body">
+          <ul id="oneonone-day-modal-list"></ul>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

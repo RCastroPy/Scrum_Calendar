@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scrum Calendar · Daily</title>
+    <link rel="stylesheet" href="styles.css?v=20260115" />
+  </head>
+  <body data-page="daily">
+    <div class="bg-ambient">
+      <span class="orb orb-a"></span>
+      <span class="orb orb-b"></span>
+      <span class="orb orb-c"></span>
+      <span class="grid-lines"></span>
+    </div>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <button class="menu-toggle" id="menu-toggle" aria-label="Colapsar menu">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z" />
+          </svg>
+        </button>
+        <div class="brand">
+          <p class="brand-title">Scrum Calendar</p>
+          <span>Panel operativo</span>
+        </div>
+        <div class="cell-selector">
+          <label>
+            Celula activa
+            <select id="cell-filter">
+              <option value="">Todas</option>
+            </select>
+          </label>
+        </div>
+        <nav class="menu">
+          <a href="index.html"><span class="menu-text">Dashboard</span></a>
+          <a href="daily.html" data-role="admin"><span class="menu-text">Daily</span></a>
+          <a href="one-to-one.html" data-role="admin"><span class="menu-text">1:1</span></a>
+          <a href="poker-planning.html" data-role="admin"><span class="menu-text">Poker Planning</span></a>
+          <a href="retrospective.html" data-role="admin"><span class="menu-text">Retrospectiva</span></a>
+          <div class="menu-group" data-role="admin">
+            <div class="menu-parent">
+              <a href="data-entry.html"><span class="menu-text">Carga de datos</span></a>
+              <button class="submenu-toggle" type="button" aria-label="Mostrar sub menu">▾</button>
+            </div>
+            <div class="submenu">
+              <a href="data-entry.html#celulas">Celulas</a>
+              <a href="data-entry.html#personas">Personas</a>
+              <a href="data-entry.html#sprints">Sprints</a>
+              <a href="data-entry.html#releases">Importar Releases</a>
+              <a href="data-entry.html#feriados">Feriados</a>
+              <a href="data-entry.html#tipos-evento">Tipos de evento</a>
+              <a href="data-entry.html#eventos">Eventos</a>
+              <a href="data-entry.html#releases">Importacion CSV</a>
+            </div>
+          </div>
+          <a href="admin.html" data-role="admin"><span class="menu-text">Administracion</span></a>
+          <a href="ux.html" data-role="admin"><span class="menu-text">Flujo UX</span></a>
+          <a href="capacity.html" data-role="admin"><span class="menu-text">Panel de capacidad</span></a>
+          <a href="connect.html" data-role="admin"><span class="menu-text">Conectar API</span></a>
+          <button class="menu-logout" id="logout-btn" type="button"><span class="menu-text">Salir</span></button>
+        </nav>
+      </aside>
+
+      <main class="page">
+        <header class="hero">
+          <div class="hero-copy">
+            <p class="pill">Daily · seguimiento del sprint</p>
+          </div>
+        </header>
+
+        <section class="section daily" id="daily-panel">
+          <div class="daily-head">
+            <div>
+              <h2>Daily</h2>
+              <p>Seguimiento del sprint seleccionado.</p>
+            </div>
+            <div class="filters">
+              <label>
+                Sprint
+                <select id="daily-sprint-select"></select>
+              </label>
+            </div>
+          </div>
+
+          <div class="daily-grid">
+            <article class="chart-card daily-card">
+              <h3>Sprint Actual / Remaining Days</h3>
+              <p class="daily-sprint-label" id="daily-sprint-label">-</p>
+              <div class="remaining-days" id="daily-remaining-days">-</div>
+              <span class="remaining-label">dias</span>
+            </article>
+            <article class="chart-card daily-card">
+              <h3>Estados de items</h3>
+              <div class="daily-donut" id="daily-status-chart">
+                <div class="donut"></div>
+                <ul class="legend"></ul>
+              </div>
+            </article>
+            <article class="chart-card daily-card">
+              <h3>Promedio por Story Points</h3>
+              <p class="text-muted">Promedio de cierre (incluye en curso).</p>
+              <div class="storypoints-alerts" id="daily-kpi-storypoints"></div>
+            </article>
+
+            <article class="admin-card daily-card" id="daily-team-card">
+              <div class="card-head">
+                <h3>Seguimiento Dev Team</h3>
+                <p class="daily-subtitle" id="daily-team-sprint">-</p>
+              </div>
+              <div class="admin-table" id="daily-dev-table"></div>
+            </article>
+
+            <article class="admin-card daily-card daily-span-2">
+              <div class="card-head">
+                <h3>Items cargados</h3>
+                <p class="daily-subtitle" id="daily-items-sprint">-</p>
+              </div>
+              <div class="daily-filters">
+                <div class="status-filter">
+                  <span>Estado</span>
+                  <div id="daily-status-filter" class="status-filter-list"></div>
+                </div>
+              </div>
+              <div class="daily-meta" id="daily-items-count"></div>
+              <div class="admin-table" id="daily-items-table"></div>
+            </article>
+
+            <article class="admin-card daily-card daily-span-2">
+              <div class="card-head">
+                <h3>Carga manual</h3>
+                <p>Registra items adicionales si es necesario.</p>
+              </div>
+              <form class="daily-form" id="daily-form">
+                <label>
+                  Issue Type
+                  <select name="issue_type" required>
+                    <option value="Task">Task</option>
+                    <option value="Spike">Spike</option>
+                    <option value="Story">Story</option>
+                    <option value="Release">Release</option>
+                  </select>
+                </label>
+                <label>
+                  Issue Key
+                  <input type="text" name="issue_key" placeholder="SMP-0000" required />
+                </label>
+                <label>
+                  Resumen
+                  <input type="text" name="summary" required />
+                </label>
+                <label>
+                  Estado
+                  <select name="status" required>
+                    <option value="To Do">To Do</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="Finalizada">Finalizada</option>
+                    <option value="Cancelada">Cancelada</option>
+                  </select>
+                </label>
+                <label>
+                  Story Points
+                  <input type="number" name="story_points" min="0" step="0.1" />
+                </label>
+                <label>
+                  Asignado
+                  <select name="persona_id" required></select>
+                </label>
+                <label>
+                  Sprint
+                  <select name="sprint_id" required></select>
+                </label>
+                <div class="form-actions">
+                  <button class="btn" type="submit">Agregar item</button>
+                  <button class="btn ghost" type="button" id="daily-form-clear">Limpiar</button>
+                </div>
+                <p class="form-status" id="daily-status"></p>
+              </form>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js?v=dev"></script>
+  </body>
+</html>

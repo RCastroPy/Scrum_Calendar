@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scrum Calendar · Poker Planning</title>
+    <link rel="stylesheet" href="styles.css?v=20260115" />
+  </head>
+  <body data-page="poker-public">
+    <div class="bg-ambient">
+      <span class="orb orb-a"></span>
+      <span class="orb orb-b"></span>
+      <span class="orb orb-c"></span>
+      <span class="grid-lines"></span>
+    </div>
+
+    <main class="page page-narrow">
+      <section class="section">
+        <div class="retro-public-card" id="poker-public">
+          <h1 id="poker-public-title">Poker Planning</h1>
+          <p class="helper">Selecciona tu nombre y vota con cartas Fibonacci.</p>
+          <p class="retro-phase" id="poker-public-phase"></p>
+          <p class="form-status" id="poker-public-connection"></p>
+          <form class="daily-form poker-public-form" id="poker-public-form">
+            <label>
+              Tu nombre
+              <select id="poker-public-author"></select>
+            </label>
+            <div class="poker-cards" id="poker-public-cards"></div>
+            <div class="form-actions">
+              <button class="btn" type="submit">Enviar voto</button>
+            </div>
+            <p class="form-status" id="poker-public-status"></p>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js?v=dev"></script>
+  </body>
+</html>

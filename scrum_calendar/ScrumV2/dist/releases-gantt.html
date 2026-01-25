@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>ScrumIA | Releases Gantt</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#007bff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1a1a1a" media="(prefers-color-scheme: dark)" />
+    <meta name="title" content="ScrumIA | Releases Gantt" />
+    <link rel="preload" href="./css/adminlte.css" as="style" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@fontsource/source-sans-3@5.0.12/index.css"
+      integrity="sha256-tXJfXfp6Ewt1ilPzLDtQnJV4hclT9XuaZUKyUvmyr+Q="
+      crossorigin="anonymous"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/overlayscrollbars@2.11.0/styles/overlayscrollbars.min.css"
+      crossorigin="anonymous"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css"
+      crossorigin="anonymous"
+    />
+    <link rel="stylesheet" href="./css/adminlte.css" />
+    <link rel="stylesheet" href="./styles.css?v=20260110" />
+  </head>
+  <body class="layout-fixed sidebar-expand-lg bg-body-tertiary adminlte-base" data-page="releases-gantt">
+    <div class="app-wrapper">
+      <nav class="app-header navbar navbar-expand bg-body">
+        <div class="container-fluid">
+          <ul class="navbar-nav">
+            <li class="nav-item">
+              <a class="nav-link" data-lte-toggle="sidebar" href="#" role="button">
+                <i class="bi bi-list"></i>
+              </a>
+            </li>
+            <li class="nav-item d-none d-md-block">
+              <a href="#" class="nav-link">Home</a>
+            </li>
+            <li class="nav-item d-none d-md-block">
+              <a href="#" class="nav-link">Contact</a>
+            </li>
+            <li class="nav-item d-none d-md-flex align-items-center ms-2">
+              <span class="me-2 small text-muted">Celula</span>
+              <select id="cell-filter" class="form-select form-select-sm">
+                <option value="">Todas</option>
+              </select>
+            </li>
+          </ul>
+          <ul class="navbar-nav ms-auto">
+            <li class="nav-item">
+              <a class="nav-link" data-widget="navbar-search" href="#" role="button">
+                <i class="bi bi-search"></i>
+              </a>
+            </li>
+          </ul>
+        </div>
+      </nav>
+      <aside class="app-sidebar bg-body-secondary shadow" data-bs-theme="dark">
+        <div class="sidebar-brand">
+          <a href="index.html" class="brand-link">
+            <img src="./assets/img/AdminLTELogo.png" alt="ScrumIA" class="brand-image opacity-75 shadow" />
+            <span class="brand-text fw-light">ScrumIA</span>
+          </a>
+        </div>
+        <div class="sidebar-wrapper">
+          <nav class="mt-2">
+            <ul
+              class="nav sidebar-menu flex-column"
+              data-lte-toggle="treeview"
+              role="navigation"
+              aria-label="Main navigation"
+              data-accordion="false"
+              id="navigation"
+            >
+              <li class="nav-header">SCRUM</li>
+              <li class="nav-item">
+                <a href="index.html" class="nav-link">
+                  <i class="nav-icon bi bi-speedometer"></i>
+                  <p>Dashboard</p>
+                </a>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="daily.html" class="nav-link">
+                  <i class="nav-icon bi bi-calendar3"></i>
+                  <p>Daily</p>
+                </a>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="tasks.html" class="nav-link">
+                  <i class="nav-icon bi bi-list-check"></i>
+                  <p>Tareas</p>
+                </a>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="#" class="nav-link active">
+                  <i class="nav-icon bi bi-box-seam"></i>
+                  <p>
+                    Releases
+                    <i class="nav-arrow bi bi-chevron-right"></i>
+                  </p>
+                </a>
+                <ul class="nav nav-treeview">
+                  <li class="nav-item">
+                    <a href="releases-gantt.html" class="nav-link active">
+                      <i class="nav-icon bi bi-circle"></i>
+                      <p>Gantt</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="releases-table.html" class="nav-link">
+                      <i class="nav-icon bi bi-circle"></i>
+                      <p>Tabla de Releases</p>
+                    </a>
+                  </li>
+                </ul>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="one-to-one.html" class="nav-link">
+                  <i class="nav-icon bi bi-person-badge"></i>
+                  <p>1:1</p>
+                </a>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="retrospective.html" class="nav-link">
+                  <i class="nav-icon bi bi-arrow-repeat"></i>
+                  <p>Retrospectiva</p>
+                </a>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="poker-planning.html" class="nav-link">
+                  <i class="nav-icon bi bi-suit-spade-fill"></i>
+                  <p>Poker Planning</p>
+                </a>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="#" class="nav-link">
+                  <i class="nav-icon bi bi-database-fill"></i>
+                  <p>
+                    Carga de datos
+                    <i class="nav-arrow bi bi-chevron-right"></i>
+                  </p>
+                </a>
+                <ul class="nav nav-treeview">
+                  <li class="nav-item">
+                    <a href="data-entry.html#celulas" class="nav-link">
+                      <i class="nav-icon bi bi-circle"></i>
+                      <p>Celulas</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="data-entry.html#personas" class="nav-link">
+                      <i class="nav-icon bi bi-circle"></i>
+                      <p>Personas</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="data-entry.html#sprints" class="nav-link">
+                      <i class="nav-icon bi bi-circle"></i>
+                      <p>Sprints</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="data-entry.html#releases" class="nav-link">
+                      <i class="nav-icon bi bi-circle"></i>
+                      <p>Importar Releases</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="data-entry.html#feriados" class="nav-link">
+                      <i class="nav-icon bi bi-circle"></i>
+                      <p>Feriados</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="data-entry.html#tipos-evento" class="nav-link">
+                      <i class="nav-icon bi bi-circle"></i>
+                      <p>Tipos de evento</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="data-entry.html#eventos" class="nav-link">
+                      <i class="nav-icon bi bi-circle"></i>
+                      <p>Eventos</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="data-entry.html#importacion" class="nav-link">
+                      <i class="nav-icon bi bi-circle"></i>
+                      <p>Importar sprint</p>
+                    </a>
+                  </li>
+                </ul>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="admin.html" class="nav-link">
+                  <i class="nav-icon bi bi-gear"></i>
+                  <p>Administracion</p>
+                </a>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="connect.html" class="nav-link">
+                  <i class="nav-icon bi bi-plug"></i>
+                  <p>Conectar API</p>
+                </a>
+              </li>
+            </ul>
+          </nav>
+        </div>
+      </aside>
+      <main class="app-main">
+        <div class="content-header">
+          <div class="container-fluid">
+            <div class="row mb-2">
+              <div class="col-sm-6">
+                <h1 class="m-0">Gantt de Releases</h1>
+              </div>
+            </div>
+          </div>
+        </div>
+        <section class="content">
+          <div class="container-fluid">
+            <div class="card">
+              <div class="card-body">
+                <p class="empty">Vista Gantt en construccion.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+      <footer class="app-footer hidden">
+        <div class="float-end d-none d-sm-inline">Anything you want</div>
+        <strong>
+          Copyright &copy; 2014-2025
+          <a href="https://adminlte.io">AdminLTE.io</a>.
+        </strong>
+        All rights reserved.
+      </footer>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/overlayscrollbars@2.11.0/browser/overlayscrollbars.browser.es6.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.min.js" crossorigin="anonymous"></script>
+    <script src="./js/adminlte.js"></script>
+    <script>
+      const SELECTOR_SIDEBAR_WRAPPER = '.sidebar-wrapper';
+      const Default = {
+        scrollbarTheme: 'os-theme-light',
+        scrollbarAutoHide: 'leave',
+        scrollbarClickScroll: true,
+      };
+      document.addEventListener('DOMContentLoaded', function () {
+        const sidebarWrapper = document.querySelector(SELECTOR_SIDEBAR_WRAPPER);
+        const isMobile = window.innerWidth <= 992;
+        if (
+          sidebarWrapper &&
+          OverlayScrollbarsGlobal?.OverlayScrollbars !== undefined &&
+          !isMobile
+        ) {
+          OverlayScrollbarsGlobal.OverlayScrollbars(sidebarWrapper, {
+            scrollbars: {
+              theme: Default.scrollbarTheme,
+              autoHide: Default.scrollbarAutoHide,
+              clickScroll: Default.scrollbarClickScroll,
+            },
+          });
+        }
+      });
+    </script>
+    <script src="./app.js?v=dev"></script>
+  </body>
+</html>
