@@ -146,9 +146,14 @@
   const qs = (sel, scope = document) => scope.querySelector(sel);
   const pageName = document.body?.dataset?.page || "";
   const isLoginView = () => pageName === "login" || Boolean(qs("#login-form"));
-  const isPublicRetroView = () => pageName === "retro-public" || Boolean(qs("#retro-public-form"));
+  const isPublicRetroView = () =>
+    pageName === "retro-public" ||
+    /retro-public\.html$/i.test(window.location.pathname) ||
+    Boolean(qs("#retro-public-form"));
   const isPublicPokerView = () =>
-    pageName === "poker-public" || Boolean(qs("#poker-public-form"));
+    pageName === "poker-public" ||
+    /poker-public\.html$/i.test(window.location.pathname) ||
+    Boolean(qs("#poker-public-form"));
   let authRedirecting = false;
 
   function buildNextPath() {
@@ -159,7 +164,7 @@
   }
 
   function redirectToLogin() {
-    if (authRedirecting || isLoginView()) return;
+    if (authRedirecting || isLoginView() || isPublicRetroView() || isPublicPokerView()) return;
     authRedirecting = true;
     const next = encodeURIComponent(buildNextPath());
     window.location.href = `login.html?next=${next}`;
@@ -551,7 +556,7 @@
       await initLogin();
       return null;
     }
-    if (isPublicRetroView()) {
+    if (isPublicRetroView() || isPublicPokerView()) {
       return null;
     }
     try {
@@ -565,6 +570,31 @@
       redirectToLogin();
       return null;
     }
+  }
+
+  async function copyToClipboard(text, inputEl) {
+    if (!text) return false;
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      // fallback below
+    }
+    try {
+      if (inputEl) {
+        inputEl.focus();
+        inputEl.select();
+        inputEl.setSelectionRange(0, text.length);
+        const ok = document.execCommand("copy");
+        inputEl.blur();
+        return ok;
+      }
+    } catch {
+      // ignore
+    }
+    return false;
   }
 
   function initLogout() {
@@ -7344,6 +7374,7 @@
     const shareUrl = qs("#retro-share-url");
     const shareQr = qs("#retro-share-qr");
     const copyBtn = qs("#retro-share-copy");
+    const shareStatus = qs("#retro-share-status");
     const shareBlock = shareUrl ? shareUrl.closest(".retro-share") : null;
     const qrBlock = shareQr ? shareQr.closest(".retro-qr") : null;
     const phaseStatus = qs("#retro-phase-status");
@@ -7747,6 +7778,10 @@
       if (!shareRetro || !isOpen) {
         shareUrl.value = "";
         shareUrl.readOnly = true;
+        if (shareStatus) {
+          shareStatus.textContent = "";
+          shareStatus.dataset.type = "info";
+        }
         if (shareQr) {
           shareQr.src = "";
           shareQr.classList.remove("is-zoomed");
@@ -7816,9 +7851,15 @@
 
     if (copyBtn && !copyBtn.dataset.bound) {
       copyBtn.dataset.bound = "true";
-      copyBtn.addEventListener("click", () => {
+      copyBtn.addEventListener("click", async () => {
         if (shareUrl?.value && currentRetro) {
-          navigator.clipboard?.writeText(shareUrl.value);
+          const ok = await copyToClipboard(shareUrl.value, shareUrl);
+          if (shareStatus) {
+            shareStatus.textContent = ok ? "Link copiado." : "No se pudo copiar el link.";
+            shareStatus.dataset.type = ok ? "ok" : "error";
+          } else {
+            setRetroStatus(ok ? "Link copiado." : "No se pudo copiar el link.", ok ? "ok" : "warn");
+          }
         }
       });
     }
@@ -9553,6 +9594,7 @@
     const shareUrl = qs("#poker-share-url");
     const shareQr = qs("#poker-share-qr");
     const copyBtn = qs("#poker-share-copy");
+    const shareStatus = qs("#poker-share-status");
     const shareBlock = shareUrl ? shareUrl.closest(".retro-share") : null;
     const qrBlock = shareQr ? shareQr.closest(".retro-qr") : null;
     const createBtn = qs("#poker-create");
@@ -9740,6 +9782,10 @@
       if (!currentSession || !isOpen) {
         shareUrl.value = "";
         shareUrl.readOnly = true;
+        if (shareStatus) {
+          shareStatus.textContent = "";
+          shareStatus.dataset.type = "info";
+        }
         if (shareQr) {
           shareQr.src = "";
           shareQr.classList.remove("is-zoomed");
@@ -9808,9 +9854,15 @@
 
     if (copyBtn && !copyBtn.dataset.bound) {
       copyBtn.dataset.bound = "true";
-      copyBtn.addEventListener("click", () => {
+      copyBtn.addEventListener("click", async () => {
         if (shareUrl?.value && currentSession) {
-          navigator.clipboard?.writeText(shareUrl.value);
+          const ok = await copyToClipboard(shareUrl.value, shareUrl);
+          if (shareStatus) {
+            shareStatus.textContent = ok ? "Link copiado." : "No se pudo copiar el link.";
+            shareStatus.dataset.type = ok ? "ok" : "error";
+          } else {
+            setPokerStatus(ok ? "Link copiado." : "No se pudo copiar el link.", ok ? "ok" : "warn");
+          }
         }
       });
     }
