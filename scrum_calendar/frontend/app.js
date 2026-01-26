@@ -7864,6 +7864,27 @@
           renderPresence(payload);
           return;
         }
+        if (payload?.type === "retro_updated" && shareRetro && payload.retro_id === shareRetro.id) {
+          shareRetro = {
+            ...shareRetro,
+            fase: payload.fase || shareRetro.fase,
+            estado: payload.estado || shareRetro.estado,
+          };
+          if (currentRetro && currentRetro.id === shareRetro.id) {
+            currentRetro = { ...currentRetro, ...shareRetro };
+          }
+          if (shareRetro.estado !== "abierta") {
+            state.retroPresence = { total: 0, personas: [] };
+            renderPresence(state.retroPresence);
+          }
+          updateShareSection();
+          updatePhaseControls();
+          return;
+        }
+        if (payload?.type === "retro_deleted") {
+          initRetrospective({ skipPolling: true });
+          return;
+        }
         initRetrospective({ skipPolling: true });
       });
     }
@@ -7950,6 +7971,11 @@
         await withButtonBusy(
           startGoodBtn,
           async () => {
+            if (shareRetro) {
+              shareRetro = { ...shareRetro, fase: "bien", estado: "abierta" };
+              updateShareSection();
+              updatePhaseControls();
+            }
             await putJson(`/retros/${shareRetro.id}`, { fase: "bien", estado: "abierta" });
             initRetrospective();
           },
@@ -7968,6 +7994,11 @@
         await withButtonBusy(
           startBadBtn,
           async () => {
+            if (shareRetro) {
+              shareRetro = { ...shareRetro, fase: "mal", estado: "abierta" };
+              updateShareSection();
+              updatePhaseControls();
+            }
             await putJson(`/retros/${shareRetro.id}`, { fase: "mal", estado: "abierta" });
             initRetrospective();
           },
@@ -7985,6 +8016,11 @@
       await withButtonBusy(
         trigger,
         async () => {
+          if (shareRetro) {
+            shareRetro = { ...shareRetro, estado: "cerrada" };
+            updateShareSection();
+            updatePhaseControls();
+          }
           const results = await Promise.allSettled(
             openRetros.map((retro) => putJson(`/retros/${retro.id}`, { estado: "cerrada" }))
           );
