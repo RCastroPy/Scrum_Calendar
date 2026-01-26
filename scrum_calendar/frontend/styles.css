@@ -994,6 +994,17 @@ h1 {
   display: none;
 }
 
+.retro-presence-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.retro-submitted {
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
 .btn.primary {
   background: var(--accent);
   color: #1a1a1a;

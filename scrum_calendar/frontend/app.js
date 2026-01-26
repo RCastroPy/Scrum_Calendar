@@ -7417,6 +7417,7 @@
           ? state.retroPresence.personas
           : [];
       const filtered = applyPresenceFilter(personas);
+      const submittedIds = state.retroSubmittedIds || new Set();
       const visibleTotal = filtered.length || 0;
       presenceCount.textContent = String(visibleTotal);
       presenceList.innerHTML = "";
@@ -7429,7 +7430,18 @@
       }
       filtered.forEach((persona) => {
         const li = document.createElement("li");
-        li.textContent = persona.nombre || "";
+        const name = persona.nombre || "";
+        const label = document.createElement("span");
+        label.textContent = name;
+        li.appendChild(label);
+        const personaId = persona.persona_id;
+        if (personaId != null && submittedIds.has(String(personaId))) {
+          const badge = document.createElement("span");
+          badge.className = "retro-submitted";
+          badge.textContent = "✅";
+          badge.title = "Comentario enviado";
+          li.appendChild(badge);
+        }
         presenceList.appendChild(li);
       });
     };
@@ -7768,6 +7780,13 @@
       state.retroPresence = { total: 0, personas: [] };
       renderPresence(state.retroPresence);
     }
+    const currentPhase = shareRetro?.fase || currentRetro?.fase || "";
+    const submittedIds = new Set(
+      items
+        .filter((item) => item?.persona_id && item.tipo === currentPhase)
+        .map((item) => String(item.persona_id))
+    );
+    state.retroSubmittedIds = submittedIds;
 
     const updateShareSection = () => {
       if (!shareUrl) return;
@@ -8607,6 +8626,7 @@
               if (tipoSelect) tipoSelect.value = "bien";
               if (commitmentFields) commitmentFields.classList.add("hidden");
               setStatusText("Gracias, tu aporte fue registrado.", "ok");
+              emitPresence();
             } catch {
               setStatusText("No se pudo guardar.", "error");
             }
