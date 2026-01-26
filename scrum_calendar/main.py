@@ -64,6 +64,10 @@ async def auth_middleware(request: Request, call_next):
         or path.startswith("/docs")
         or path.startswith("/openapi")
         or path.startswith("/redoc")
+        or path.startswith("/retros/public/")
+        or path.startswith("/poker/public/")
+        or path.startswith("/ws/retros/")
+        or path.startswith("/ws/poker/")
     ):
         return await call_next(request)
     token = request.cookies.get("scrum_session")
