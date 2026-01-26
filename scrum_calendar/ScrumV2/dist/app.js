@@ -9898,18 +9898,24 @@
         phaseStatus.textContent = "Sin sesion creada.";
       } else {
         const phaseLabel =
-          currentSession.fase === "votacion"
-            ? "Votacion activa"
-            : currentSession.fase === "revelado"
-              ? "Resultados visibles"
-              : "En espera";
+          currentSession.fase === "revelado" ? "Resultados visibles" : "Votacion activa";
         phaseStatus.textContent = `${phaseLabel} · ${currentSession.estado}`;
       }
       const isClosed = !currentSession || currentSession.estado === "cerrada";
       if (createBtn) createBtn.disabled = Boolean(currentSession);
-      if (startBtn) startBtn.disabled = !currentSession || isClosed;
+      if (startBtn) {
+        startBtn.disabled = true;
+        startBtn.classList.add("hidden");
+      }
       if (revealBtn) revealBtn.disabled = !currentSession || isClosed;
       if (closeBtn) closeBtn.disabled = !currentSession || isClosed;
+      if (revealBtn) {
+        const label =
+          currentSession && currentSession.fase === "revelado"
+            ? "Ocultar resultados"
+            : "Mostrar resultados";
+        revealBtn.textContent = label;
+      }
     };
 
     updateShareSection();
@@ -9993,28 +9999,6 @@
       });
     }
 
-    if (startBtn && !startBtn.dataset.bound) {
-      startBtn.dataset.bound = "true";
-      startBtn.addEventListener("click", async () => {
-        const sessionId = state.pokerSessionId;
-        if (!sessionId) {
-          setPokerStatus("Primero prepara el link.", "warn");
-          return;
-        }
-        await withButtonBusy(
-          startBtn,
-          async () => {
-            await putJson(`/poker/sessions/${sessionId}`, {
-              fase: "votacion",
-              estado: "abierta",
-            });
-            initPokerPlanning({ skipPolling: true });
-          },
-          "Iniciando..."
-        );
-      });
-    }
-
     if (revealBtn && !revealBtn.dataset.bound) {
       revealBtn.dataset.bound = "true";
       revealBtn.addEventListener("click", async () => {
@@ -10026,8 +10010,10 @@
         await withButtonBusy(
           revealBtn,
           async () => {
+            const nextPhase =
+              currentSession && currentSession.fase === "revelado" ? "votacion" : "revelado";
             await putJson(`/poker/sessions/${sessionId}`, {
-              fase: "revelado",
+              fase: nextPhase,
             });
             initPokerPlanning({ skipPolling: true });
           },
@@ -10071,6 +10057,7 @@
     const authorSelect = qs("#poker-public-author");
     const cardsWrap = qs("#poker-public-cards");
     let selectedValue = null;
+    let lastInfo = null;
 
     const setStatusText = (message, type = "info") => {
       if (!status) return;
@@ -10110,6 +10097,7 @@
     };
 
     const applyInfo = (info) => {
+      lastInfo = info;
       if (title) {
         title.textContent = `Poker Planning · ${info.celula_nombre}`;
       }
@@ -10135,15 +10123,7 @@
         setStatusText("Sesion cerrada por el SM.", "warn");
         return;
       }
-      if (info.fase === "votacion") {
-        if (phaseLabel) phaseLabel.textContent = "Votacion activa.";
-        if (form) {
-          form.querySelectorAll("input, select, textarea, button").forEach((el) => {
-            el.disabled = false;
-          });
-        }
-        renderCards(true);
-      } else if (info.fase === "revelado") {
+      if (info.fase === "revelado") {
         if (phaseLabel) phaseLabel.textContent = "Resultados visibles.";
         renderCards(false);
         if (form) {
@@ -10152,12 +10132,16 @@
           });
         }
       } else {
-        if (phaseLabel) phaseLabel.textContent = "Esperando inicio del SM.";
-        renderCards(false);
+        if (phaseLabel) phaseLabel.textContent = "Votacion activa.";
+        renderCards(true);
         if (form) {
           form.querySelectorAll("input, select, textarea, button").forEach((el) => {
-            el.disabled = el.id !== "poker-public-author";
+            el.disabled = false;
           });
+        }
+        if (authorSelect) {
+          authorSelect.disabled = false;
+          authorSelect.removeAttribute("disabled");
         }
       }
     };
@@ -10179,16 +10163,23 @@
     const socket = ensurePokerSocket(token, "public", () => {
       loadInfo();
     });
+    const handleDisconnect = () => {
+      if (lastInfo?.estado === "cerrada") {
+        setConnectionStatus(false);
+      } else {
+        setConnectionStatus(true);
+      }
+    };
     if (socket) {
-      setConnectionStatus(socket.readyState === 1);
+      setConnectionStatus(socket.readyState === 1 || lastInfo?.estado !== "cerrada");
       if (!socket.__boundStatus) {
         socket.__boundStatus = true;
         socket.addEventListener("open", () => setConnectionStatus(true));
-        socket.addEventListener("close", () => setConnectionStatus(false));
-        socket.addEventListener("error", () => setConnectionStatus(false));
+        socket.addEventListener("close", handleDisconnect);
+        socket.addEventListener("error", handleDisconnect);
       }
     } else {
-      setConnectionStatus(false);
+      handleDisconnect();
     }
 
     if (!skipPolling && !window.__pokerPublicPoll) {
@@ -10233,7 +10224,11 @@
                 persona_id: personaId,
                 valor: selectedValue,
               });
-              setStatusText("Voto enviado.", "ok");
+              const sentValue = selectedValue;
+              selectedValue = null;
+              const canVote = lastInfo?.estado === "abierta" && lastInfo?.fase !== "revelado";
+              renderCards(Boolean(canVote));
+              setStatusText(`Voto enviado: ${sentValue}`, "ok");
             } catch {
               setStatusText("No se pudo enviar el voto.", "error");
             }

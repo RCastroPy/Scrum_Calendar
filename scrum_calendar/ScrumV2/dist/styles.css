@@ -1800,13 +1800,16 @@ body.qr-zoomed::before {
   margin: 0;
   max-height: 140px;
   overflow: auto;
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 6px;
 }
 
 .retro-presence-list li {
   padding: 6px 8px;
   border-radius: 8px;
   background: rgba(15, 23, 42, 0.45);
-  margin-bottom: 6px;
+  margin: 0;
   font-size: 0.9rem;
 }
 
@@ -1814,6 +1817,7 @@ body.qr-zoomed::before {
   background: transparent;
   color: var(--muted);
   padding: 4px 0;
+  grid-column: 1 / -1;
 }
 
 .retro-phase {
@@ -2044,6 +2048,13 @@ body.qr-zoomed::before {
   border: 1px solid rgba(57, 255, 20, 0.5);
   color: #39ff14;
   background: rgba(57, 255, 20, 0.08);
+}
+
+.poker-user.is-voted::before {
+  content: "⚑";
+  color: #39ff14;
+  font-size: 0.9rem;
+  margin-right: 6px;
 }
 
 .poker-vote-card {

@@ -553,14 +553,22 @@ class RetroWSManager:
             sockets.remove(websocket)
         if not sockets and token in self.active:
             self.active.pop(token, None)
-        presence = self.presence.get(token, {})
-        if websocket in presence:
-            presence.pop(websocket, None)
-        if not presence and token in self.presence:
-            self.presence.pop(token, None)
+        # Mantener presencia aunque el socket se desconecte (mobile sleep).
 
     def set_presence(self, token: str, websocket: WebSocket, meta: dict) -> None:
-        self.presence.setdefault(token, {})[websocket] = meta or {}
+        presence = self.presence.setdefault(token, {})
+        persona_id = meta.get("persona_id") if isinstance(meta, dict) else None
+        nombre = (meta.get("nombre") or "").strip().lower() if isinstance(meta, dict) else ""
+        for ws, existing in list(presence.items()):
+            if not existing:
+                continue
+            if persona_id is not None and existing.get("persona_id") == persona_id:
+                presence.pop(ws, None)
+                continue
+            existing_name = (existing.get("nombre") or "").strip().lower()
+            if nombre and existing_name == nombre:
+                presence.pop(ws, None)
+        presence[websocket] = meta or {}
 
     def clear_presence(self, token: str, websocket: WebSocket) -> None:
         presence = self.presence.get(token, {})
@@ -632,14 +640,22 @@ class PokerWSManager:
             sockets.remove(websocket)
         if not sockets and token in self.active:
             self.active.pop(token, None)
-        presence = self.presence.get(token, {})
-        if websocket in presence:
-            presence.pop(websocket, None)
-        if not presence and token in self.presence:
-            self.presence.pop(token, None)
+        # Mantener presencia aunque el socket se desconecte (mobile sleep).
 
     def set_presence(self, token: str, websocket: WebSocket, meta: dict) -> None:
-        self.presence.setdefault(token, {})[websocket] = meta or {}
+        presence = self.presence.setdefault(token, {})
+        persona_id = meta.get("persona_id") if isinstance(meta, dict) else None
+        nombre = (meta.get("nombre") or "").strip().lower() if isinstance(meta, dict) else ""
+        for ws, existing in list(presence.items()):
+            if not existing:
+                continue
+            if persona_id is not None and existing.get("persona_id") == persona_id:
+                presence.pop(ws, None)
+                continue
+            existing_name = (existing.get("nombre") or "").strip().lower()
+            if nombre and existing_name == nombre:
+                presence.pop(ws, None)
+        presence[websocket] = meta or {}
 
     def clear_presence(self, token: str, websocket: WebSocket) -> None:
         presence = self.presence.get(token, {})
@@ -1472,7 +1488,7 @@ def crear_poker_sesion(
         celula_id=payload.celula_id,
         token=token,
         estado="abierta",
-        fase="espera",
+        fase="votacion",
         creado_por=user.id,
     )
     db.add(sesion)
