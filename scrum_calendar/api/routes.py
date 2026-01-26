@@ -1657,7 +1657,15 @@ def actualizar_retro(
     retro.actualizado_en = now_py()
     db.commit()
     db.refresh(retro)
-    notify_retro(retro.token, {"type": "retro_updated", "retro_id": retro.id})
+    notify_retro(
+        retro.token,
+        {
+            "type": "retro_updated",
+            "retro_id": retro.id,
+            "fase": retro.fase,
+            "estado": retro.estado,
+        },
+    )
     if closing:
         try:
             anyio.from_thread.run(retro_ws_manager.close_all, retro.token)

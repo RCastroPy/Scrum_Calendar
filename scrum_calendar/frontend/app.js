@@ -8481,6 +8481,7 @@
             }
           });
         }
+        if (authorSelect) authorSelect.disabled = false;
         setPhaseLabel("active", `Activo: ${phaseMap[retroInfo.fase] || ""}`);
         setStatusText("", "info");
       } else {
@@ -8504,6 +8505,35 @@
       }
     };
 
+    const handleRealtimeEvent = (payload) => {
+      if (!payload) return;
+      if (payload.type === "retro_closed") {
+        if (form) form.classList.add("retro-public-closed");
+        if (form) {
+          form.querySelectorAll("input, select, textarea, button").forEach((el) => {
+            el.disabled = true;
+          });
+        }
+        if (phaseLabel) {
+          phaseLabel.textContent = "Retro cerrada";
+          phaseLabel.classList.remove("is-waiting", "is-active");
+          phaseLabel.classList.add("is-closed");
+        }
+        setStatusText("Retro cerrada por el SM.", "warn");
+        return;
+      }
+      if (payload.type === "retro_updated" && retroInfo) {
+        retroInfo = {
+          ...retroInfo,
+          fase: payload.fase || retroInfo.fase,
+          estado: payload.estado || retroInfo.estado,
+        };
+        applyRetroInfo(retroInfo);
+        return;
+      }
+      loadRetroInfo();
+    };
+
     const loadRetroInfo = async () => {
       try {
         const info = await fetchJson(`/retros/public/${token}`);
@@ -8523,8 +8553,8 @@
         loadRetroInfo();
       }, 8000);
     }
-    ensureRetroSocket(token, "public", () => {
-      loadRetroInfo();
+    ensureRetroSocket(token, "public", (payload) => {
+      handleRealtimeEvent(payload);
     });
 
     if (authorSelect && !authorSelect.dataset.boundPresence) {
