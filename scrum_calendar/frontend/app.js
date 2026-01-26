@@ -9795,12 +9795,14 @@
         const front = document.createElement("div");
         front.className = "poker-result-face poker-result-front";
         front.innerHTML = `<span class="poker-result-label">${nombre}</span>`;
-        const back = document.createElement("div");
-        back.className = `poker-result-face poker-result-back ${badgeClass}`;
-        const valueText = value != null ? String(value) : "—";
-        back.innerHTML = `<span class="poker-result-value">${valueText}</span><span class="poker-result-label">${nombre}</span>`;
         inner.appendChild(front);
-        inner.appendChild(back);
+        if (showValues) {
+          const back = document.createElement("div");
+          back.className = `poker-result-face poker-result-back ${badgeClass}`;
+          const valueText = value != null ? String(value) : "—";
+          back.innerHTML = `<span class="poker-result-value">${valueText}</span><span class="poker-result-label">${nombre}</span>`;
+          inner.appendChild(back);
+        }
         card.appendChild(inner);
         grid.appendChild(card);
       });
