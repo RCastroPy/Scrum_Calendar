@@ -10097,6 +10097,7 @@
     };
 
     const applyInfo = (info) => {
+      const prevPhase = lastInfo?.fase;
       lastInfo = info;
       if (title) {
         title.textContent = `Poker Planning · ${info.celula_nombre}`;
@@ -10122,6 +10123,10 @@
         renderCards(false);
         setStatusText("Sesion cerrada por el SM.", "warn");
         return;
+      }
+      if (prevPhase === "revelado" && info.fase !== "revelado") {
+        selectedValue = null;
+        setStatusText("", "info");
       }
       if (info.fase === "revelado") {
         if (phaseLabel) phaseLabel.textContent = "Resultados visibles.";

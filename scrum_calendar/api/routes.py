@@ -1543,7 +1543,10 @@ def actualizar_poker_sesion(
         sesion.estado = normalize_poker_estado(payload.estado)
         closing = sesion.estado == "cerrada"
     if payload.fase is not None:
-        sesion.fase = normalize_poker_fase(payload.fase)
+        next_fase = normalize_poker_fase(payload.fase)
+        if sesion.fase == "revelado" and next_fase == "votacion":
+            db.query(PokerVote).filter(PokerVote.sesion_id == sesion.id).delete()
+        sesion.fase = next_fase
     sesion.actualizado_en = now_py()
     db.commit()
     db.refresh(sesion)
