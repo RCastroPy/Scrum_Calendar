@@ -1482,6 +1482,11 @@ def crear_poker_sesion(
         .first()
     )
     if existente:
+        if existente.fase != "votacion":
+            existente.fase = "votacion"
+            existente.actualizado_en = now_py()
+            db.commit()
+            db.refresh(existente)
         return poker_to_schema(existente)
     token = new_session_token()
     sesion = PokerSession(
@@ -1613,7 +1618,7 @@ def crear_poker_voto_publico(
         raise HTTPException(status_code=404, detail="Sesion no encontrada")
     if sesion.estado != "abierta":
         raise HTTPException(status_code=403, detail="Sesion cerrada")
-    if sesion.fase != "votacion":
+    if sesion.fase not in {"votacion", "espera"}:
         raise HTTPException(status_code=403, detail="Votacion no habilitada")
     if payload.valor not in {1, 2, 3, 5, 8, 13, 21}:
         raise HTTPException(status_code=400, detail="Valor invalido")
