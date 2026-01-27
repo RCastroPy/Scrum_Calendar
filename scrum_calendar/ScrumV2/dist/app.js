@@ -10165,12 +10165,11 @@
         renderCards(false);
         if (form) {
           form.querySelectorAll("input, select, textarea, button").forEach((el) => {
-            el.disabled = el.id !== "poker-public-author";
+            el.disabled = true;
           });
         }
         if (authorSelect) {
-          authorSelect.disabled = false;
-          authorSelect.removeAttribute("disabled");
+          authorSelect.disabled = true;
         }
         setStatusText("Esperando inicio del SM.", "warn");
         return;
@@ -10193,7 +10192,8 @@
         }
       } else {
         if (phaseLabel) phaseLabel.textContent = "Votacion activa.";
-        renderCards(true);
+        const hasAuthor = Boolean(authorSelect?.value);
+        renderCards(hasAuthor);
         if (form) {
           form.querySelectorAll("input, select, textarea, button").forEach((el) => {
             el.disabled = false;
@@ -10260,10 +10260,14 @@
         const id = authorSelect.value ? Number(authorSelect.value) : null;
         if (!id) {
           sendPokerPresence("public", { type: "leave" });
+          renderCards(false);
           return;
         }
         const name = authorSelect.selectedOptions?.[0]?.textContent?.trim() || "";
         sendPokerPresence("public", { type: "join", persona_id: id, nombre: name });
+        if (lastInfo?.estado === "abierta" && lastInfo?.fase !== "revelado") {
+          renderCards(true);
+        }
       });
     }
 
