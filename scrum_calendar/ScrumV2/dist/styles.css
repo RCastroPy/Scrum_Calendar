@@ -982,7 +982,18 @@ h1 {
   display: none;
 }
 
+.retro-public-pickname .retro-public-detail,
+.retro-public-pickname .retro-public-type,
+.retro-public-pickname .retro-public-commitment,
+.retro-public-pickname .form-actions {
+  display: none;
+}
+
 .retro-public-waiting .retro-public-author {
+  display: block;
+}
+
+.retro-public-pickname .retro-public-author {
   display: block;
 }
 

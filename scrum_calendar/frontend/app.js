@@ -7573,6 +7573,7 @@
       setRetroStatus("No se pudo cargar la retros.", "error");
       return;
     }
+    state.retroList = retros;
     const retroSprintIds = new Set(retros.map((retro) => String(retro.sprint_id)));
     const getSprintSortValue = (sprint) => {
       const date = parseDateOnly(sprint.fecha_inicio || sprint.fecha_fin);
@@ -8022,7 +8023,8 @@
     }
 
     const closeAllRetros = async (trigger) => {
-      const openRetros = retros.filter((retro) => retro.estado !== "cerrada");
+      const currentRetros = Array.isArray(state.retroList) ? state.retroList : retros;
+      const openRetros = currentRetros.filter((retro) => retro.estado !== "cerrada");
       if (!openRetros.length) {
         setRetroStatus("No hay retros abiertas.", "warn");
         return;
@@ -8459,9 +8461,15 @@
     const tokenParam = params.get("token");
     const celulaParam = params.get("celula_id");
     const sprintParam = params.get("sprint_id");
+    const celulaId = celulaParam ? Number.parseInt(celulaParam, 10) : null;
+    const sprintId = sprintParam ? Number.parseInt(sprintParam, 10) : null;
     let resolvedToken = tokenParam;
     if (!tokenParam && (!celulaParam || !sprintParam)) {
       setStatusText("Link invalido. Falta celula o sprint.", "error");
+      return;
+    }
+    if (!tokenParam && (!Number.isFinite(celulaId) || !Number.isFinite(sprintId))) {
+      setStatusText("Link invalido. Celula o sprint incorrecto.", "error");
       return;
     }
     let retroInfo;
@@ -8513,6 +8521,8 @@
         });
         fillPersona(authorSelect, "Tu nombre", personas);
         fillPersona(assigneeSelect, "Asignado", personas);
+        if (authorSelect) authorSelect.value = "";
+        if (assigneeSelect) assigneeSelect.value = "";
         personasLoaded = true;
       }
       if (authorSelect?.value) {
@@ -8530,16 +8540,21 @@
         return;
       }
 
+      const hasAuthor = Boolean(authorSelect?.value);
       if (retroInfo.fase === "bien" || retroInfo.fase === "mal") {
-        if (form) form.classList.remove("retro-public-waiting", "retro-public-closed");
+        if (form) form.classList.remove("retro-public-closed");
+        if (form) {
+          form.classList.toggle("retro-public-waiting", !hasAuthor);
+          form.classList.toggle("retro-public-pickname", !hasAuthor);
+        }
         if (tipoSelect) {
           tipoSelect.value = retroInfo.fase;
           tipoSelect.disabled = true;
         }
         if (tipoWrap) tipoWrap.classList.add("hidden");
         if (commitmentFields) commitmentFields.classList.add("hidden");
-        if (detailLabel) detailLabel.classList.remove("hidden");
-        if (formActions) formActions.classList.remove("hidden");
+        if (detailLabel) detailLabel.classList.toggle("hidden", !hasAuthor);
+        if (formActions) formActions.classList.toggle("hidden", !hasAuthor);
         if (authorLabel) authorLabel.classList.remove("hidden");
         if (form) {
           form.querySelectorAll("input, select, textarea, button").forEach((el) => {
@@ -8548,7 +8563,9 @@
               el.id === "retro-public-author" ||
               el.type === "submit"
             ) {
-              el.disabled = false;
+              el.disabled = el.id === "retro-public-detail" || el.type === "submit"
+                ? !hasAuthor
+                : false;
             } else {
               el.disabled = true;
             }
@@ -8556,7 +8573,11 @@
         }
         if (authorSelect) authorSelect.disabled = false;
         setPhaseLabel("active", `Activo: ${phaseMap[retroInfo.fase] || ""}`);
-        setStatusText("", "info");
+        if (!hasAuthor) {
+          setStatusText("Selecciona tu nombre para continuar.", "warn");
+        } else {
+          setStatusText("", "info");
+        }
       } else {
         if (form) form.classList.add("retro-public-waiting");
         if (form) form.classList.remove("retro-public-closed");
@@ -8611,12 +8632,29 @@
       try {
         const info = tokenParam
           ? await fetchJson(`/retros/public/${tokenParam}`)
-          : await fetchJson(`/retros/public?celula_id=${celulaParam}&sprint_id=${sprintParam}`);
+          : await fetchJson(`/retros/public?celula_id=${celulaId}&sprint_id=${sprintId}`);
         resolvedToken = info.token;
         applyRetroInfo(info);
         return info;
       } catch (err) {
-        setStatusText("No se pudo cargar la retro.", "error");
+        let detail = "No se pudo cargar la retro.";
+        if (err && typeof err.message === "string") {
+          try {
+            const parsed = JSON.parse(err.message);
+            if (parsed?.detail) {
+              if (Array.isArray(parsed.detail)) {
+                detail = parsed.detail.map((d) => d.msg || d.type).join(" · ") || detail;
+              } else if (typeof parsed.detail === "string") {
+                detail = parsed.detail;
+              }
+            } else {
+              detail = err.message;
+            }
+          } catch (parseErr) {
+            detail = err.message;
+          }
+        }
+        setStatusText(detail, "error");
         return null;
       }
     };
@@ -8628,6 +8666,14 @@
         if (document.hidden) return;
         loadRetroInfo();
       }, 8000);
+    }
+
+    if (authorSelect) {
+      authorSelect.addEventListener("change", () => {
+        if (retroInfo) {
+          applyRetroInfo(retroInfo);
+        }
+      });
     }
     if (resolvedToken) {
       ensureRetroSocket(resolvedToken, "public", (payload) => {

@@ -330,6 +330,16 @@ class RetrospectiveItem(Base):
     actualizado_en = Column(DateTime, nullable=False, default=now_py, onupdate=now_py)
 
     retro = relationship("Retrospective", back_populates="items")
+    persona = relationship(
+        "Persona",
+        foreign_keys=[persona_id],
+        back_populates="retro_items",
+    )
+    asignado = relationship(
+        "Persona",
+        foreign_keys=[asignado_id],
+        back_populates="retro_assigned_items",
+    )
 
 
 class PokerSession(Base):

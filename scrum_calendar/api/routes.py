@@ -1263,28 +1263,6 @@ def listar_compromisos(
     return results
 
 
-@router.get("/retros/{retro_id}", response_model=RetroDetailOut)
-def obtener_retro(
-    retro_id: int,
-    scrum_session: Optional[str] = Cookie(default=None),
-    db: Session = Depends(get_db),
-):
-    user = get_user_from_token(db, scrum_session)
-    if not user:
-        raise HTTPException(status_code=401, detail="No autenticado")
-    require_admin(user)
-    retro = (
-        db.query(Retrospective)
-        .options(joinedload(Retrospective.items))
-        .filter(Retrospective.id == retro_id)
-        .first()
-    )
-    if not retro:
-        raise HTTPException(status_code=404, detail="Retrospectiva no encontrada")
-    items = [retro_item_to_schema(item) for item in retro.items]
-    return {"retro": retro_to_schema(retro), "items": items}
-
-
 @router.post("/retros", response_model=RetroOut, status_code=status.HTTP_201_CREATED)
 def crear_retro(
     payload: RetroCreate,
@@ -1508,6 +1486,28 @@ def obtener_retro_publico_por_sprint(
             for p in personas
         ],
     }
+
+
+@router.get("/retros/{retro_id}", response_model=RetroDetailOut)
+def obtener_retro(
+    retro_id: int,
+    scrum_session: Optional[str] = Cookie(default=None),
+    db: Session = Depends(get_db),
+):
+    user = get_user_from_token(db, scrum_session)
+    if not user:
+        raise HTTPException(status_code=401, detail="No autenticado")
+    require_admin(user)
+    retro = (
+        db.query(Retrospective)
+        .options(joinedload(Retrospective.items))
+        .filter(Retrospective.id == retro_id)
+        .first()
+    )
+    if not retro:
+        raise HTTPException(status_code=404, detail="Retrospectiva no encontrada")
+    items = [retro_item_to_schema(item) for item in retro.items]
+    return {"retro": retro_to_schema(retro), "items": items}
 
 
 @router.post(
