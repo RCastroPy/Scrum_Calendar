@@ -10103,6 +10103,7 @@
     let selectedValue = null;
     let lastInfo = null;
     let presenceIds = new Set();
+    let presenceNames = new Set();
     let selectedPersonaId = null;
 
     const setStatusText = (message, type = "info") => {
@@ -10156,7 +10157,9 @@
           opt.disabled = false;
           return;
         }
-        const isTaken = presenceIds.has(String(opt.value));
+        const nameKey = normalizeText(opt.textContent || "");
+        const isTaken =
+          presenceIds.has(String(opt.value)) || (nameKey && presenceNames.has(nameKey));
         opt.disabled = isTaken && opt.value !== current;
       });
     };
@@ -10188,6 +10191,7 @@
         selectedValue = null;
         selectedPersonaId = null;
         presenceIds = new Set();
+        presenceNames = new Set();
         if (authorSelect) {
           authorSelect.value = "";
           delete authorSelect.dataset.userChosen;
@@ -10259,8 +10263,12 @@
     const socket = resolvedToken
       ? ensurePokerSocket(resolvedToken, "public", (payload) => {
           if (payload?.type === "presence") {
+            const personas = payload.personas || [];
             presenceIds = new Set(
-              (payload.personas || []).map((persona) => String(persona.persona_id))
+              personas.map((persona) => String(persona.persona_id || "")).filter(Boolean)
+            );
+            presenceNames = new Set(
+              personas.map((persona) => normalizeText(persona.nombre || "")).filter(Boolean)
             );
             updateAuthorAvailability();
             return;
@@ -10305,6 +10313,11 @@
           delete authorSelect.dataset.userChosen;
           if (selectedPersonaId) {
             presenceIds.delete(String(selectedPersonaId));
+            if (authorSelect.selectedOptions?.[0]) {
+              presenceNames.delete(
+                normalizeText(authorSelect.selectedOptions[0].textContent || "")
+              );
+            }
             selectedPersonaId = null;
           }
           updateAuthorAvailability();
@@ -10313,9 +10326,16 @@
         authorSelect.dataset.userChosen = "true";
         if (selectedPersonaId && selectedPersonaId !== id) {
           presenceIds.delete(String(selectedPersonaId));
+          if (authorSelect.selectedOptions?.[0]) {
+            presenceNames.delete(
+              normalizeText(authorSelect.selectedOptions[0].textContent || "")
+            );
+          }
         }
         selectedPersonaId = id;
         presenceIds.add(String(id));
+        const selectedName = authorSelect.selectedOptions?.[0]?.textContent || "";
+        if (selectedName) presenceNames.add(normalizeText(selectedName));
         updateAuthorAvailability();
         const name = authorSelect.selectedOptions?.[0]?.textContent?.trim() || "";
         sendPokerPresence("public", { type: "join", persona_id: id, nombre: name });
