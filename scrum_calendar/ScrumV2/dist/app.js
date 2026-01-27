@@ -7425,12 +7425,31 @@
       });
     const renderPresence = (payload) => {
       if (!presenceCount || !presenceList) return;
-      const personas = Array.isArray(payload?.personas)
+      const live = Array.isArray(payload?.personas)
         ? payload.personas
         : Array.isArray(state.retroPresence?.personas)
           ? state.retroPresence.personas
           : [];
-      const filtered = applyPresenceFilter(personas);
+      const claimedIds = Array.from(state.retroClaimedIds || []);
+      const claimedPersonas = claimedIds
+        .map((id) => {
+          const name = personaMap[id];
+          if (!name) return null;
+          return { persona_id: id, nombre: name };
+        })
+        .filter(Boolean);
+      const merged = new Map();
+      live.forEach((persona) => {
+        if (!persona) return;
+        const key = String(persona.persona_id || persona.id || persona.nombre || "");
+        if (!key) return;
+        merged.set(key, persona);
+      });
+      claimedPersonas.forEach((persona) => {
+        const key = String(persona.persona_id);
+        if (!merged.has(key)) merged.set(key, persona);
+      });
+      const filtered = applyPresenceFilter(Array.from(merged.values()));
       const submittedIds = state.retroSubmittedIds || new Set();
       const visibleTotal = filtered.length || 0;
       presenceCount.textContent = String(visibleTotal);
@@ -7775,6 +7794,19 @@
     if (!shareRetro && state.retroActiveId) {
       shareRetro = retros.find((retro) => String(retro.id) === state.retroActiveId) || null;
     }
+    state.retroClaimedIds = new Set();
+    if (shareRetro?.token) {
+      try {
+        const publicInfo = await fetchJson(`/retros/public/${shareRetro.token}`);
+        if (Array.isArray(publicInfo?.claimed_persona_ids)) {
+          state.retroClaimedIds = new Set(
+            publicInfo.claimed_persona_ids.map((id) => String(id))
+          );
+        }
+      } catch {
+        state.retroClaimedIds = new Set();
+      }
+    }
     let items = [];
     if (currentRetro) {
       try {
@@ -7879,6 +7911,11 @@
           renderPresence(payload);
           return;
         }
+        if (payload?.type === "claims_updated") {
+          state.retroClaimedIds = new Set((payload.claims || []).map((id) => String(id)));
+          renderPresence(state.retroPresence);
+          return;
+        }
         if (
           payload?.type === "item_added" ||
           payload?.type === "item_updated" ||
@@ -7896,6 +7933,9 @@
               } else {
                 items.push(item);
               }
+            } else {
+              initRetrospective({ skipPolling: true });
+              return;
             }
             const activePhase = shareRetro?.fase || currentRetro?.fase || "";
             state.retroSubmittedIds = new Set(
@@ -7920,6 +7960,7 @@
           }
           if (shareRetro.estado !== "abierta") {
             state.retroPresence = { total: 0, personas: [] };
+            state.retroClaimedIds = new Set();
             renderPresence(state.retroPresence);
           }
           updateShareSection();
@@ -8531,7 +8572,6 @@
         const opt = document.createElement("option");
         opt.value = persona.id;
         opt.textContent = `${persona.nombre} ${persona.apellido}`.trim();
-        opt.dataset.label = opt.textContent;
         select.appendChild(opt);
       });
     };
@@ -8543,13 +8583,6 @@
         const personaId = Number(opt.value);
         const isClaimed = claimedIds.has(personaId) && personaId !== claimedPersonaId;
         opt.disabled = isClaimed;
-        const baseLabel = opt.dataset.label || opt.textContent || "";
-        if (!opt.dataset.label) {
-          opt.dataset.label = baseLabel;
-        }
-        opt.textContent = isClaimed
-          ? `${opt.dataset.label || baseLabel} (No disponible)`
-          : opt.dataset.label || baseLabel;
       });
     };
     const emitPresence = () => {
