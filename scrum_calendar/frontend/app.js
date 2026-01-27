@@ -10102,6 +10102,8 @@
     const cardsWrap = qs("#poker-public-cards");
     let selectedValue = null;
     let lastInfo = null;
+    let presenceIds = new Set();
+    let selectedPersonaId = null;
 
     const setStatusText = (message, type = "info") => {
       if (!status) return;
@@ -10146,6 +10148,19 @@
       });
     };
 
+    const updateAuthorAvailability = () => {
+      if (!authorSelect) return;
+      const current = authorSelect.value;
+      Array.from(authorSelect.options).forEach((opt) => {
+        if (!opt.value) {
+          opt.disabled = false;
+          return;
+        }
+        const isTaken = presenceIds.has(String(opt.value));
+        opt.disabled = isTaken && opt.value !== current;
+      });
+    };
+
     const applyInfo = (info) => {
       const prevPhase = lastInfo?.fase;
       lastInfo = info;
@@ -10166,10 +10181,13 @@
         } else {
           authorSelect.value = "";
         }
+        updateAuthorAvailability();
       }
       if (info.estado !== "abierta") {
         if (phaseLabel) phaseLabel.textContent = "Esperando inicio del SM.";
         selectedValue = null;
+        selectedPersonaId = null;
+        presenceIds = new Set();
         if (authorSelect) {
           authorSelect.value = "";
           delete authorSelect.dataset.userChosen;
@@ -10239,7 +10257,14 @@
     if (!info) return;
 
     const socket = resolvedToken
-      ? ensurePokerSocket(resolvedToken, "public", () => {
+      ? ensurePokerSocket(resolvedToken, "public", (payload) => {
+          if (payload?.type === "presence") {
+            presenceIds = new Set(
+              (payload.personas || []).map((persona) => String(persona.persona_id))
+            );
+            updateAuthorAvailability();
+            return;
+          }
           loadInfo();
         })
       : null;
@@ -10278,9 +10303,20 @@
           if (cardsWrap) cardsWrap.classList.add("hidden");
           renderCards(false);
           delete authorSelect.dataset.userChosen;
+          if (selectedPersonaId) {
+            presenceIds.delete(String(selectedPersonaId));
+            selectedPersonaId = null;
+          }
+          updateAuthorAvailability();
           return;
         }
         authorSelect.dataset.userChosen = "true";
+        if (selectedPersonaId && selectedPersonaId !== id) {
+          presenceIds.delete(String(selectedPersonaId));
+        }
+        selectedPersonaId = id;
+        presenceIds.add(String(id));
+        updateAuthorAvailability();
         const name = authorSelect.selectedOptions?.[0]?.textContent?.trim() || "";
         sendPokerPresence("public", { type: "join", persona_id: id, nombre: name });
         if (lastInfo?.estado === "abierta" && lastInfo?.fase !== "revelado") {
