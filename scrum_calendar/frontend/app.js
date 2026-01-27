@@ -9962,6 +9962,22 @@
           renderResults(currentSession, votes, payload);
           return;
         }
+        if (payload?.type === "vote_cast") {
+          const personaId = String(payload.persona_id || "");
+          if (personaId) {
+            const index = votes.findIndex((vote) => String(vote.persona_id) === personaId);
+            if (index >= 0) {
+              votes[index].valor = payload.valor;
+            } else {
+              votes.push({ persona_id: payload.persona_id, valor: payload.valor });
+            }
+            state.pokerVotes = votes;
+            const nextVoted = new Set(votes.map((vote) => String(vote.persona_id)));
+            renderPresence(state.pokerPresence || presencePayload, nextVoted);
+            renderResults(currentSession, votes, state.pokerPresence || presencePayload);
+          }
+          return;
+        }
         initPokerPlanning({ skipPolling: true });
       });
     }
@@ -10262,6 +10278,18 @@
 
     const socket = resolvedToken
       ? ensurePokerSocket(resolvedToken, "public", (payload) => {
+          if (payload?.type === "presence_rejected") {
+            setStatusText(payload?.reason || "Nombre en uso.", "error");
+            if (authorSelect) {
+              authorSelect.value = "";
+              delete authorSelect.dataset.userChosen;
+            }
+            selectedValue = null;
+            if (cardsWrap) cardsWrap.classList.add("hidden");
+            renderCards(false);
+            updateAuthorAvailability();
+            return;
+          }
           if (payload?.type === "presence") {
             const personas = payload.personas || [];
             presenceIds = new Set(

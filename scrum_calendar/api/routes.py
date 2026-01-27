@@ -555,20 +555,22 @@ class RetroWSManager:
             self.active.pop(token, None)
         # Mantener presencia aunque el socket se desconecte (mobile sleep).
 
-    def set_presence(self, token: str, websocket: WebSocket, meta: dict) -> None:
+    def set_presence(self, token: str, websocket: WebSocket, meta: dict) -> bool:
         presence = self.presence.setdefault(token, {})
         persona_id = meta.get("persona_id") if isinstance(meta, dict) else None
         nombre = (meta.get("nombre") or "").strip().lower() if isinstance(meta, dict) else ""
         for ws, existing in list(presence.items()):
+            if ws == websocket:
+                continue
             if not existing:
                 continue
             if persona_id is not None and existing.get("persona_id") == persona_id:
-                presence.pop(ws, None)
-                continue
+                return False
             existing_name = (existing.get("nombre") or "").strip().lower()
             if nombre and existing_name == nombre:
-                presence.pop(ws, None)
+                return False
         presence[websocket] = meta or {}
+        return True
 
     def clear_presence(self, token: str, websocket: WebSocket) -> None:
         presence = self.presence.get(token, {})
@@ -897,11 +899,19 @@ async def poker_ws(websocket: WebSocket, token: str) -> None:
             if payload.get("type") == "join":
                 persona_id = payload.get("persona_id")
                 nombre = payload.get("nombre")
-                poker_ws_manager.set_presence(
+                accepted = poker_ws_manager.set_presence(
                     token,
                     websocket,
                     {"persona_id": persona_id, "nombre": nombre},
                 )
+                if not accepted:
+                    await websocket.send_json(
+                        {
+                            "type": "presence_rejected",
+                            "reason": "Nombre ya seleccionado",
+                        }
+                    )
+                    continue
                 await poker_ws_manager.broadcast_presence(token)
             elif payload.get("type") == "leave":
                 poker_ws_manager.clear_presence(token, websocket)
@@ -1733,7 +1743,15 @@ def crear_poker_voto_publico(
     vote.actualizado_en = now_py()
     db.commit()
     db.refresh(vote)
-    notify_poker(sesion.token, {"type": "vote_cast", "session_id": sesion.id})
+    notify_poker(
+        sesion.token,
+        {
+            "type": "vote_cast",
+            "session_id": sesion.id,
+            "persona_id": vote.persona_id,
+            "valor": vote.valor,
+        },
+    )
     return poker_vote_to_schema(vote)
 
 
