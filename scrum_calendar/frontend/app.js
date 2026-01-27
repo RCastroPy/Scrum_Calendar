@@ -10060,6 +10060,8 @@
         if (nextPhase === "votacion") {
           votes = [];
           state.pokerVotes = [];
+          votedIds = new Set();
+          renderPresence(presencePayload, votedIds);
         }
         updateControls();
         renderResults(currentSession, votes, presencePayload);
