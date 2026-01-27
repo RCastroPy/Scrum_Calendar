@@ -21,6 +21,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
+from starlette.websockets import WebSocketState
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
@@ -561,6 +562,15 @@ class RetroWSManager:
         for ws in list(presence.keys()):
             if ws not in active_sockets:
                 presence.pop(ws, None)
+                continue
+            if getattr(ws, "application_state", None) is not None:
+                if ws.application_state != WebSocketState.CONNECTED:
+                    presence.pop(ws, None)
+                    continue
+            if getattr(ws, "client_state", None) is not None:
+                if ws.client_state != WebSocketState.CONNECTED:
+                    presence.pop(ws, None)
+                    continue
         persona_id = meta.get("persona_id") if isinstance(meta, dict) else None
         nombre = (meta.get("nombre") or "").strip().lower() if isinstance(meta, dict) else ""
         for ws, existing in list(presence.items()):
