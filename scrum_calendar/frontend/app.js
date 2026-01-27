@@ -10154,6 +10154,10 @@
             el.disabled = true;
           });
         }
+        if (authorSelect) {
+          authorSelect.disabled = false;
+          authorSelect.removeAttribute("disabled");
+        }
       } else {
         if (phaseLabel) phaseLabel.textContent = "Votacion activa.";
         renderCards(true);
