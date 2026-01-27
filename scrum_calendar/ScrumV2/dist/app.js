@@ -10121,6 +10121,7 @@
     let presenceIds = new Set();
     let presenceNames = new Set();
     let selectedPersonaId = null;
+    let claimedPersonaId = null;
 
     const setStatusText = (message, type = "info") => {
       if (!status) return;
@@ -10183,6 +10184,9 @@
     const applyInfo = (info) => {
       const prevPhase = lastInfo?.fase;
       lastInfo = info;
+      if (Array.isArray(info?.claimed_persona_ids)) {
+        presenceIds = new Set(info.claimed_persona_ids.map((id) => String(id)));
+      }
       if (title) {
         title.textContent = `Poker Planning · ${info.celula_nombre}`;
       }
@@ -10206,6 +10210,7 @@
         if (phaseLabel) phaseLabel.textContent = "Esperando inicio del SM.";
         selectedValue = null;
         selectedPersonaId = null;
+        claimedPersonaId = null;
         presenceIds = new Set();
         presenceNames = new Set();
         if (authorSelect) {
@@ -10286,6 +10291,12 @@
             setStatusText("Sesion cerrada por el SM.", "warn");
             return;
           }
+          if (payload?.type === "claims_updated") {
+            const claims = payload.claims || [];
+            presenceIds = new Set(claims.map((id) => String(id)));
+            updateAuthorAvailability();
+            return;
+          }
           if (payload?.type === "presence_rejected") {
             setStatusText(payload?.reason || "Nombre en uso.", "error");
             if (authorSelect) {
@@ -10293,6 +10304,7 @@
               delete authorSelect.dataset.userChosen;
             }
             selectedValue = null;
+            claimedPersonaId = null;
             if (cardsWrap) cardsWrap.classList.add("hidden");
             renderCards(false);
             updateAuthorAvailability();
@@ -10340,7 +10352,7 @@
 
     if (authorSelect && !authorSelect.dataset.boundPresence) {
       authorSelect.dataset.boundPresence = "true";
-      authorSelect.addEventListener("change", () => {
+      authorSelect.addEventListener("change", async () => {
         const id = authorSelect.value ? Number(authorSelect.value) : null;
         if (!id) {
           sendPokerPresence("public", { type: "leave" });
@@ -10356,8 +10368,40 @@
             }
             selectedPersonaId = null;
           }
+          if (claimedPersonaId && resolvedToken) {
+            await fetchWithFallback(`/poker/public/${resolvedToken}/claim/${claimedPersonaId}`, {
+              method: "DELETE",
+            });
+            claimedPersonaId = null;
+          }
           updateAuthorAvailability();
           return;
+        }
+        if (resolvedToken) {
+          if (claimedPersonaId && claimedPersonaId !== id) {
+            await fetchWithFallback(`/poker/public/${resolvedToken}/claim/${claimedPersonaId}`, {
+              method: "DELETE",
+            });
+            claimedPersonaId = null;
+          }
+          const claimRes = await postJson(`/poker/public/${resolvedToken}/claim`, {
+            persona_id: id,
+          }).catch(() => {
+            setStatusText("Nombre ya seleccionado.", "error");
+            return null;
+          });
+          if (!claimRes) {
+            authorSelect.value = "";
+            delete authorSelect.dataset.userChosen;
+            selectedValue = null;
+            if (cardsWrap) cardsWrap.classList.add("hidden");
+            renderCards(false);
+            updateAuthorAvailability();
+            return;
+          }
+          claimedPersonaId = id;
+          const claims = claimRes.claimed || [];
+          presenceIds = new Set(claims.map((pid) => String(pid)));
         }
         authorSelect.dataset.userChosen = "true";
         if (selectedPersonaId && selectedPersonaId !== id) {

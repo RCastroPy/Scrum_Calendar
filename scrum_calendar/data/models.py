@@ -351,6 +351,11 @@ class PokerSession(Base):
         back_populates="sesion",
         cascade="all, delete-orphan",
     )
+    claims = relationship(
+        "PokerClaim",
+        back_populates="sesion",
+        cascade="all, delete-orphan",
+    )
 
 
 class PokerVote(Base):
@@ -368,6 +373,22 @@ class PokerVote(Base):
 
     sesion = relationship("PokerSession", back_populates="votos")
     persona = relationship("Persona", back_populates="poker_votes")
+
+
+class PokerClaim(Base):
+    __tablename__ = "poker_claims"
+    __table_args__ = (
+        UniqueConstraint("sesion_id", "persona_id", name="uq_poker_claim"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    sesion_id = Column(Integer, ForeignKey("poker_sessions.id"), nullable=False)
+    persona_id = Column(Integer, ForeignKey("personas.id"), nullable=False)
+    creado_en = Column(DateTime, nullable=False, default=now_py)
+    actualizado_en = Column(DateTime, nullable=False, default=now_py, onupdate=now_py)
+
+    sesion = relationship("PokerSession", back_populates="claims")
+    persona = relationship("Persona")
 
 
 class Usuario(Base):

@@ -22,7 +22,6 @@ from fastapi import (
     status,
 )
 from starlette.websockets import WebSocketState
-from starlette.websockets import WebSocketState
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
@@ -48,6 +47,7 @@ from api.schemas import (
     OneOnOneSessionOut,
     OneOnOneSessionUpdate,
     PokerPublicOut,
+    PokerClaimCreate,
     PokerPublicVoteCreate,
     PokerSessionCreate,
     PokerSessionDetailOut,
@@ -100,6 +100,7 @@ from data.models import (
     OneOnOneSession,
     PokerSession,
     PokerVote,
+    PokerClaim,
     Retrospective,
     RetrospectiveItem,
     Persona,
@@ -856,6 +857,15 @@ def poker_to_schema(sesion: PokerSession) -> dict:
     }
 
 
+def poker_claim_ids(db: Session, session_id: int) -> List[int]:
+    return [
+        row[0]
+        for row in db.query(PokerClaim.persona_id)
+        .filter(PokerClaim.sesion_id == session_id)
+        .all()
+    ]
+
+
 def poker_vote_to_schema(vote: PokerVote) -> dict:
     nombre = ""
     if vote.persona:
@@ -1585,11 +1595,20 @@ def crear_poker_sesion(
     if existente:
         # Reinicia presencia para permitir nueva seleccion de nombres
         poker_ws_manager.presence.pop(existente.token, None)
+        db.query(PokerClaim).filter(PokerClaim.sesion_id == existente.id).delete()
+        db.commit()
         try:
             anyio.from_thread.run(
                 poker_ws_manager.broadcast_presence, existente.token
             )
         except RuntimeError:
+            pass
+        try:
+            notify_poker(
+                existente.token,
+                {"type": "claims_updated", "claims": []},
+            )
+        except Exception:
             pass
         if existente.fase != "votacion":
             existente.fase = "votacion"
@@ -1661,6 +1680,15 @@ def actualizar_poker_sesion(
     db.refresh(sesion)
     notify_poker(sesion.token, {"type": "session_updated", "session_id": sesion.id})
     if closing:
+        db.query(PokerClaim).filter(PokerClaim.sesion_id == sesion.id).delete()
+        db.commit()
+        try:
+            notify_poker(
+                sesion.token,
+                {"type": "claims_updated", "claims": []},
+            )
+        except Exception:
+            pass
         try:
             anyio.from_thread.run(poker_ws_manager.close_all, sesion.token)
         except RuntimeError:
@@ -1712,6 +1740,7 @@ def obtener_poker_publico(token: str, db: Session = Depends(get_db)):
             {"id": p.id, "nombre": p.nombre, "apellido": p.apellido, "activo": p.activo}
             for p in personas
         ],
+        "claimed_persona_ids": poker_claim_ids(db, sesion.id),
     }
 
 
@@ -1744,7 +1773,67 @@ def obtener_poker_publico_por_celula(celula_id: int, db: Session = Depends(get_d
             {"id": p.id, "nombre": p.nombre, "apellido": p.apellido, "activo": p.activo}
             for p in personas
         ],
+        "claimed_persona_ids": poker_claim_ids(db, sesion.id),
     }
+
+
+@router.post("/poker/public/{token}/claim")
+def reclamar_poker_persona(
+    token: str,
+    payload: PokerClaimCreate,
+    db: Session = Depends(get_db),
+):
+    sesion = db.query(PokerSession).filter(PokerSession.token == token).first()
+    if not sesion:
+        raise HTTPException(status_code=404, detail="Sesion no encontrada")
+    if sesion.estado != "abierta":
+        raise HTTPException(status_code=403, detail="Sesion cerrada")
+    persona = (
+        db.query(Persona)
+        .join(persona_celulas, persona_celulas.c.persona_id == Persona.id)
+        .filter(
+            Persona.id == payload.persona_id,
+            persona_celulas.c.celula_id == sesion.celula_id,
+            Persona.activo.is_(True),
+        )
+        .first()
+    )
+    if not persona:
+        raise HTTPException(status_code=404, detail="Persona no encontrada")
+    existing = (
+        db.query(PokerClaim)
+        .filter(PokerClaim.sesion_id == sesion.id, PokerClaim.persona_id == persona.id)
+        .first()
+    )
+    if not existing:
+        claim = PokerClaim(sesion_id=sesion.id, persona_id=persona.id)
+        db.add(claim)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Nombre ya seleccionado")
+    claims = poker_claim_ids(db, sesion.id)
+    notify_poker(sesion.token, {"type": "claims_updated", "claims": claims})
+    return {"ok": True, "claimed": claims}
+
+
+@router.delete("/poker/public/{token}/claim/{persona_id}")
+def liberar_poker_persona(
+    token: str,
+    persona_id: int,
+    db: Session = Depends(get_db),
+):
+    sesion = db.query(PokerSession).filter(PokerSession.token == token).first()
+    if not sesion:
+        raise HTTPException(status_code=404, detail="Sesion no encontrada")
+    db.query(PokerClaim).filter(
+        PokerClaim.sesion_id == sesion.id, PokerClaim.persona_id == persona_id
+    ).delete()
+    db.commit()
+    claims = poker_claim_ids(db, sesion.id)
+    notify_poker(sesion.token, {"type": "claims_updated", "claims": claims})
+    return {"ok": True, "claimed": claims}
 
 
 @router.post(

@@ -252,6 +252,11 @@ class PokerPublicOut(BaseModel):
     fase: str
     token: str
     personas: List[PersonaLite]
+    claimed_persona_ids: List[int] = []
+
+
+class PokerClaimCreate(BaseModel):
+    persona_id: int
 
 
 class PokerPublicVoteCreate(BaseModel):
