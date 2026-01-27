@@ -275,6 +275,7 @@ class RetroPublicOut(BaseModel):
     fase: str
     token: str
     personas: List[PersonaLite]
+    claimed_persona_ids: List[int] = []
 
 
 class RetroPublicItemCreate(BaseModel):
@@ -283,6 +284,11 @@ class RetroPublicItemCreate(BaseModel):
     persona_id: Optional[int] = None
     asignado_id: Optional[int] = None
     fecha_compromiso: Optional[date] = None
+
+
+class RetroClaimCreate(BaseModel):
+    persona_id: int
+    client_id: Optional[str] = None
 
 
 class CelulaOut(BaseModel):

@@ -312,6 +312,11 @@ class Retrospective(Base):
         back_populates="retro",
         cascade="all, delete-orphan",
     )
+    claims = relationship(
+        "RetroClaim",
+        back_populates="retro",
+        cascade="all, delete-orphan",
+    )
     usuario = relationship("Usuario")
 
 
@@ -340,6 +345,23 @@ class RetrospectiveItem(Base):
         foreign_keys=[asignado_id],
         back_populates="retro_assigned_items",
     )
+
+
+class RetroClaim(Base):
+    __tablename__ = "retro_claims"
+    __table_args__ = (
+        UniqueConstraint("retro_id", "persona_id", name="uq_retro_claim"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    retro_id = Column(Integer, ForeignKey("retrospectives.id"), nullable=False)
+    persona_id = Column(Integer, ForeignKey("personas.id"), nullable=False)
+    client_id = Column(String(64), nullable=True)
+    creado_en = Column(DateTime, nullable=False, default=now_py)
+    actualizado_en = Column(DateTime, nullable=False, default=now_py, onupdate=now_py)
+
+    retro = relationship("Retrospective", back_populates="claims")
+    persona = relationship("Persona")
 
 
 class PokerSession(Base):
