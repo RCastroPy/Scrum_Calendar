@@ -22,6 +22,7 @@ from fastapi import (
     status,
 )
 from starlette.websockets import WebSocketState
+from starlette.websockets import WebSocketState
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
@@ -645,6 +646,31 @@ class PokerWSManager:
         self.active: Dict[str, List[WebSocket]] = {}
         self.presence: Dict[str, Dict[WebSocket, dict]] = {}
 
+    def prune(self, token: str) -> None:
+        sockets = list(self.active.get(token, []) or [])
+        if not sockets:
+            self.active.pop(token, None)
+            self.presence.pop(token, None)
+            return
+        for ws in list(sockets):
+            try:
+                if ws.application_state != WebSocketState.CONNECTED:
+                    sockets.remove(ws)
+                    self.presence.get(token, {}).pop(ws, None)
+                    continue
+                if ws.client_state != WebSocketState.CONNECTED:
+                    sockets.remove(ws)
+                    self.presence.get(token, {}).pop(ws, None)
+                    continue
+            except Exception:
+                sockets.remove(ws)
+                self.presence.get(token, {}).pop(ws, None)
+        if sockets:
+            self.active[token] = sockets
+        else:
+            self.active.pop(token, None)
+            self.presence.pop(token, None)
+
     async def connect(self, token: str, websocket: WebSocket) -> None:
         await websocket.accept()
         self.active.setdefault(token, []).append(websocket)
@@ -658,20 +684,23 @@ class PokerWSManager:
             self.active.pop(token, None)
         # Mantener presencia aunque el socket se desconecte (mobile sleep).
 
-    def set_presence(self, token: str, websocket: WebSocket, meta: dict) -> None:
+    def set_presence(self, token: str, websocket: WebSocket, meta: dict) -> bool:
         presence = self.presence.setdefault(token, {})
+        self.prune(token)
         persona_id = meta.get("persona_id") if isinstance(meta, dict) else None
         nombre = (meta.get("nombre") or "").strip().lower() if isinstance(meta, dict) else ""
         for ws, existing in list(presence.items()):
+            if ws == websocket:
+                continue
             if not existing:
                 continue
             if persona_id is not None and existing.get("persona_id") == persona_id:
-                presence.pop(ws, None)
-                continue
+                return False
             existing_name = (existing.get("nombre") or "").strip().lower()
             if nombre and existing_name == nombre:
-                presence.pop(ws, None)
+                return False
         presence[websocket] = meta or {}
+        return True
 
     def clear_presence(self, token: str, websocket: WebSocket) -> None:
         presence = self.presence.get(token, {})
@@ -680,6 +709,7 @@ class PokerWSManager:
             self.presence.pop(token, None)
 
     def build_presence_payload(self, token: str) -> dict:
+        self.prune(token)
         entries = []
         seen = set()
         for meta in (self.presence.get(token, {}) or {}).values():
