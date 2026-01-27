@@ -557,6 +557,10 @@ class RetroWSManager:
 
     def set_presence(self, token: str, websocket: WebSocket, meta: dict) -> bool:
         presence = self.presence.setdefault(token, {})
+        active_sockets = set(self.active.get(token, []) or [])
+        for ws in list(presence.keys()):
+            if ws not in active_sockets:
+                presence.pop(ws, None)
         persona_id = meta.get("persona_id") if isinstance(meta, dict) else None
         nombre = (meta.get("nombre") or "").strip().lower() if isinstance(meta, dict) else ""
         for ws, existing in list(presence.items()):
