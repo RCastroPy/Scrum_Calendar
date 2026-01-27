@@ -10278,6 +10278,14 @@
 
     const socket = resolvedToken
       ? ensurePokerSocket(resolvedToken, "public", (payload) => {
+          if (payload?.type === "poker_closed") {
+            if (lastInfo) {
+              lastInfo = { ...lastInfo, estado: "cerrada", fase: "espera" };
+              applyInfo(lastInfo);
+            }
+            setStatusText("Sesion cerrada por el SM.", "warn");
+            return;
+          }
           if (payload?.type === "presence_rejected") {
             setStatusText(payload?.reason || "Nombre en uso.", "error");
             if (authorSelect) {
