@@ -352,6 +352,7 @@
     if (!token) return;
     const socketKey = `__retroSocket_${key}`;
     const tokenKey = `__retroSocket_${key}_token`;
+    const retryKey = `__retroSocketRetry_${key}`;
     const current = window[socketKey];
     const currentToken = window[tokenKey];
     if (current && current.readyState <= 1 && currentToken === token) return;
@@ -393,6 +394,12 @@
     });
     socket.addEventListener("close", () => {
       window.clearInterval(pingTimer);
+      window[socketKey] = null;
+      if (document.hidden) return;
+      if (window[retryKey]) window.clearTimeout(window[retryKey]);
+      window[retryKey] = window.setTimeout(() => {
+        ensureRetroSocket(token, key, onMessage);
+      }, 2000);
     });
     socket.addEventListener("error", () => {
       // keep fallback polling
@@ -419,6 +426,7 @@
     if (!token) return null;
     const socketKey = `__pokerSocket_${key}`;
     const tokenKey = `__pokerSocket_${key}_token`;
+    const retryKey = `__pokerSocketRetry_${key}`;
     const current = window[socketKey];
     const currentToken = window[tokenKey];
     if (current && current.readyState <= 1 && currentToken === token) return current;
@@ -460,6 +468,12 @@
     });
     socket.addEventListener("close", () => {
       window.clearInterval(pingTimer);
+      window[socketKey] = null;
+      if (document.hidden) return;
+      if (window[retryKey]) window.clearTimeout(window[retryKey]);
+      window[retryKey] = window.setTimeout(() => {
+        ensurePokerSocket(token, key, onMessage);
+      }, 2000);
     });
     socket.addEventListener("error", () => {
       // keep fallback polling
@@ -10022,11 +10036,20 @@
           setPokerStatus("Primero prepara el link.", "warn");
           return;
         }
+        const nextPhase =
+          currentSession && currentSession.fase === "revelado" ? "votacion" : "revelado";
+        if (currentSession) {
+          currentSession = { ...currentSession, fase: nextPhase };
+        }
+        if (nextPhase === "votacion") {
+          votes = [];
+          state.pokerVotes = [];
+        }
+        updateControls();
+        renderResults(currentSession, votes, presencePayload);
         await withButtonBusy(
           revealBtn,
           async () => {
-            const nextPhase =
-              currentSession && currentSession.fase === "revelado" ? "votacion" : "revelado";
             await putJson(`/poker/sessions/${sessionId}`, {
               fase: nextPhase,
             });
@@ -10045,6 +10068,12 @@
           setPokerStatus("No hay sesion activa.", "warn");
           return;
         }
+        if (currentSession) {
+          currentSession = { ...currentSession, estado: "cerrada" };
+        }
+        updateControls();
+        updateShareSection();
+        renderResults(currentSession, votes, presencePayload);
         await withButtonBusy(
           closeBtn,
           async () => {
@@ -10132,14 +10161,18 @@
         if (current) authorSelect.value = current;
       }
       if (info.estado !== "abierta") {
+        if (phaseLabel) phaseLabel.textContent = "Esperando inicio del SM.";
+        renderCards(false);
         if (form) {
           form.querySelectorAll("input, select, textarea, button").forEach((el) => {
-            el.disabled = true;
+            el.disabled = el.id !== "poker-public-author";
           });
         }
-        if (phaseLabel) phaseLabel.textContent = "Sesion cerrada.";
-        renderCards(false);
-        setStatusText("Sesion cerrada por el SM.", "warn");
+        if (authorSelect) {
+          authorSelect.disabled = false;
+          authorSelect.removeAttribute("disabled");
+        }
+        setStatusText("Esperando inicio del SM.", "warn");
         return;
       }
       if (prevPhase === "revelado" && info.fase !== "revelado") {
