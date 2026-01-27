@@ -10125,6 +10125,10 @@
 
     const renderCards = (enabled) => {
       if (!cardsWrap) return;
+      if (!enabled) {
+        cardsWrap.innerHTML = "";
+        return;
+      }
       const values = [1, 2, 3, 5, 8, 13, 21];
       cardsWrap.innerHTML = "";
       values.forEach((value) => {
@@ -10132,7 +10136,6 @@
         btn.type = "button";
         btn.className = "poker-card";
         btn.textContent = String(value);
-        if (!enabled) btn.disabled = true;
         if (selectedValue === value) btn.classList.add("selected");
         btn.addEventListener("click", () => {
           if (!enabled) return;
@@ -10158,14 +10161,20 @@
           opt.textContent = `${persona.nombre} ${persona.apellido}`.trim();
           authorSelect.appendChild(opt);
         });
-        if (current) authorSelect.value = current;
+        if (current && authorSelect.dataset.userChosen) {
+          authorSelect.value = current;
+        } else {
+          authorSelect.value = "";
+        }
       }
       if (info.estado !== "abierta") {
         if (phaseLabel) phaseLabel.textContent = "Esperando inicio del SM.";
         selectedValue = null;
         if (authorSelect) {
           authorSelect.value = "";
+          delete authorSelect.dataset.userChosen;
         }
+        if (cardsWrap) cardsWrap.classList.add("hidden");
         renderCards(false);
         if (form) {
           form.querySelectorAll("input, select, textarea, button").forEach((el) => {
@@ -10184,6 +10193,7 @@
       }
       if (info.fase === "revelado") {
         if (phaseLabel) phaseLabel.textContent = "Resultados visibles.";
+        if (cardsWrap) cardsWrap.classList.add("hidden");
         renderCards(false);
         if (form) {
           form.querySelectorAll("input, select, textarea, button").forEach((el) => {
@@ -10197,6 +10207,7 @@
       } else {
         if (phaseLabel) phaseLabel.textContent = "Votacion activa.";
         const hasAuthor = Boolean(authorSelect?.value);
+        if (cardsWrap) cardsWrap.classList.toggle("hidden", !hasAuthor);
         renderCards(hasAuthor);
         if (form) {
           form.querySelectorAll("input, select, textarea, button").forEach((el) => {
@@ -10264,12 +10275,16 @@
         const id = authorSelect.value ? Number(authorSelect.value) : null;
         if (!id) {
           sendPokerPresence("public", { type: "leave" });
+          if (cardsWrap) cardsWrap.classList.add("hidden");
           renderCards(false);
+          delete authorSelect.dataset.userChosen;
           return;
         }
+        authorSelect.dataset.userChosen = "true";
         const name = authorSelect.selectedOptions?.[0]?.textContent?.trim() || "";
         sendPokerPresence("public", { type: "join", persona_id: id, nombre: name });
         if (lastInfo?.estado === "abierta" && lastInfo?.fase !== "revelado") {
+          if (cardsWrap) cardsWrap.classList.remove("hidden");
           renderCards(true);
         }
       });
