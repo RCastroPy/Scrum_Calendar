@@ -10162,6 +10162,10 @@
       }
       if (info.estado !== "abierta") {
         if (phaseLabel) phaseLabel.textContent = "Esperando inicio del SM.";
+        selectedValue = null;
+        if (authorSelect) {
+          authorSelect.value = "";
+        }
         renderCards(false);
         if (form) {
           form.querySelectorAll("input, select, textarea, button").forEach((el) => {
