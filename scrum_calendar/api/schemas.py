@@ -257,6 +257,7 @@ class PokerPublicOut(BaseModel):
 
 class PokerClaimCreate(BaseModel):
     persona_id: int
+    client_id: Optional[str] = None
 
 
 class PokerPublicVoteCreate(BaseModel):

@@ -958,14 +958,6 @@ async def poker_ws(websocket: WebSocket, token: str) -> None:
                     websocket,
                     {"persona_id": persona_id, "nombre": nombre},
                 )
-                if not accepted:
-                    await websocket.send_json(
-                        {
-                            "type": "presence_rejected",
-                            "reason": "Nombre ya seleccionado",
-                        }
-                    )
-                    continue
                 await poker_ws_manager.broadcast_presence(token)
             elif payload.get("type") == "leave":
                 poker_ws_manager.clear_presence(token, websocket)
@@ -1805,14 +1797,22 @@ def reclamar_poker_persona(
         .filter(PokerClaim.sesion_id == sesion.id, PokerClaim.persona_id == persona.id)
         .first()
     )
-    if not existing:
-        claim = PokerClaim(sesion_id=sesion.id, persona_id=persona.id)
-        db.add(claim)
-        try:
-            db.commit()
-        except IntegrityError:
-            db.rollback()
-            raise HTTPException(status_code=409, detail="Nombre ya seleccionado")
+    if existing:
+        if payload.client_id and existing.client_id == payload.client_id:
+            claims = poker_claim_ids(db, sesion.id)
+            return {"ok": True, "claimed": claims}
+        raise HTTPException(status_code=409, detail="Nombre ya seleccionado")
+    claim = PokerClaim(
+        sesion_id=sesion.id,
+        persona_id=persona.id,
+        client_id=payload.client_id,
+    )
+    db.add(claim)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Nombre ya seleccionado")
     claims = poker_claim_ids(db, sesion.id)
     notify_poker(sesion.token, {"type": "claims_updated", "claims": claims})
     return {"ok": True, "claimed": claims}

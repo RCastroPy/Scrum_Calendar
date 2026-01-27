@@ -9950,7 +9950,7 @@
     updateShareSection();
     updateControls();
 
-    const votedIds = new Set(votes.map((vote) => String(vote.persona_id)));
+    let votedIds = new Set(votes.map((vote) => String(vote.persona_id)));
     renderPresence(presencePayload, votedIds);
     renderResults(currentSession, votes, presencePayload);
 
@@ -9972,8 +9972,8 @@
               votes.push({ persona_id: payload.persona_id, valor: payload.valor });
             }
             state.pokerVotes = votes;
-            const nextVoted = new Set(votes.map((vote) => String(vote.persona_id)));
-            renderPresence(state.pokerPresence || presencePayload, nextVoted);
+            votedIds = new Set(votes.map((vote) => String(vote.persona_id)));
+            renderPresence(state.pokerPresence || presencePayload, votedIds);
             renderResults(currentSession, votes, state.pokerPresence || presencePayload);
           }
           return;
@@ -10122,6 +10122,18 @@
     let presenceNames = new Set();
     let selectedPersonaId = null;
     let claimedPersonaId = null;
+    const pokerClientId = (() => {
+      try {
+        const key = "poker_client_id";
+        const existing = window.localStorage.getItem(key);
+        if (existing) return existing;
+        const next = Math.random().toString(36).slice(2) + Date.now().toString(36);
+        window.localStorage.setItem(key, next);
+        return next;
+      } catch {
+        return Math.random().toString(36).slice(2);
+      }
+    })();
 
     const setStatusText = (message, type = "info") => {
       if (!status) return;
@@ -10386,6 +10398,7 @@
           }
           const claimRes = await postJson(`/poker/public/${resolvedToken}/claim`, {
             persona_id: id,
+            client_id: pokerClientId,
           }).catch(() => {
             setStatusText("Nombre ya seleccionado.", "error");
             return null;

@@ -384,6 +384,7 @@ class PokerClaim(Base):
     id = Column(Integer, primary_key=True)
     sesion_id = Column(Integer, ForeignKey("poker_sessions.id"), nullable=False)
     persona_id = Column(Integer, ForeignKey("personas.id"), nullable=False)
+    client_id = Column(String(64), nullable=True)
     creado_en = Column(DateTime, nullable=False, default=now_py)
     actualizado_en = Column(DateTime, nullable=False, default=now_py, onupdate=now_py)
 

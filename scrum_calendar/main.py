@@ -125,6 +125,22 @@ def startup():
         column_names = {row[0] for row in columns}
         if "jira_codigo" not in column_names:
             conn.execute(text("alter table celulas add column jira_codigo varchar(20)"))
+        tables = conn.execute(
+            text(
+                "select table_name from information_schema.tables "
+                "where table_name = 'poker_claims'"
+            )
+        ).fetchall()
+        if tables:
+            columns = conn.execute(
+                text(
+                    "select column_name from information_schema.columns "
+                    "where table_name = 'poker_claims'"
+                )
+            ).fetchall()
+            column_names = {row[0] for row in columns}
+            if "client_id" not in column_names:
+                conn.execute(text("alter table poker_claims add column client_id varchar(64)"))
 
 
 app.include_router(router)
