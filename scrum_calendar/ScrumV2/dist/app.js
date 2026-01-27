@@ -7720,7 +7720,7 @@
       window.__retroAdminPoll = window.setInterval(() => {
         if (document.hidden) return;
         initRetrospective({ skipPolling: true });
-      }, 8000);
+      }, 2000);
     }
     if (state.retroActiveId) {
       const exists = retros.some((retro) => String(retro.id) === state.retroActiveId);
@@ -8767,7 +8767,7 @@
       window.__retroPublicPoll = window.setInterval(() => {
         if (document.hidden) return;
         loadRetroInfo();
-      }, 8000);
+      }, 4000);
     }
 
     if (authorSelect) {
