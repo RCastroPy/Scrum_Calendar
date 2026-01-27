@@ -7879,6 +7879,36 @@
           renderPresence(payload);
           return;
         }
+        if (
+          payload?.type === "item_added" ||
+          payload?.type === "item_updated" ||
+          payload?.type === "item_deleted"
+        ) {
+          const retroId = payload.retro_id;
+          const item = payload.item;
+          if (retroId && (currentRetro?.id === retroId || shareRetro?.id === retroId)) {
+            if (payload.type === "item_deleted") {
+              items = items.filter((entry) => entry.id !== payload.item_id);
+            } else if (item) {
+              const index = items.findIndex((entry) => entry.id === item.id);
+              if (index >= 0) {
+                items[index] = item;
+              } else {
+                items.push(item);
+              }
+            }
+            const activePhase = shareRetro?.fase || currentRetro?.fase || "";
+            state.retroSubmittedIds = new Set(
+              items
+                .filter((entry) => entry?.persona_id && entry.tipo === activePhase)
+                .map((entry) => String(entry.persona_id))
+            );
+            renderItems();
+            renderCommitments();
+            renderPresence(state.retroPresence);
+            return;
+          }
+        }
         if (payload?.type === "retro_updated" && shareRetro && payload.retro_id === shareRetro.id) {
           shareRetro = {
             ...shareRetro,
@@ -8437,6 +8467,20 @@
     const detailLabel = detailInput ? detailInput.closest("label") : null;
     const authorLabel = authorSelect ? authorSelect.closest("label") : null;
     const formActions = form ? form.querySelector(".form-actions") : null;
+    let claimedPersonaId = null;
+    let claimedIds = new Set();
+    const retroClientId = (() => {
+      try {
+        const key = "retro_client_id";
+        const existing = window.localStorage.getItem(key);
+        if (existing) return existing;
+        const next = Math.random().toString(36).slice(2) + Date.now().toString(36);
+        window.localStorage.setItem(key, next);
+        return next;
+      } catch {
+        return Math.random().toString(36).slice(2);
+      }
+    })();
     const markLabel = (label, className) => {
       if (label && !label.classList.contains(className)) {
         label.classList.add(className);
@@ -8487,7 +8531,25 @@
         const opt = document.createElement("option");
         opt.value = persona.id;
         opt.textContent = `${persona.nombre} ${persona.apellido}`.trim();
+        opt.dataset.label = opt.textContent;
         select.appendChild(opt);
+      });
+    };
+    const updateClaimedOptions = () => {
+      if (!authorSelect) return;
+      const options = Array.from(authorSelect.options);
+      options.forEach((opt) => {
+        if (!opt.value) return;
+        const personaId = Number(opt.value);
+        const isClaimed = claimedIds.has(personaId) && personaId !== claimedPersonaId;
+        opt.disabled = isClaimed;
+        const baseLabel = opt.dataset.label || opt.textContent || "";
+        if (!opt.dataset.label) {
+          opt.dataset.label = baseLabel;
+        }
+        opt.textContent = isClaimed
+          ? `${opt.dataset.label || baseLabel} (No disponible)`
+          : opt.dataset.label || baseLabel;
       });
     };
     const emitPresence = () => {
@@ -8525,6 +8587,8 @@
         if (assigneeSelect) assigneeSelect.value = "";
         personasLoaded = true;
       }
+      claimedIds = new Set(retroInfo.claimed_persona_ids || []);
+      updateClaimedOptions();
       if (authorSelect?.value) {
         emitPresence();
       }
@@ -8616,6 +8680,11 @@
         setStatusText("Retro cerrada por el SM.", "warn");
         return;
       }
+      if (payload.type === "claims_updated") {
+        claimedIds = new Set(payload.claims || []);
+        updateClaimedOptions();
+        return;
+      }
       if (payload.type === "retro_updated" && retroInfo) {
         retroInfo = {
           ...retroInfo,
@@ -8673,6 +8742,53 @@
         if (retroInfo) {
           applyRetroInfo(retroInfo);
         }
+        const nextId = authorSelect.value ? Number(authorSelect.value) : null;
+        if (!resolvedToken) {
+          setStatusText("Link invalido. Falta token.", "error");
+          return;
+        }
+        if (!nextId) {
+          if (claimedPersonaId) {
+            fetchWithFallback(`/retros/public/${resolvedToken}/claim/${claimedPersonaId}`, {
+              method: "DELETE",
+            }).catch(() => {});
+          }
+          claimedPersonaId = null;
+          updateClaimedOptions();
+          emitPresence();
+          return;
+        }
+        const claimNext = async () => {
+          if (claimedPersonaId && claimedPersonaId !== nextId) {
+            await fetchWithFallback(`/retros/public/${resolvedToken}/claim/${claimedPersonaId}`, {
+              method: "DELETE",
+            });
+          }
+          const res = await postJson(`/retros/public/${resolvedToken}/claim`, {
+            persona_id: nextId,
+            client_id: retroClientId,
+          });
+          claimedPersonaId = nextId;
+          claimedIds = new Set(res.claimed || []);
+          updateClaimedOptions();
+          emitPresence();
+          setStatusText("", "info");
+        };
+        claimNext().catch((err) => {
+          claimedPersonaId = null;
+          if (authorSelect) authorSelect.value = "";
+          updateClaimedOptions();
+          let message = "Nombre ya seleccionado.";
+          if (err?.message) {
+            try {
+              const parsed = JSON.parse(err.message);
+              if (parsed?.detail) message = parsed.detail;
+            } catch {
+              message = err.message;
+            }
+          }
+          setStatusText(message, "error");
+        });
       });
     }
     if (resolvedToken) {

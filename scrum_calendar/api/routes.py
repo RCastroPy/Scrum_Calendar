@@ -63,6 +63,7 @@ from api.schemas import (
     RetroOut,
     RetroUpdate,
     RetroPublicItemCreate,
+    RetroClaimCreate,
     RetroPublicOut,
     ReleaseItemImportOut,
     ReleaseItemOut,
@@ -101,6 +102,7 @@ from data.models import (
     PokerSession,
     PokerVote,
     PokerClaim,
+    RetroClaim,
     Retrospective,
     RetrospectiveItem,
     Persona,
@@ -866,6 +868,15 @@ def poker_claim_ids(db: Session, session_id: int) -> List[int]:
     ]
 
 
+def retro_claim_ids(db: Session, retro_id: int) -> List[int]:
+    return [
+        row[0]
+        for row in db.query(RetroClaim.persona_id)
+        .filter(RetroClaim.retro_id == retro_id)
+        .all()
+    ]
+
+
 def poker_vote_to_schema(vote: PokerVote) -> dict:
     nombre = ""
     if vote.persona:
@@ -1335,7 +1346,14 @@ def crear_retro_item(
     db.add(item)
     db.commit()
     db.refresh(item)
-    notify_retro(retro.token, {"type": "item_added", "retro_id": retro.id})
+    notify_retro(
+        retro.token,
+        {
+            "type": "item_added",
+            "retro_id": retro.id,
+            "item": retro_item_to_schema(item),
+        },
+    )
     return retro_item_to_schema(item)
 
 
@@ -1373,7 +1391,14 @@ def actualizar_retro_item(
     db.refresh(item)
     retro = db.get(Retrospective, retro_id)
     if retro:
-        notify_retro(retro.token, {"type": "item_updated", "retro_id": retro.id})
+        notify_retro(
+            retro.token,
+            {
+                "type": "item_updated",
+                "retro_id": retro.id,
+                "item": retro_item_to_schema(item),
+            },
+        )
     return retro_item_to_schema(item)
 
 
@@ -1399,7 +1424,10 @@ def eliminar_retro_item(
     db.commit()
     retro = db.get(Retrospective, retro_id)
     if retro:
-        notify_retro(retro.token, {"type": "item_deleted", "retro_id": retro.id})
+        notify_retro(
+            retro.token,
+            {"type": "item_deleted", "retro_id": retro.id, "item_id": item_id},
+        )
     return {"ok": True}
 
 
@@ -1438,6 +1466,7 @@ def obtener_retro_publico(token: str, db: Session = Depends(get_db)):
             }
             for p in personas
         ],
+        "claimed_persona_ids": retro_claim_ids(db, retro.id),
     }
 
 
@@ -1485,7 +1514,75 @@ def obtener_retro_publico_por_sprint(
             }
             for p in personas
         ],
+        "claimed_persona_ids": retro_claim_ids(db, retro.id),
     }
+
+
+@router.post("/retros/public/{token}/claim")
+def reclamar_retro_persona(
+    token: str,
+    payload: RetroClaimCreate,
+    db: Session = Depends(get_db),
+):
+    retro = db.query(Retrospective).filter(Retrospective.token == token).first()
+    if not retro:
+        raise HTTPException(status_code=404, detail="Retrospectiva no encontrada")
+    if retro.estado != "abierta":
+        raise HTTPException(status_code=403, detail="Retrospectiva cerrada")
+    persona = (
+        db.query(Persona)
+        .join(persona_celulas, persona_celulas.c.persona_id == Persona.id)
+        .filter(
+            Persona.id == payload.persona_id,
+            persona_celulas.c.celula_id == retro.celula_id,
+            Persona.activo.is_(True),
+        )
+        .first()
+    )
+    if not persona:
+        raise HTTPException(status_code=404, detail="Persona no encontrada")
+    existing = (
+        db.query(RetroClaim)
+        .filter(RetroClaim.retro_id == retro.id, RetroClaim.persona_id == persona.id)
+        .first()
+    )
+    if existing:
+        if payload.client_id and existing.client_id == payload.client_id:
+            claims = retro_claim_ids(db, retro.id)
+            return {"ok": True, "claimed": claims}
+        raise HTTPException(status_code=409, detail="Nombre ya seleccionado")
+    claim = RetroClaim(
+        retro_id=retro.id,
+        persona_id=persona.id,
+        client_id=payload.client_id,
+    )
+    db.add(claim)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Nombre ya seleccionado")
+    claims = retro_claim_ids(db, retro.id)
+    notify_retro(retro.token, {"type": "claims_updated", "claims": claims})
+    return {"ok": True, "claimed": claims}
+
+
+@router.delete("/retros/public/{token}/claim/{persona_id}")
+def liberar_retro_persona(
+    token: str,
+    persona_id: int,
+    db: Session = Depends(get_db),
+):
+    retro = db.query(Retrospective).filter(Retrospective.token == token).first()
+    if not retro:
+        raise HTTPException(status_code=404, detail="Retrospectiva no encontrada")
+    db.query(RetroClaim).filter(
+        RetroClaim.retro_id == retro.id, RetroClaim.persona_id == persona_id
+    ).delete()
+    db.commit()
+    claims = retro_claim_ids(db, retro.id)
+    notify_retro(retro.token, {"type": "claims_updated", "claims": claims})
+    return {"ok": True, "claimed": claims}
 
 
 @router.get("/retros/{retro_id}", response_model=RetroDetailOut)
@@ -1548,7 +1645,14 @@ def crear_retro_item_publico(
     db.add(item)
     db.commit()
     db.refresh(item)
-    notify_retro(retro.token, {"type": "item_added", "retro_id": retro.id})
+    notify_retro(
+        retro.token,
+        {
+            "type": "item_added",
+            "retro_id": retro.id,
+            "item": retro_item_to_schema(item),
+        },
+    )
     return retro_item_to_schema(item)
 
 
@@ -1929,6 +2033,12 @@ def actualizar_retro(
         },
     )
     if closing:
+        db.query(RetroClaim).filter(RetroClaim.retro_id == retro.id).delete()
+        db.commit()
+        try:
+            notify_retro(retro.token, {"type": "claims_updated", "claims": []})
+        except Exception:
+            pass
         try:
             anyio.from_thread.run(retro_ws_manager.close_all, retro.token)
         except RuntimeError:
