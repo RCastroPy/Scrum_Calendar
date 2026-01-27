@@ -64,6 +64,8 @@ async def auth_middleware(request: Request, call_next):
         or path.startswith("/docs")
         or path.startswith("/openapi")
         or path.startswith("/redoc")
+        or path == "/retros/public"
+        or path == "/poker/public"
         or path.startswith("/retros/public/")
         or path.startswith("/poker/public/")
         or path.startswith("/ws/retros/")

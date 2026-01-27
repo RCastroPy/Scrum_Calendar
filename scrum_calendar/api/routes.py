@@ -1407,6 +1407,53 @@ def obtener_retro_publico(token: str, db: Session = Depends(get_db)):
     }
 
 
+@router.get("/retros/public", response_model=RetroPublicOut)
+def obtener_retro_publico_por_sprint(
+    celula_id: int,
+    sprint_id: int,
+    db: Session = Depends(get_db),
+):
+    retro = (
+        db.query(Retrospective)
+        .options(joinedload(Retrospective.celula), joinedload(Retrospective.sprint))
+        .filter(
+            Retrospective.celula_id == celula_id,
+            Retrospective.sprint_id == sprint_id,
+            Retrospective.estado == "abierta",
+        )
+        .order_by(Retrospective.actualizado_en.desc())
+        .first()
+    )
+    if not retro:
+        raise HTTPException(status_code=404, detail="Retrospectiva no encontrada")
+    personas = (
+        db.query(Persona)
+        .join(persona_celulas, persona_celulas.c.persona_id == Persona.id)
+        .filter(persona_celulas.c.celula_id == retro.celula_id, Persona.activo.is_(True))
+        .order_by(Persona.nombre, Persona.apellido)
+        .all()
+    )
+    return {
+        "id": retro.id,
+        "celula_id": retro.celula_id,
+        "sprint_id": retro.sprint_id,
+        "celula_nombre": retro.celula.nombre if retro.celula else "",
+        "sprint_nombre": retro.sprint.nombre if retro.sprint else "",
+        "estado": retro.estado,
+        "fase": retro.fase,
+        "token": retro.token,
+        "personas": [
+            {
+                "id": p.id,
+                "nombre": p.nombre,
+                "apellido": p.apellido,
+                "activo": p.activo,
+            }
+            for p in personas
+        ],
+    }
+
+
 @router.post(
     "/retros/public/{token}/items",
     response_model=RetroItemOut,
@@ -1581,6 +1628,38 @@ def obtener_poker_publico(token: str, db: Session = Depends(get_db)):
         db.query(PokerSession)
         .options(joinedload(PokerSession.celula))
         .filter(PokerSession.token == token)
+        .first()
+    )
+    if not sesion:
+        raise HTTPException(status_code=404, detail="Sesion no encontrada")
+    personas = (
+        db.query(Persona)
+        .join(persona_celulas, persona_celulas.c.persona_id == Persona.id)
+        .filter(persona_celulas.c.celula_id == sesion.celula_id, Persona.activo.is_(True))
+        .order_by(Persona.nombre, Persona.apellido)
+        .all()
+    )
+    return {
+        "id": sesion.id,
+        "celula_id": sesion.celula_id,
+        "celula_nombre": sesion.celula.nombre if sesion.celula else "",
+        "estado": sesion.estado,
+        "fase": sesion.fase,
+        "token": sesion.token,
+        "personas": [
+            {"id": p.id, "nombre": p.nombre, "apellido": p.apellido, "activo": p.activo}
+            for p in personas
+        ],
+    }
+
+
+@router.get("/poker/public", response_model=PokerPublicOut)
+def obtener_poker_publico_por_celula(celula_id: int, db: Session = Depends(get_db)):
+    sesion = (
+        db.query(PokerSession)
+        .options(joinedload(PokerSession.celula))
+        .filter(PokerSession.celula_id == celula_id, PokerSession.estado == "abierta")
+        .order_by(PokerSession.actualizado_en.desc())
         .first()
     )
     if not sesion:

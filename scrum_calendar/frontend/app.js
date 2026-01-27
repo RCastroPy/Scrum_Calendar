@@ -7810,7 +7810,7 @@
       }
       const origin = window.location.origin;
       const basePath = window.location.pathname.replace(/[^/]+$/, "retro-public.html");
-      const shareLink = `${origin}${basePath}?token=${shareRetro.token}`;
+      const shareLink = `${origin}${basePath}?celula_id=${shareRetro.celula_id}&sprint_id=${shareRetro.sprint_id}`;
       shareUrl.value = shareLink;
       shareUrl.readOnly = true;
       if (shareQr) {
@@ -8441,9 +8441,13 @@
       status.dataset.type = type;
     };
 
-    const token = new URLSearchParams(window.location.search).get("token");
-    if (!token) {
-      setStatusText("Link invalido. Falta token.", "error");
+    const params = new URLSearchParams(window.location.search);
+    const tokenParam = params.get("token");
+    const celulaParam = params.get("celula_id");
+    const sprintParam = params.get("sprint_id");
+    let resolvedToken = tokenParam;
+    if (!tokenParam && (!celulaParam || !sprintParam)) {
+      setStatusText("Link invalido. Falta celula o sprint.", "error");
       return;
     }
     let retroInfo;
@@ -8591,7 +8595,10 @@
 
     const loadRetroInfo = async () => {
       try {
-        const info = await fetchJson(`/retros/public/${token}`);
+        const info = tokenParam
+          ? await fetchJson(`/retros/public/${tokenParam}`)
+          : await fetchJson(`/retros/public?celula_id=${celulaParam}&sprint_id=${sprintParam}`);
+        resolvedToken = info.token;
         applyRetroInfo(info);
         return info;
       } catch (err) {
@@ -8608,9 +8615,11 @@
         loadRetroInfo();
       }, 8000);
     }
-    ensureRetroSocket(token, "public", (payload) => {
-      handleRealtimeEvent(payload);
-    });
+    if (resolvedToken) {
+      ensureRetroSocket(resolvedToken, "public", (payload) => {
+        handleRealtimeEvent(payload);
+      });
+    }
 
     if (authorSelect && !authorSelect.dataset.boundPresence) {
       authorSelect.dataset.boundPresence = "true";
@@ -8655,7 +8664,11 @@
           submitBtn,
           async () => {
             try {
-              await postJson(`/retros/public/${token}/items`, payload);
+              if (!resolvedToken) {
+                setStatusText("Link invalido. Falta token.", "error");
+                return;
+              }
+              await postJson(`/retros/public/${resolvedToken}/items`, payload);
               if (detailInput) detailInput.value = "";
               if (assigneeSelect) assigneeSelect.value = "";
               if (dueInput) dueInput.value = "";
@@ -9883,7 +9896,7 @@
       }
       const origin = window.location.origin;
       const basePath = window.location.pathname.replace(/[^/]+$/, "poker-public.html");
-      const shareLink = `${origin}${basePath}?token=${currentSession.token}`;
+      const shareLink = `${origin}${basePath}?celula_id=${currentSession.celula_id}`;
       shareUrl.value = shareLink;
       shareUrl.readOnly = true;
       if (shareQr) {
@@ -10072,9 +10085,12 @@
       connectionStatus.dataset.type = connected ? "ok" : "error";
     };
 
-    const token = new URLSearchParams(window.location.search).get("token");
-    if (!token) {
-      setStatusText("Link invalido. Falta token.", "error");
+    const params = new URLSearchParams(window.location.search);
+    const tokenParam = params.get("token");
+    const celulaParam = params.get("celula_id");
+    let resolvedToken = tokenParam;
+    if (!tokenParam && !celulaParam) {
+      setStatusText("Link invalido. Falta celula.", "error");
       return;
     }
 
@@ -10155,7 +10171,10 @@
 
     const loadInfo = async () => {
       try {
-        const info = await fetchJson(`/poker/public/${token}`);
+        const info = tokenParam
+          ? await fetchJson(`/poker/public/${tokenParam}`)
+          : await fetchJson(`/poker/public?celula_id=${celulaParam}`);
+        resolvedToken = info.token;
         applyInfo(info);
         return info;
       } catch {
@@ -10167,9 +10186,11 @@
     const info = await loadInfo();
     if (!info) return;
 
-    const socket = ensurePokerSocket(token, "public", () => {
-      loadInfo();
-    });
+    const socket = resolvedToken
+      ? ensurePokerSocket(resolvedToken, "public", () => {
+          loadInfo();
+        })
+      : null;
     const handleDisconnect = () => {
       if (lastInfo?.estado === "cerrada") {
         setConnectionStatus(false);
@@ -10227,7 +10248,11 @@
           submitBtn,
           async () => {
             try {
-              await postJson(`/poker/public/${token}/vote`, {
+              if (!resolvedToken) {
+                setStatusText("Link invalido. Falta token.", "error");
+                return;
+              }
+              await postJson(`/poker/public/${resolvedToken}/vote`, {
                 persona_id: personaId,
                 valor: selectedValue,
               });
