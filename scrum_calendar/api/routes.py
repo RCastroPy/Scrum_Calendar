@@ -1539,6 +1539,14 @@ def crear_poker_sesion(
         .first()
     )
     if existente:
+        # Reinicia presencia para permitir nueva seleccion de nombres
+        poker_ws_manager.presence.pop(existente.token, None)
+        try:
+            anyio.from_thread.run(
+                poker_ws_manager.broadcast_presence, existente.token
+            )
+        except RuntimeError:
+            pass
         if existente.fase != "votacion":
             existente.fase = "votacion"
             existente.actualizado_en = now_py()
