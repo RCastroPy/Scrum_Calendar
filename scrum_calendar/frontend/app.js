@@ -2273,10 +2273,11 @@
           baseDate = sprintStart || todayDate;
         }
       }
-      baseDate.setMonth(baseDate.getMonth() + calendarState.offset);
+      const safeBase = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
+      safeBase.setMonth(safeBase.getMonth() + calendarState.offset);
       if (visibleSprints.length) {
         renderCalendar(
-          baseDate,
+          safeBase,
           visibleSprints,
           data?.calendarEvents || [],
           data?.feriados || [],
@@ -2285,7 +2286,7 @@
         );
       } else {
         renderCalendar(
-          baseDate,
+          safeBase,
           calendarState.sprints,
           data?.calendarEvents || [],
           data?.feriados || [],
