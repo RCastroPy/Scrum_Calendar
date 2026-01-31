@@ -2723,6 +2723,7 @@ async def importar_sprint_items(
     missing_personas: set[str] = set()
     missing_sprints: set[str] = set()
     missing_celulas: set[str] = set()
+    missing_celulas: set[str] = set()
 
     def get_value(row: dict, key: Optional[str]) -> str:
         if not key:
