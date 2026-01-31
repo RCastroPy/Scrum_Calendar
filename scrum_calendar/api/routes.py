@@ -3200,7 +3200,7 @@ async def importar_release_items(
             db.add(sprint)
             db.flush()
             sprint_map[normalize_sprint_name(sprint_nombre)] = sprint
-            sprint_map_by_celula[row_celula_id] = sprint
+            sprint_map_by_celula[row_celula_id] = sprint_map
 
         if sprint and sprint.nombre not in detected_sprints:
             detected_sprints.append(sprint.nombre)
