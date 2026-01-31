@@ -3697,6 +3697,7 @@
         return `${range} · ${tipo}${jornada}${dayLabel}`;
       });
     const annualTotals = new Map();
+    const annualDetails = new Map();
     const eventsYear = (state.base.eventos || []).filter((evento) => {
       if (evento.persona_id !== selected.id) return false;
       const start = parseDateOnly(evento.fecha_inicio);
@@ -3717,10 +3718,25 @@
         const rangeEnd = new Date(y, 11, 31);
         const days = countEventDaysInRange(evento, rangeStart, rangeEnd);
         if (!days) continue;
+        const actualStart = start > rangeStart ? start : rangeStart;
+        const actualEnd = end < rangeEnd ? end : rangeEnd;
+        const startLabel = formatDate(formatISO(actualStart));
+        const endLabel = formatDate(formatISO(actualEnd));
+        const rangeLabel = startLabel === endLabel ? startLabel : `${startLabel} - ${endLabel}`;
+        const jornada =
+          evento.jornada && evento.jornada !== "completo"
+            ? ` (${evento.jornada.toUpperCase()})`
+            : "";
+        const daysLabel = Number.isInteger(days) ? days : days.toFixed(1);
         const entry = annualTotals.get(y) || { total: 0, tipos: {} };
         entry.total += days;
         entry.tipos[tipoKey] = (entry.tipos[tipoKey] || 0) + days;
         annualTotals.set(y, entry);
+        const detailByYear = annualDetails.get(y) || {};
+        const detailList = detailByYear[tipoKey] || [];
+        detailList.push(`${rangeLabel}${jornada} · ${daysLabel} dias`);
+        detailByYear[tipoKey] = detailList;
+        annualDetails.set(y, detailByYear);
       }
     });
 
@@ -3764,8 +3780,27 @@
                     : key.charAt(0).toUpperCase() + key.slice(1);
                 const formatted = Number.isInteger(value) ? value : value.toFixed(1);
                 const detail = document.createElement("li");
-                detail.textContent = `- ${label}: ${formatted} dias`;
                 detail.className = "oneonone-annual-detail";
+                const detailLabel = document.createElement("span");
+                detailLabel.textContent = `- ${label}: ${formatted} dias`;
+                detail.appendChild(detailLabel);
+                const detailEntries = annualDetails.get(yearKey)?.[key] || [];
+                if (detailEntries.length) {
+                  detail.classList.add("is-toggle");
+                  const sublist = document.createElement("ul");
+                  sublist.className = "oneonone-annual-sublist hidden";
+                  detailEntries.forEach((text) => {
+                    const item = document.createElement("li");
+                    item.className = "oneonone-annual-detail-item";
+                    item.textContent = text;
+                    sublist.appendChild(item);
+                  });
+                  detail.appendChild(sublist);
+                  detail.addEventListener("click", (event) => {
+                    if (event.target.closest(".oneonone-annual-sublist")) return;
+                    sublist.classList.toggle("hidden");
+                  });
+                }
                 eventsAnnualList.appendChild(detail);
               });
             }
