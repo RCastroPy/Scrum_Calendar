@@ -1023,6 +1023,13 @@ h1 {
   box-shadow: 0 12px 24px rgba(255, 179, 71, 0.3);
 }
 
+.btn.btn-primary {
+  background: #007bff;
+  border-color: #007bff;
+  color: #fff;
+  box-shadow: none;
+}
+
 .btn.ghost {
   border-color: rgba(255, 255, 255, 0.35);
 }
