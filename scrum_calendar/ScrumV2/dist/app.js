@@ -3316,8 +3316,7 @@
           setStatus("#status-release-import", "Selecciona un archivo CSV o XLSX.", "error");
           return;
         }
-        const tipoSelect = releaseImportForm.querySelector('select[name="tipo_release"]');
-        const tipoRelease = tipoSelect?.value || "comprometido";
+        const tipoRelease = "comprometido";
         try {
           setStatus("#status-release-import", "Importando...", "info");
           const formData = new FormData();
