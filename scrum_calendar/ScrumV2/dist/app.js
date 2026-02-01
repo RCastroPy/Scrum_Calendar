@@ -1246,7 +1246,20 @@
   async function loadBase() {
     const usuariosPromise =
       state.user?.rol === "admin" ? fetchJson("/usuarios").catch(() => []) : Promise.resolve([]);
-    const [sprints, cells, personas, eventos, tipos, feriados, sprintItems, releaseItems, timeInfo, usuarios] = await Promise.all([
+    const [
+      sprints,
+      cells,
+      personas,
+      eventos,
+      tipos,
+      feriados,
+      sprintItems,
+      releaseItems,
+      sprintImportItems,
+      releaseImportItems,
+      timeInfo,
+      usuarios,
+    ] = await Promise.all([
       fetchJson("/sprints"),
       fetchJson("/celulas"),
       fetchJson("/personas"),
@@ -1255,6 +1268,8 @@
       fetchJson("/feriados"),
       fetchJson("/sprint-items").catch(() => []),
       fetchJson("/release-items").catch(() => []),
+      fetchJson("/import-sprint-items").catch(() => []),
+      fetchJson("/import-release-items").catch(() => []),
       fetchJson("/time").catch(() => null),
       usuariosPromise,
     ]);
@@ -1286,6 +1301,8 @@
       feriados,
       sprintItems: sprintItems || [],
       releaseItems: releaseItems || [],
+      sprintImportItems: sprintImportItems || [],
+      releaseImportItems: releaseImportItems || [],
       usuarios: usuarios || [],
     };
   }
@@ -8992,6 +9009,9 @@
   function renderAdmin(base) {
     if (!qs("#admin-panel")) return;
     const adminStatus = qs("#admin-status");
+    const adminProgress = qs("#admin-progress");
+    const adminProgressLabel = qs("#admin-progress-label");
+    const adminProgressBar = qs("#admin-progress-bar");
     const adminSearch = qs("#admin-search");
     const userForm = qs("#form-usuario");
     const userStatus = qs("#status-usuario");
@@ -9032,6 +9052,25 @@
       if (!adminStatus) return;
       adminStatus.textContent = text;
       adminStatus.dataset.type = type;
+    }
+
+    function setAdminProgress(current, total, label) {
+      if (!adminProgress || !adminProgressBar) return;
+      if (!total) {
+        adminProgress.classList.add("hidden");
+        adminProgressBar.style.width = "0%";
+        if (adminProgressLabel) adminProgressLabel.textContent = "";
+        return;
+      }
+      const safeTotal = Math.max(total, 1);
+      const safeCurrent = Math.min(Math.max(current, 0), safeTotal);
+      const pct = Math.round((safeCurrent / safeTotal) * 100);
+      adminProgress.classList.remove("hidden");
+      adminProgressBar.style.width = `${pct}%`;
+      if (adminProgressLabel) {
+        const prefix = label ? `${label} ` : "";
+        adminProgressLabel.textContent = `${prefix}${safeCurrent}/${safeTotal}`;
+      }
     }
 
     const ensureBulkDeleteButton = (tableKey, label, onDelete) => {
@@ -9174,7 +9213,10 @@
         tipo.activo ? "si" : "no",
       ])
     );
-    const groupedSprintItems = groupSprintItems(base.sprintItems || [], base.sprints || []);
+    const groupedSprintItems = groupSprintItems(
+      base.sprintImportItems || [],
+      base.sprints || []
+    );
     const sprintItemsFiltrados = state.selectedCelulaId
       ? groupedSprintItems.filter(
           (item) => String(item.celula_id) === String(state.selectedCelulaId)
@@ -9194,10 +9236,10 @@
       ])
     );
     const releaseItemsFiltrados = state.selectedCelulaId
-      ? (base.releaseItems || []).filter(
+      ? (base.releaseImportItems || []).filter(
           (item) => String(item.celula_id) === String(state.selectedCelulaId)
         )
-      : base.releaseItems || [];
+      : base.releaseImportItems || [];
     const releaseItemsBuscados = releaseItemsFiltrados.filter((item) =>
       matchesQuery([
         item.issue_key,
@@ -9769,8 +9811,11 @@
       if (!confirm(`Eliminar ${selection.size} release(s) seleccionados?`)) return;
       try {
         setAdminStatus("Eliminando releases...", "info");
+        const total = selection.size;
+        let done = 0;
+        setAdminProgress(0, total, "Eliminando releases");
         for (const id of Array.from(selection)) {
-          const res = await fetchWithFallback(`/release-items/${id}`, { method: "DELETE" });
+          const res = await fetchWithFallback(`/import-release-items/${id}`, { method: "DELETE" });
           if (res.status === 404) {
             selection.delete(id);
             continue;
@@ -9779,11 +9824,15 @@
             const text = await res.text();
             throw new Error(text || "No se pudo eliminar release.");
           }
+          done += 1;
+          setAdminProgress(done, total, "Eliminando releases");
         }
         selection.clear();
+        setAdminProgress(0, 0, "");
         setAdminStatus("Releases eliminados.", "ok");
         await reloadAll();
       } catch (err) {
+        setAdminProgress(0, 0, "");
         setAdminStatus(err.message || "Error al eliminar releases.", "error");
       }
     });
@@ -9836,8 +9885,11 @@
       if (!confirm(`Eliminar ${selection.size} item(s) seleccionados?`)) return;
       try {
         setAdminStatus("Eliminando items...", "info");
+        const total = selection.size;
+        let done = 0;
+        setAdminProgress(0, total, "Eliminando items");
         for (const id of Array.from(selection)) {
-          const res = await fetchWithFallback(`/sprint-items/${id}`, { method: "DELETE" });
+          const res = await fetchWithFallback(`/import-sprint-items/${id}`, { method: "DELETE" });
           if (res.status === 404) {
             selection.delete(id);
             continue;
@@ -9846,11 +9898,15 @@
             const text = await res.text();
             throw new Error(text || "No se pudo eliminar item.");
           }
+          done += 1;
+          setAdminProgress(done, total, "Eliminando items");
         }
         selection.clear();
+        setAdminProgress(0, 0, "");
         setAdminStatus("Items eliminados.", "ok");
         await reloadAll();
       } catch (err) {
+        setAdminProgress(0, 0, "");
         setAdminStatus(err.message || "Error al eliminar items.", "error");
       }
     });

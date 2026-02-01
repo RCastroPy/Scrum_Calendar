@@ -2910,6 +2910,35 @@ body.qr-zoomed::before {
   color: #ff6b6b;
 }
 
+.admin-progress {
+  margin: 8px 0 14px;
+}
+
+.admin-progress.hidden {
+  display: none;
+}
+
+.admin-progress-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.admin-progress-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.35);
+  overflow: hidden;
+}
+
+.admin-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--accent, #3b82f6);
+  transition: width 0.2s ease;
+}
+
 .dashboard {
   gap: 32px;
 }
