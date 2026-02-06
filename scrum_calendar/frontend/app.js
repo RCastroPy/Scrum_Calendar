@@ -65,6 +65,7 @@
     const mode = theme === "dark" ? "dark" : "light";
     document.documentElement.setAttribute("data-bs-theme", mode);
     if (document.body) {
+      document.body.setAttribute("data-bs-theme", mode);
       document.body.classList.toggle("theme-dark", mode === "dark");
     }
   };
@@ -1257,6 +1258,7 @@
       releaseItems,
       sprintImportItems,
       releaseImportItems,
+      quarters,
       timeInfo,
       usuarios,
     ] = await Promise.all([
@@ -1270,6 +1272,7 @@
       fetchJson("/release-items").catch(() => []),
       fetchJson("/import-sprint-items").catch(() => []),
       fetchJson("/import-release-items").catch(() => []),
+      fetchJson("/quarters").catch(() => []),
       fetchJson("/time").catch(() => null),
       usuariosPromise,
     ]);
@@ -1303,6 +1306,7 @@
       releaseItems: releaseItems || [],
       sprintImportItems: sprintImportItems || [],
       releaseImportItems: releaseImportItems || [],
+      quarters: quarters || [],
       usuarios: usuarios || [],
     };
   }
@@ -2862,21 +2866,15 @@
         }
         state.dailySelectedPersonaId = "";
         state.dailySelectedAssignee = "";
+        state.dailyStatusFilters = [];
         state.dailyStoryPointsFilter = null;
+        state.dailyStatusOpen = false;
+        state.dailyStatusTouched = false;
+        state.selectedSprintId = "";
+        state.dailySprintOpen = false;
         state.dailyCapacityCache = {};
         toggleMenuVisibility();
-        if (qs("#dashboard")) {
-          const dashboard = await loadDashboardData(base, state.selectedCelulaId);
-          renderDashboard(dashboard);
-          initSprintFilter(base);
-          initDashboardCellFilter(base);
-        }
-        initForms(base);
-        renderAdmin(base);
-        initDaily();
-        initReleaseTable();
-        initOneToOne();
-        initRetrospective();
+        await reloadAll();
       });
     }
 
@@ -2910,10 +2908,12 @@
     const celulaForm = qs("#form-celula");
     const personaForm = qs("#form-persona");
     const sprintForm = qs("#form-sprint");
+    const quarterForm = qs("#form-quarter");
     const feriadoForm = qs("#form-feriado");
     const eventoForm = qs("#form-evento");
     const tipoForm = qs("#form-evento-tipo");
     const releaseImportForm = qs("#form-release-import");
+    const quarterForm = qs("#form-quarter");
     const importClearBtn = qs("#import-clear");
     const importForm = qs("#form-import");
 
@@ -3380,6 +3380,35 @@
       });
     }
 
+    if (quarterForm && !quarterForm.dataset.bound) {
+      quarterForm.dataset.bound = "true";
+      quarterForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const wasEditing = quarterForm.dataset.mode === "edit";
+        const label = quarterForm.label?.value?.trim();
+        if (!label) {
+          setStatus("#status-quarter", "Ingresa un quarter valido.", "error");
+          return;
+        }
+        try {
+          setStatus("#status-quarter", "Guardando...", "info");
+          if (quarterForm.dataset.mode === "edit") {
+            await putJson(`/quarters/${quarterForm.dataset.editId}`, { label });
+            setStatus("#status-quarter", "Quarter actualizado.", "ok");
+          } else {
+            await postJson("/quarters", { label });
+            setStatus("#status-quarter", "Quarter guardado.", "ok");
+          }
+          quarterForm.reset();
+          resetFormMode(quarterForm, "Crear quarter");
+          if (wasEditing) closeAdminModal(false);
+          await reloadAll();
+        } catch (err) {
+          setStatus("#status-quarter", err.message || "Error al guardar quarter.", "error");
+        }
+      });
+    }
+
     if (importClearBtn && !importClearBtn.dataset.bound) {
       importClearBtn.dataset.bound = "true";
       importClearBtn.addEventListener("click", async () => {
@@ -3387,12 +3416,12 @@
           setStatus("#status-import", "Selecciona una celula activa.", "error");
           return;
         }
-        const confirmed = window.confirm("Eliminar todos los datos importados de esta celula?");
+        const confirmed = window.confirm("Eliminar todos los datos de esta celula?");
         if (!confirmed) return;
         try {
           setStatus("#status-import", "Eliminando datos...", "info");
           const res = await fetchWithFallback(
-            `/sprint-items?celula_id=${encodeURIComponent(state.selectedCelulaId)}`,
+            `/release-items?celula_id=${encodeURIComponent(state.selectedCelulaId)}`,
             { method: "DELETE" }
           );
           const text = await res.text();
@@ -6095,6 +6124,51 @@
       }
       return { node: wrap, count };
     };
+    const releaseImportByKey = new Map(
+      (base.releaseImportItems || []).map((item) => [
+        `${item.celula_id}:${item.issue_key}`,
+        item,
+      ])
+    );
+    const getSprintHistoryCount = (row) => {
+      const key = `${row.celula_id}:${row.issue_key}`;
+      const source = releaseImportByKey.get(key) || row;
+      const values = new Set();
+      if (source.sprint_nombre) values.add(source.sprint_nombre);
+      if (source.raw_data) {
+        try {
+          const data = JSON.parse(source.raw_data);
+          Object.entries(data).forEach(([field, value]) => {
+            if (!normalizeText(field).includes("sprint")) return;
+            const text = String(value || "").trim();
+            if (text) values.add(text);
+          });
+        } catch {
+          // ignore raw_data parse errors
+        }
+      }
+      return values.size || (source.sprint_nombre ? 1 : 0);
+    };
+    const buildSprintHistoryDots = (row) => {
+      const count = getSprintHistoryCount(row);
+      if (!count) return "";
+      const wrapper = document.createElement("div");
+      wrapper.className = "sprint-history";
+      const color = count === 1 ? "green" : count === 2 ? "orange" : "red";
+      const dots = count >= 3 ? 3 : count;
+      for (let i = 0; i < dots; i += 1) {
+        const dot = document.createElement("span");
+        dot.className = `sprint-dot ${color}`;
+        wrapper.appendChild(dot);
+      }
+      if (count >= 4) {
+        const plus = document.createElement("span");
+        plus.className = "sprint-plus";
+        plus.textContent = "+";
+        wrapper.appendChild(plus);
+      }
+      return wrapper;
+    };
 
     const kpi1El = qs("#daily-kpi-1");
     const kpi1ExpectedEl = qs("#daily-kpi-1-expected");
@@ -6136,7 +6210,7 @@
       let sprintPrev1 = 0;
       let sprintPrev2 = 0;
       itemsAll.forEach((item) => {
-        const carry = getSprintCarryCount(item);
+        const carry = getSprintHistoryCount(item);
         if (carry <= 1) {
           sprintNow += 1;
         } else if (carry === 2) {
@@ -6640,11 +6714,8 @@
         {
           key: "sprint_indicator",
           label: "Sprint",
-          render: (row) => {
-            const indicator = buildSprintIndicator(row);
-            return indicator.node;
-          },
-          getValue: (row) => buildSprintIndicator(row).count,
+          render: (row) => buildSprintHistoryDots(row),
+          getValue: (row) => getSprintHistoryCount(row),
         },
         { key: "issue_key", label: "Issue" },
         { key: "issue_type", label: "Tipo" },
@@ -6984,8 +7055,11 @@
     );
     const statusOptions = ["Backlog", "To Do", "In Progress", "Finalizada", "Cancelada"];
     const typeOptions = ["ETEC", "Func", "MTEC", "New", "Prob"];
-    const buildQuarterOptions = (rows) => {
+    const buildQuarterOptions = (rows, manual = []) => {
       const set = new Set();
+      manual.forEach((value) => {
+        if (value) set.add(value);
+      });
       rows.forEach((item) => {
         if (item.quarter) {
           set.add(item.quarter);
@@ -7122,12 +7196,22 @@
       }
       return "-";
     };
-    const releasesFiltrados = state.selectedCelulaId
-      ? (base.releaseItems || []).filter(
-          (item) => String(item.celula_id) === String(state.selectedCelulaId)
-        )
-      : base.releaseItems || [];
-    const quarterOptions = buildQuarterOptions(releasesFiltrados);
+    const isReleaseRow = (item) => {
+      const issueType = normalizeText(item.issue_type || "");
+      const tipo = normalizeText(item.release_tipo || "");
+      return issueType === "release" || (!!tipo && tipo !== "tarea");
+    };
+    const releasesFiltrados = (base.releaseItems || []).filter((item) => {
+      if (!isReleaseRow(item)) return false;
+      if (state.selectedCelulaId) {
+        return String(item.celula_id) === String(state.selectedCelulaId);
+      }
+      return true;
+    });
+    const manualQuarters = (base.quarters || []).map((item) => item.label).filter(Boolean);
+    const quarterOptions = manualQuarters.length
+      ? buildQuarterOptions([], manualQuarters)
+      : buildQuarterOptions(releasesFiltrados);
     const buildQuarterSelect = (row) => {
       const select = document.createElement("select");
       select.className = "table-input";
@@ -9073,6 +9157,40 @@
       }
     }
 
+    function updateImportSummary(releaseItems = [], importItems = []) {
+      const summary = qs("#import-summary");
+      if (!summary) return;
+      const releasesEl = qs("#import-summary-releases");
+      const tareasEl = qs("#import-summary-tareas");
+      if (!releasesEl || !tareasEl) return;
+      const combinedMap = new Map();
+      (importItems || []).forEach((item) => {
+        const key = `${item.celula_id}:${item.issue_key}`;
+        if (!combinedMap.has(key)) combinedMap.set(key, item);
+      });
+      (releaseItems || []).forEach((item) => {
+        const key = `${item.celula_id}:${item.issue_key}`;
+        combinedMap.set(key, item);
+      });
+      const items = Array.from(combinedMap.values());
+      const filtered = items;
+      let releases = 0;
+      let tareas = 0;
+      filtered.forEach((item) => {
+        const issueType = normalizeText(item.issue_type || "");
+        const tipo = normalizeText(item.release_tipo || "");
+        const isRelease =
+          issueType === "release" || (!!tipo && tipo !== "tarea");
+        if (isRelease) {
+          releases += 1;
+        } else {
+          tareas += 1;
+        }
+      });
+      releasesEl.textContent = String(releases);
+      tareasEl.textContent = String(tareas);
+    }
+
     const ensureBulkDeleteButton = (tableKey, label, onDelete) => {
       const container = qs(`#${tableKey}`);
       const card = container?.closest(".admin-card");
@@ -9093,6 +9211,7 @@
     const canEditCelula = !!celulaForm;
     const canEditPersona = !!personaForm;
     const canEditSprint = !!sprintForm;
+    const canEditQuarter = !!quarterForm;
     const canEditFeriado = !!feriadoForm;
     const canEditEvento = !!eventoForm;
     const canEditTipo = !!tipoForm;
@@ -9160,6 +9279,9 @@
         celulaMap[sprint.celula_id],
       ])
     );
+    const quartersBuscados = (base.quarters || []).filter((quarter) =>
+      matchesQuery([quarter.id, quarter.label])
+    );
     const feriadosFiltrados = state.selectedCelulaId
       ? (base.feriados || []).filter(
           (feriado) =>
@@ -9213,16 +9335,12 @@
         tipo.activo ? "si" : "no",
       ])
     );
-    const groupedSprintItems = groupSprintItems(
-      base.sprintImportItems || [],
-      base.sprints || []
-    );
-    const sprintItemsFiltrados = state.selectedCelulaId
-      ? groupedSprintItems.filter(
+    const releaseImportItemsFiltrados = state.selectedCelulaId
+      ? (base.releaseImportItems || []).filter(
           (item) => String(item.celula_id) === String(state.selectedCelulaId)
         )
-      : groupedSprintItems;
-    const sprintItemsBuscados = sprintItemsFiltrados.filter((item) =>
+      : base.releaseImportItems || [];
+    const releaseImportItemsBuscados = releaseImportItemsFiltrados.filter((item) =>
       matchesQuery([
         item.issue_key,
         item.issue_type,
@@ -9231,15 +9349,16 @@
         item.story_points,
         personaMap[item.persona_id],
         item.assignee_nombre,
-        sprintMap[item.sprint_id],
-        (item.sprints_anteriores || []).join(", "),
+        item.sprint_nombre,
+        item.release_tipo,
+        item.quarter,
       ])
     );
     const releaseItemsFiltrados = state.selectedCelulaId
-      ? (base.releaseImportItems || []).filter(
+      ? (base.releaseItems || []).filter(
           (item) => String(item.celula_id) === String(state.selectedCelulaId)
         )
-      : base.releaseImportItems || [];
+      : base.releaseItems || [];
     const releaseItemsBuscados = releaseItemsFiltrados.filter((item) =>
       matchesQuery([
         item.issue_key,
@@ -9251,8 +9370,55 @@
         item.assignee_nombre,
         item.sprint_nombre,
         item.release_tipo,
+        item.quarter,
       ])
     );
+    const releaseItemsTabla = releaseItemsBuscados;
+    const releaseImportByKey = new Map(
+      releaseImportItemsFiltrados.map((item) => [
+        `${item.celula_id}:${item.issue_key}`,
+        item,
+      ])
+    );
+    const getSprintHistoryCount = (row) => {
+      const key = `${row.celula_id}:${row.issue_key}`;
+      const source = releaseImportByKey.get(key) || row;
+      const values = new Set();
+      if (source.sprint_nombre) values.add(source.sprint_nombre);
+      if (source.raw_data) {
+        try {
+          const data = JSON.parse(source.raw_data);
+          Object.entries(data).forEach(([field, value]) => {
+            if (!normalizeText(field).includes("sprint")) return;
+            const text = String(value || "").trim();
+            if (text) values.add(text);
+          });
+        } catch {
+          // ignore raw_data parse errors
+        }
+      }
+      return values.size || (source.sprint_nombre ? 1 : 0);
+    };
+    const buildSprintHistoryDots = (row) => {
+      const count = getSprintHistoryCount(row);
+      if (!count) return "";
+      const wrapper = document.createElement("div");
+      wrapper.className = "sprint-history";
+      const color = count === 1 ? "green" : count === 2 ? "orange" : "red";
+      const dots = count >= 3 ? 3 : count;
+      for (let i = 0; i < dots; i += 1) {
+        const dot = document.createElement("span");
+        dot.className = `sprint-dot ${color}`;
+        wrapper.appendChild(dot);
+      }
+      if (count >= 4) {
+        const plus = document.createElement("span");
+        plus.className = "sprint-plus";
+        plus.textContent = "+";
+        wrapper.appendChild(plus);
+      }
+      return wrapper;
+    };
     const usuariosBuscados = (base.usuarios || []).filter((usuario) =>
       matchesQuery([usuario.username, usuario.rol, usuario.activo ? "si" : "no"])
     );
@@ -9587,6 +9753,46 @@
     );
 
     renderAdminTable(
+      qs("#admin-quarters"),
+      quartersBuscados,
+      [
+        { key: "_index", label: "#" },
+        { key: "label", label: "Quarter" },
+      ],
+      [
+        {
+          label: "Eliminar",
+          icon: trashIcon,
+          onClick: async (row) => {
+            if (!confirm(`Eliminar quarter ${row.label}?`)) return;
+            try {
+              const res = await fetchWithFallback(`/quarters/${row.id}`, { method: "DELETE" });
+              if (!res.ok) throw new Error("No se pudo eliminar");
+              setAdminStatus("Quarter eliminado.", "ok");
+              await reloadAll();
+            } catch {
+              setAdminStatus("Error al eliminar quarter.", "error");
+            }
+          },
+        },
+        ...(canEditQuarter
+          ? [
+              {
+                label: "Editar",
+                icon: editIcon,
+                onClick: (row) => {
+                  if (!quarterForm) return;
+                  quarterForm.label.value = row.label;
+                  setFormMode(quarterForm, "edit", row.id, "Actualizar quarter");
+                  openAdminModal(quarterForm, "Editar quarter");
+                },
+              },
+            ]
+          : []),
+      ]
+    );
+
+    renderAdminTable(
       qs("#admin-feriados"),
       feriadosBuscados,
       [
@@ -9760,7 +9966,7 @@
 
     renderAdminTable(
       qs("#admin-release-items"),
-      releaseItemsBuscados,
+      releaseItemsTabla,
       [
         {
           key: "_select",
@@ -9769,6 +9975,11 @@
         },
         { key: "_index", label: "#" },
         { key: "issue_key", label: "Issue" },
+        {
+          key: "sprint_hist",
+          label: "Histórico",
+          render: (row) => buildSprintHistoryDots(row),
+        },
         { key: "issue_type", label: "Tipo" },
         { key: "summary", label: "Resumen" },
         {
@@ -9815,7 +10026,7 @@
         let done = 0;
         setAdminProgress(0, total, "Eliminando releases");
         for (const id of Array.from(selection)) {
-          const res = await fetchWithFallback(`/import-release-items/${id}`, { method: "DELETE" });
+          const res = await fetchWithFallback(`/release-items/${id}`, { method: "DELETE" });
           if (res.status === 404) {
             selection.delete(id);
             continue;
@@ -9837,79 +10048,9 @@
       }
     });
 
-    renderAdminTable(
-      qs("#admin-sprint-items"),
-      sprintItemsBuscados,
-      [
-        {
-          key: "_select",
-          label: "Sel",
-          render: (row) => buildAdminRowCheckbox(row, "admin-sprint-items"),
-        },
-        { key: "_index", label: "#" },
-        { key: "issue_key", label: "Issue" },
-        { key: "issue_type", label: "Tipo" },
-        { key: "summary", label: "Resumen" },
-        { key: "status", label: "Estado" },
-        {
-          key: "story_points",
-          label: "Story Points",
-          render: (row) => (row.story_points != null ? String(row.story_points) : ""),
-        },
-        {
-          key: "assignee",
-          label: "Asignado",
-          render: (row) =>
-            personaMap[row.persona_id] || row.assignee_nombre || "",
-        },
-        {
-          key: "sprint",
-          label: "Sprint",
-          render: (row) => sprintMap[row.sprint_id] || "",
-        },
-        {
-          key: "sprints_anteriores",
-          label: "Sprints anteriores",
-          render: (row) => (row.sprints_anteriores || []).join(", "),
-        },
-      ],
-      []
-    );
+    updateImportSummary(releaseItemsFiltrados, releaseImportItemsFiltrados);
 
-    ensureBulkDeleteButton("admin-sprint-items", "Eliminar seleccionados", async () => {
-      const selection = getAdminSelection("admin-sprint-items");
-      if (!selection.size) {
-        setAdminStatus("Selecciona al menos un item.", "error");
-        return;
-      }
-      if (!confirm(`Eliminar ${selection.size} item(s) seleccionados?`)) return;
-      try {
-        setAdminStatus("Eliminando items...", "info");
-        const total = selection.size;
-        let done = 0;
-        setAdminProgress(0, total, "Eliminando items");
-        for (const id of Array.from(selection)) {
-          const res = await fetchWithFallback(`/import-sprint-items/${id}`, { method: "DELETE" });
-          if (res.status === 404) {
-            selection.delete(id);
-            continue;
-          }
-          if (!res.ok) {
-            const text = await res.text();
-            throw new Error(text || "No se pudo eliminar item.");
-          }
-          done += 1;
-          setAdminProgress(done, total, "Eliminando items");
-        }
-        selection.clear();
-        setAdminProgress(0, 0, "");
-        setAdminStatus("Items eliminados.", "ok");
-        await reloadAll();
-      } catch (err) {
-        setAdminProgress(0, 0, "");
-        setAdminStatus(err.message || "Error al eliminar items.", "error");
-      }
-    });
+    // Listado unificado: tareas + releases en una sola tabla.
   }
 
   async function reloadAll() {
@@ -10265,8 +10406,9 @@
           return;
         }
         initPokerPlanning({ skipPolling: true });
-      });
-    }
+    });
+
+  }
 
     if (!skipPolling && !window.__pokerAdminPoll) {
       window.__pokerAdminPoll = window.setInterval(() => {

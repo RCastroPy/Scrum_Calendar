@@ -44,15 +44,15 @@
               <a href="data-entry.html"><span class="menu-text">Carga de datos</span></a>
               <button class="submenu-toggle" type="button" aria-label="Mostrar sub menu">▾</button>
             </div>
-            <div class="submenu">
+                                    <div class="submenu">
               <a href="data-entry.html#celulas">Celulas</a>
               <a href="data-entry.html#personas">Personas</a>
               <a href="data-entry.html#sprints">Sprints</a>
-              <a href="data-entry.html#releases">Importar Releases</a>
               <a href="data-entry.html#feriados">Feriados</a>
               <a href="data-entry.html#tipos-evento">Tipos de evento</a>
               <a href="data-entry.html#eventos">Eventos</a>
               <a href="data-entry.html#importacion">Importacion CSV</a>
+              <a href="data-entry.html#quarters">Quarter</a>
             </div>
           </div>
           <a href="admin.html" data-role="admin"><span class="menu-text">Administracion</span></a>
@@ -71,7 +71,7 @@
 
         <section class="section data-entry" id="data-entry">
           <div class="section-head">
-            <h2>Carga de Releases</h2>
+            <h2>Carga de Tareas</h2>
             <p>Completa una entidad a la vez para alimentar el dashboard.</p>
           </div>
 
@@ -193,9 +193,21 @@
               </form>
             </div>
 
+            <div class="section-block" data-section="quarters" id="quarters">
+              <form class="entry-card" id="form-quarter">
+                <h3>5. Quarters</h3>
+                <label>
+                  Quarter (ej: Q4-25, Q1-26)
+                  <input type="text" name="label" placeholder="Q4-25" required />
+                </label>
+                <button class="btn primary" type="submit">Guardar quarter</button>
+                <div class="form-status" id="status-quarter"></div>
+              </form>
+            </div>
+
             <div class="section-block" data-section="feriados" id="feriados">
               <form class="entry-card" id="form-feriado">
-                <h3>5. Feriados</h3>
+                <h3>6. Feriados</h3>
               <p class="helper">Aplica a todas las celulas (actuales y futuras).</p>
               <label>
                 Fecha
@@ -219,7 +231,7 @@
 
             <div class="section-block" data-section="tipos-evento" id="tipos-evento">
               <form class="entry-card" id="form-evento-tipo">
-                <h3>6. Tipos de evento</h3>
+                <h3>7. Tipos de evento</h3>
                 <p class="helper">Define impacto base para el calculo de capacidad.</p>
                 <label>
                   Nombre
@@ -250,7 +262,7 @@
 
             <div class="section-block" data-section="eventos" id="eventos">
               <form class="entry-card" id="form-evento">
-                <h3>7. Eventos</h3>
+                <h3>8. Eventos</h3>
                 <label>
                   Persona
                   <select name="persona" required></select>
@@ -302,7 +314,7 @@
             </div>
             <div class="section-block" data-section="importacion" id="importacion">
               <form class="entry-card" id="form-import">
-                <h3>8. Importar sprint (CSV/XLSX)</h3>
+                <h3>9. Importar sprint (CSV/XLSX)</h3>
                 <p class="helper">
                   Exporta desde Jira en CSV o XLSX con columnas: Issue Type, Issue key, Summary,
                   Status, Custom field (Story Points), Assignee, Sprint.
@@ -316,6 +328,16 @@
                   <button class="btn ghost" type="button" id="import-clear">Eliminar todo</button>
                 </div>
                 <div class="form-status" id="status-import"></div>
+                <div class="import-summary" id="import-summary">
+                  <div class="import-summary-item">
+                    <span class="label">Releases cargados</span>
+                    <span class="value" id="import-summary-releases">0</span>
+                  </div>
+                  <div class="import-summary-item">
+                    <span class="label">Total tareas</span>
+                    <span class="value" id="import-summary-tareas">0</span>
+                  </div>
+                </div>
               </form>
             </div>
           </div>
@@ -354,6 +376,10 @@
               <h3>Sprints</h3>
               <div class="admin-table" id="admin-sprints"></div>
             </div>
+            <div class="admin-card" data-section="quarters">
+              <h3>Quarters</h3>
+              <div class="admin-table" id="admin-quarters"></div>
+            </div>
             <div class="admin-card" data-section="feriados">
               <h3>Feriados</h3>
               <div class="admin-table" id="admin-feriados"></div>
@@ -366,13 +392,9 @@
               <h3>Eventos</h3>
               <div class="admin-table" id="admin-eventos"></div>
             </div>
-            <div class="admin-card" data-section="releases">
-              <h3>Releases</h3>
-              <div class="admin-table" id="admin-release-items"></div>
-            </div>
             <div class="admin-card" data-section="importacion">
-              <h3>Items de sprint</h3>
-              <div class="admin-table" id="admin-sprint-items"></div>
+              <h3>Listado de datos</h3>
+              <div class="admin-table" id="admin-release-items"></div>
             </div>
           </div>
         </section>

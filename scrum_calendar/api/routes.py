@@ -65,10 +65,12 @@ from api.schemas import (
     RetroPublicItemCreate,
     RetroClaimCreate,
     RetroPublicOut,
+    ReleaseImportItemOut,
     ReleaseItemImportOut,
     ReleaseItemOut,
     ReleaseItemUpdate,
     SprintItemCreate,
+    SprintImportItemOut,
     SprintItemImportOut,
     SprintItemOut,
     SprintItemUpdate,
@@ -82,6 +84,9 @@ from api.schemas import (
     PersonaCreate,
     PersonaOut,
     PersonaUpdate,
+    QuarterOptionCreate,
+    QuarterOptionOut,
+    QuarterOptionUpdate,
     SprintCreate,
     SprintOut,
     SprintUpdate,
@@ -106,9 +111,12 @@ from data.models import (
     Retrospective,
     RetrospectiveItem,
     Persona,
+    QuarterOption,
+    ReleaseImportItem,
     ReleaseItem,
     Sesion,
     Sprint,
+    SprintImportItem,
     SprintItem,
     Usuario,
     now_py,
@@ -128,6 +136,19 @@ def normalize_text(value: str) -> str:
     cleaned = "".join(ch for ch in cleaned if not unicodedata.combining(ch))
     cleaned = re.sub(r"\s+", " ", cleaned)
     return cleaned.strip().lower()
+
+
+def normalize_quarter_label(value: str) -> str:
+    raw = (value or "").strip().upper()
+    if not raw:
+        return ""
+    match = re.match(r"Q\s*([1-4])\s*[-/ ]?\s*([0-9]{2,4})", raw)
+    if match:
+        quarter_num = int(match.group(1))
+        year_raw = int(match.group(2))
+        year = year_raw + 2000 if year_raw < 100 else year_raw
+        return f"Q{quarter_num} {year}"
+    return raw
 
 
 def normalize_name(value: str) -> str:
@@ -2325,13 +2346,69 @@ def eliminar_sprint(sprint_id: int, db: Session = Depends(get_db)):
     sprint = db.get(Sprint, sprint_id)
     if not sprint:
         raise HTTPException(status_code=404, detail="Sprint no encontrado")
-    db.query(SprintItem).filter(SprintItem.sprint_id == sprint_id).delete(
-        synchronize_session=False
-    )
+    db.query(ReleaseItem).filter(
+        ReleaseItem.sprint_id == sprint_id,
+        ReleaseItem.release_tipo == "tarea",
+    ).delete(synchronize_session=False)
+    db.query(ReleaseImportItem).filter(
+        ReleaseImportItem.sprint_id == sprint_id,
+        ReleaseImportItem.release_tipo == "tarea",
+    ).delete(synchronize_session=False)
     db.query(Evento).filter(Evento.sprint_id == sprint_id).delete(synchronize_session=False)
     db.delete(sprint)
     db.commit()
     return sprint
+
+
+@router.get("/quarters", response_model=List[QuarterOptionOut])
+def listar_quarters(db: Session = Depends(get_db)):
+    return db.query(QuarterOption).order_by(QuarterOption.label).all()
+
+
+@router.post("/quarters", response_model=QuarterOptionOut, status_code=status.HTTP_201_CREATED)
+def crear_quarter(payload: QuarterOptionCreate, db: Session = Depends(get_db)):
+    label = normalize_quarter_label(payload.label)
+    if not label:
+        raise HTTPException(status_code=400, detail="Quarter invalido")
+    existente = db.query(QuarterOption).filter(QuarterOption.label == label).first()
+    if existente:
+        return existente
+    item = QuarterOption(label=label)
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.put("/quarters/{quarter_id}", response_model=QuarterOptionOut)
+def actualizar_quarter(quarter_id: int, payload: QuarterOptionUpdate, db: Session = Depends(get_db)):
+    item = db.get(QuarterOption, quarter_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Quarter no encontrado")
+    label = normalize_quarter_label(payload.label)
+    if not label:
+        raise HTTPException(status_code=400, detail="Quarter invalido")
+    existente = (
+        db.query(QuarterOption)
+        .filter(QuarterOption.label == label, QuarterOption.id != quarter_id)
+        .first()
+    )
+    if existente:
+        raise HTTPException(status_code=409, detail="Quarter ya existe")
+    item.label = label
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.delete("/quarters/{quarter_id}", response_model=QuarterOptionOut)
+def eliminar_quarter(quarter_id: int, db: Session = Depends(get_db)):
+    item = db.get(QuarterOption, quarter_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Quarter no encontrado")
+    db.delete(item)
+    db.commit()
+    return item
 
 
 @router.get("/eventos", response_model=List[EventoOut])
@@ -2414,11 +2491,22 @@ def listar_sprint_items(
     sprint_id: Optional[int] = None,
     db: Session = Depends(get_db),
 ):
-    query = db.query(SprintItem).order_by(SprintItem.creado_en.desc())
+    query = db.query(ReleaseItem).order_by(ReleaseItem.creado_en.desc())
     if celula_id is not None:
-        query = query.filter(SprintItem.celula_id == celula_id)
+        query = query.filter(ReleaseItem.celula_id == celula_id)
     if sprint_id is not None:
-        query = query.filter(SprintItem.sprint_id == sprint_id)
+        query = query.filter(ReleaseItem.sprint_id == sprint_id)
+    return query.all()
+
+
+@router.get("/import-sprint-items", response_model=List[SprintImportItemOut])
+def listar_import_sprint_items(
+    celula_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    query = db.query(ReleaseImportItem).order_by(ReleaseImportItem.creado_en.desc())
+    if celula_id is not None:
+        query = query.filter(ReleaseImportItem.celula_id == celula_id)
     return query.all()
 
 
@@ -2437,7 +2525,7 @@ def crear_sprint_item(payload: SprintItemCreate, db: Session = Depends(get_db)):
         if not persona:
             raise HTTPException(status_code=404, detail="Persona no encontrada")
 
-    item = SprintItem(
+    item = ReleaseItem(
         celula_id=payload.celula_id,
         sprint_id=payload.sprint_id,
         persona_id=payload.persona_id,
@@ -2450,6 +2538,8 @@ def crear_sprint_item(payload: SprintItemCreate, db: Session = Depends(get_db)):
         start_date=payload.start_date,
         end_date=payload.end_date,
         due_date=payload.due_date,
+        sprint_nombre=sprint.nombre,
+        release_tipo="tarea",
     )
     try:
         db.add(item)
@@ -2467,7 +2557,7 @@ def crear_sprint_item(payload: SprintItemCreate, db: Session = Depends(get_db)):
 def actualizar_sprint_item(
     item_id: int, payload: SprintItemUpdate, db: Session = Depends(get_db)
 ):
-    item = db.get(SprintItem, item_id)
+    item = db.get(ReleaseItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Item no encontrado")
     data = payload.model_dump(exclude_unset=True)
@@ -2514,9 +2604,27 @@ def actualizar_sprint_item(
 
 @router.delete("/sprint-items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 def eliminar_sprint_item(item_id: int, db: Session = Depends(get_db)):
-    item = db.get(SprintItem, item_id)
+    item = db.get(ReleaseItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Item no encontrado")
+    db.query(ReleaseImportItem).filter(
+        ReleaseImportItem.issue_key == item.issue_key,
+        ReleaseImportItem.celula_id == item.celula_id,
+    ).delete(synchronize_session=False)
+    db.delete(item)
+    db.commit()
+    return None
+
+
+@router.delete("/import-sprint-items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+def eliminar_import_sprint_item(item_id: int, db: Session = Depends(get_db)):
+    item = db.get(ReleaseImportItem, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item no encontrado")
+    db.query(ReleaseItem).filter(
+        ReleaseItem.issue_key == item.issue_key,
+        ReleaseItem.celula_id == item.celula_id,
+    ).delete(synchronize_session=False)
     db.delete(item)
     db.commit()
     return None
@@ -2723,6 +2831,8 @@ async def importar_sprint_items(
     missing_personas: set[str] = set()
     missing_sprints: set[str] = set()
     missing_celulas: set[str] = set()
+    import_item_cache: dict[str, ReleaseImportItem] = {}
+    item_cache: dict[str, ReleaseItem] = {}
 
     def get_value(row: dict, key: Optional[str]) -> str:
         if not key:
@@ -2763,6 +2873,7 @@ async def importar_sprint_items(
                 missing_personas.add(assignee_raw)
 
         issue_type = get_value(row, resolved["issue_type"]) or "Task"
+        is_release_issue = normalize_text(issue_type) == "release"
         summary = get_value(row, resolved["summary"]) or "-"
         status = get_value(row, resolved["status"]) or "-"
         story_points_raw = get_value(row, resolved["story_points"])
@@ -2780,6 +2891,10 @@ async def importar_sprint_items(
         start_date = None
         end_date = None
         due_date = None
+        raw_data = json.dumps(row, ensure_ascii=False)
+
+        created_flag = False
+        updated_flag = False
 
         for sprint_name in sprint_values:
             sprint = resolve_sprint(sprint_name, sprint_map) if sprint_name else None
@@ -2806,14 +2921,95 @@ async def importar_sprint_items(
             if sprint.nombre not in detected_sprints:
                 detected_sprints.append(sprint.nombre)
 
-            item = (
-                db.query(SprintItem)
-                .filter(
-                    SprintItem.issue_key == issue_key,
-                    SprintItem.sprint_id == sprint.id,
+            cache_key = f"{row_celula_id}:{issue_key}"
+            import_item = import_item_cache.get(cache_key)
+            if import_item is None:
+                import_item = (
+                    db.query(ReleaseImportItem)
+                    .filter(
+                        ReleaseImportItem.issue_key == issue_key,
+                        ReleaseImportItem.celula_id == row_celula_id,
+                    )
+                    .first()
                 )
-                .first()
-            )
+                if import_item:
+                    import_item_cache[cache_key] = import_item
+            if import_item:
+                changed = False
+                if import_item.celula_id != row_celula_id:
+                    import_item.celula_id = row_celula_id
+                    changed = True
+                if import_item.persona_id != persona_id:
+                    import_item.persona_id = persona_id
+                    changed = True
+                if (import_item.assignee_nombre or "") != (assignee_raw or ""):
+                    import_item.assignee_nombre = assignee_raw or None
+                    changed = True
+                if import_item.issue_type != issue_type:
+                    import_item.issue_type = issue_type
+                    changed = True
+                if import_item.summary != summary:
+                    import_item.summary = summary
+                    changed = True
+                if import_item.status != status:
+                    import_item.status = status
+                    changed = True
+                if import_item.story_points != story_points:
+                    import_item.story_points = story_points
+                    changed = True
+                if import_item.sprint_id != sprint.id:
+                    import_item.sprint_id = sprint.id
+                    changed = True
+                if (import_item.sprint_nombre or "") != sprint.nombre:
+                    import_item.sprint_nombre = sprint.nombre
+                    changed = True
+                if is_release_issue:
+                    if import_item.release_tipo in (None, "", "tarea"):
+                        import_item.release_tipo = "release"
+                        changed = True
+                elif import_item.release_tipo != "tarea":
+                    import_item.release_tipo = "tarea"
+                    changed = True
+                if import_item.quarter != quarter:
+                    import_item.quarter = quarter
+                    changed = True
+                if import_item.raw_data != raw_data:
+                    import_item.raw_data = raw_data
+                    changed = True
+                if changed:
+                    updated_flag = True
+            else:
+                import_item = ReleaseImportItem(
+                    celula_id=row_celula_id,
+                    sprint_id=sprint.id,
+                    persona_id=persona_id,
+                    assignee_nombre=assignee_raw or None,
+                    issue_key=issue_key,
+                    issue_type=issue_type,
+                    summary=summary,
+                    status=status,
+                    story_points=story_points,
+                    sprint_nombre=sprint.nombre,
+                    release_tipo="release" if is_release_issue else "tarea",
+                    quarter=quarter,
+                    raw_data=raw_data,
+                )
+                db.add(import_item)
+                import_item_cache[cache_key] = import_item
+                created_flag = True
+
+            item = item_cache.get(cache_key)
+            if item is None:
+                item = (
+                    db.query(ReleaseItem)
+                    .filter(
+                        ReleaseItem.issue_key == issue_key,
+                        ReleaseItem.celula_id == row_celula_id,
+                    )
+                    .first()
+                )
+                if item:
+                    item_cache[cache_key] = item
             if item:
                 changed = False
                 if item.celula_id != row_celula_id:
@@ -2825,11 +3021,36 @@ async def importar_sprint_items(
                 if (item.assignee_nombre or "") != (assignee_raw or ""):
                     item.assignee_nombre = assignee_raw or None
                     changed = True
+                if item.issue_type != issue_type:
+                    item.issue_type = issue_type
+                    changed = True
+                if item.summary != summary:
+                    item.summary = summary
+                    changed = True
                 if item.status != status:
                     item.status = status
                     changed = True
                 if item.story_points != story_points:
                     item.story_points = story_points
+                    changed = True
+                if item.sprint_id != sprint.id:
+                    item.sprint_id = sprint.id
+                    changed = True
+                if (item.sprint_nombre or "") != sprint.nombre:
+                    item.sprint_nombre = sprint.nombre
+                    changed = True
+                if is_release_issue:
+                    if item.release_tipo in (None, "", "tarea"):
+                        item.release_tipo = "release"
+                        changed = True
+                elif item.release_tipo != "tarea":
+                    item.release_tipo = "tarea"
+                    changed = True
+                if item.quarter != quarter:
+                    item.quarter = quarter
+                    changed = True
+                if item.raw_data != raw_data:
+                    item.raw_data = raw_data
                     changed = True
                 if item.start_date is None and start_date is not None:
                     item.start_date = start_date
@@ -2841,25 +3062,34 @@ async def importar_sprint_items(
                     item.due_date = due_date
                     changed = True
                 if changed:
-                    updated += 1
+                    updated_flag = True
             else:
-                db.add(
-                    SprintItem(
-                        celula_id=row_celula_id,
-                        sprint_id=sprint.id,
-                        persona_id=persona_id,
-                        assignee_nombre=assignee_raw or None,
-                        issue_key=issue_key,
-                        issue_type=issue_type,
-                        summary=summary,
-                        status=status,
-                        story_points=story_points,
-                        start_date=start_date,
-                        end_date=end_date,
-                        due_date=due_date,
-                    )
+                item = ReleaseItem(
+                    celula_id=row_celula_id,
+                    sprint_id=sprint.id,
+                    persona_id=persona_id,
+                    assignee_nombre=assignee_raw or None,
+                    issue_key=issue_key,
+                    issue_type=issue_type,
+                    summary=summary,
+                    status=status,
+                    story_points=story_points,
+                    start_date=start_date,
+                    end_date=end_date,
+                    due_date=due_date,
+                    sprint_nombre=sprint.nombre,
+                    release_tipo="release" if is_release_issue else "tarea",
+                    quarter=quarter,
+                    raw_data=raw_data,
                 )
-                created += 1
+                db.add(item)
+                item_cache[cache_key] = item
+                created_flag = True
+
+        if created_flag:
+            created += 1
+        elif updated_flag:
+            updated += 1
 
     db.commit()
 
@@ -2879,8 +3109,15 @@ def eliminar_sprint_items(
     celula_id: int,
     db: Session = Depends(get_db),
 ):
-    total = db.query(SprintItem).filter(SprintItem.celula_id == celula_id).count()
-    db.query(SprintItem).filter(SprintItem.celula_id == celula_id).delete(
+    total = (
+        db.query(ReleaseItem)
+        .filter(ReleaseItem.celula_id == celula_id)
+        .count()
+    )
+    db.query(ReleaseItem).filter(ReleaseItem.celula_id == celula_id).delete(
+        synchronize_session=False
+    )
+    db.query(ReleaseImportItem).filter(ReleaseImportItem.celula_id == celula_id).delete(
         synchronize_session=False
     )
     db.commit()
@@ -2895,6 +3132,17 @@ def listar_release_items(
     query = db.query(ReleaseItem).order_by(ReleaseItem.creado_en.desc())
     if celula_id is not None:
         query = query.filter(ReleaseItem.celula_id == celula_id)
+    return query.all()
+
+
+@router.get("/import-release-items", response_model=List[ReleaseImportItemOut])
+def listar_import_release_items(
+    celula_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    query = db.query(ReleaseImportItem).order_by(ReleaseImportItem.creado_en.desc())
+    if celula_id is not None:
+        query = query.filter(ReleaseImportItem.celula_id == celula_id)
     return query.all()
 
 
@@ -2930,6 +3178,16 @@ async def importar_release_items(
     if not content:
         raise HTTPException(status_code=400, detail="Archivo vacio")
     filename = (file.filename or "").lower()
+    file_quarter: Optional[str] = None
+    if filename:
+        match = re.search(r"q([1-4])[^0-9]*([0-9]{2,4})", filename)
+        if match:
+            quarter_num = int(match.group(1))
+            year_raw = match.group(2)
+            year_num = int(year_raw)
+            if year_num < 100:
+                year_num += 2000
+            file_quarter = f"Q{quarter_num} {year_num}"
     if filename.endswith(".xls") and not filename.endswith(".xlsx"):
         raise HTTPException(
             status_code=400,
@@ -3171,6 +3429,8 @@ async def importar_release_items(
                 missing_personas.add(assignee_raw)
         quarter_raw = get_value(row, quarter_header)
         quarter = quarter_raw.strip() if quarter_raw else None
+        if not quarter and file_quarter:
+            quarter = file_quarter
         start_date = parse_date_value(get_value(row, resolved["start_date"]))
         end_date = parse_date_value(get_value(row, resolved["end_date"]))
         due_date = parse_date_value(get_value(row, resolved["due_date"]))
@@ -3207,7 +3467,101 @@ async def importar_release_items(
 
         raw_data = json.dumps(row, ensure_ascii=False)
 
-        item = db.query(ReleaseItem).filter(ReleaseItem.issue_key == issue_key).first()
+        created_flag = False
+        updated_flag = False
+
+        import_item = (
+            db.query(ReleaseImportItem)
+            .filter(
+                ReleaseImportItem.issue_key == issue_key,
+                ReleaseImportItem.celula_id == row_celula_id,
+            )
+            .first()
+        )
+        if import_item:
+            changed = False
+            if import_item.celula_id != row_celula_id:
+                import_item.celula_id = row_celula_id
+                changed = True
+            if import_item.sprint_id != (sprint.id if sprint else None):
+                import_item.sprint_id = sprint.id if sprint else None
+                changed = True
+            if import_item.persona_id != persona_id:
+                import_item.persona_id = persona_id
+                changed = True
+            if import_item.issue_type != issue_type:
+                import_item.issue_type = issue_type
+                changed = True
+            if import_item.issue_id != issue_id:
+                import_item.issue_id = issue_id
+                changed = True
+            if import_item.summary != summary:
+                import_item.summary = summary
+                changed = True
+            if import_item.reporter != reporter:
+                import_item.reporter = reporter
+                changed = True
+            if import_item.reporter_id != reporter_id:
+                import_item.reporter_id = reporter_id
+                changed = True
+            if import_item.status != status:
+                import_item.status = status
+                changed = True
+            if import_item.story_points != story_points:
+                import_item.story_points = story_points
+                changed = True
+            if (import_item.assignee_nombre or "") != (assignee_raw or ""):
+                import_item.assignee_nombre = assignee_raw or None
+                changed = True
+            if import_item.assignee_id != assignee_id:
+                import_item.assignee_id = assignee_id
+                changed = True
+            if import_item.sprint_nombre != sprint_nombre:
+                import_item.sprint_nombre = sprint_nombre
+                changed = True
+            if import_item.release_tipo != tipo_release:
+                import_item.release_tipo = tipo_release
+                changed = True
+            if import_item.quarter != quarter:
+                import_item.quarter = quarter
+                changed = True
+            if import_item.raw_data != raw_data:
+                import_item.raw_data = raw_data
+                changed = True
+            if changed:
+                updated_flag = True
+        else:
+            db.add(
+                ReleaseImportItem(
+                    celula_id=row_celula_id,
+                    sprint_id=sprint.id if sprint else None,
+                    persona_id=persona_id,
+                    issue_type=issue_type,
+                    issue_key=issue_key,
+                    issue_id=issue_id or None,
+                    summary=summary,
+                    reporter=reporter,
+                    reporter_id=reporter_id,
+                    status=status,
+                    story_points=story_points,
+                    assignee_nombre=assignee_raw or None,
+                    assignee_id=assignee_id,
+                    sprint_nombre=sprint_nombre,
+                    release_tipo=tipo_release,
+                    quarter=quarter,
+                    raw_data=raw_data,
+                )
+            )
+            created_flag = True
+
+        item = (
+            db.query(ReleaseItem)
+            .filter(
+                ReleaseItem.issue_key == issue_key,
+                ReleaseItem.celula_id == row_celula_id,
+            )
+            .first()
+        )
         if item:
             changed = False
             if item.issue_type != issue_type:
@@ -3219,11 +3573,8 @@ async def importar_release_items(
             if item.summary != summary:
                 item.summary = summary
                 changed = True
-            if item.raw_data != raw_data:
-                item.raw_data = raw_data
-                changed = True
             if changed:
-                updated += 1
+                updated_flag = True
         else:
             db.add(
                 ReleaseItem(
@@ -3249,7 +3600,12 @@ async def importar_release_items(
                     raw_data=raw_data,
                 )
             )
+            created_flag = True
+
+        if created_flag:
             created += 1
+        elif updated_flag:
+            updated += 1
 
     db.commit()
 
@@ -3273,6 +3629,9 @@ def eliminar_release_items(
     db.query(ReleaseItem).filter(ReleaseItem.celula_id == celula_id).delete(
         synchronize_session=False
     )
+    db.query(ReleaseImportItem).filter(ReleaseImportItem.celula_id == celula_id).delete(
+        synchronize_session=False
+    )
     db.commit()
     return {"deleted": total}
 
@@ -3285,6 +3644,27 @@ def eliminar_release_item(
     item = db.get(ReleaseItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Release no encontrado")
+    db.query(ReleaseImportItem).filter(
+        ReleaseImportItem.issue_key == item.issue_key,
+        ReleaseImportItem.celula_id == item.celula_id,
+    ).delete(synchronize_session=False)
+    db.delete(item)
+    db.commit()
+    return None
+
+
+@router.delete("/import-release-items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+def eliminar_import_release_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+):
+    item = db.get(ReleaseImportItem, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Release no encontrado")
+    db.query(ReleaseItem).filter(
+        ReleaseItem.issue_key == item.issue_key,
+        ReleaseItem.celula_id == item.celula_id,
+    ).delete(synchronize_session=False)
     db.delete(item)
     db.commit()
     return None

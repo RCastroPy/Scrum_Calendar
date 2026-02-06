@@ -43,8 +43,18 @@ class Celula(Base):
     personas = relationship("Persona", secondary=persona_celulas, back_populates="celulas")
     sprints = relationship("Sprint", back_populates="celula")
     sprint_items = relationship("SprintItem", back_populates="celula")
+    sprint_import_items = relationship(
+        "SprintImportItem",
+        back_populates="celula",
+        cascade="all, delete-orphan",
+    )
     release_items = relationship(
         "ReleaseItem",
+        back_populates="celula",
+        cascade="all, delete-orphan",
+    )
+    release_import_items = relationship(
+        "ReleaseImportItem",
         back_populates="celula",
         cascade="all, delete-orphan",
     )
@@ -126,6 +136,14 @@ class Sprint(Base):
     retrospectives = relationship("Retrospective", back_populates="sprint")
 
 
+class QuarterOption(Base):
+    __tablename__ = "quarters"
+
+    id = Column(Integer, primary_key=True)
+    label = Column(String(20), nullable=False, unique=True)
+    creado_en = Column(DateTime, nullable=False, default=now_py)
+
+
 class EventoTipo(Base):
     __tablename__ = "eventos_tipo"
 
@@ -168,6 +186,57 @@ class Feriado(Base):
     tipo = Column(String(20), nullable=False, default="nacional")
     celula_id = Column(Integer, ForeignKey("celulas.id"), nullable=True)
     activo = Column(Boolean, nullable=False, default=True)
+
+
+class SprintImportItem(Base):
+    __tablename__ = "sprint_import_items"
+    __table_args__ = (
+        UniqueConstraint("issue_key", "sprint_id", name="uq_sprint_import_issue_sprint"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    celula_id = Column(Integer, ForeignKey("celulas.id"), nullable=False)
+    sprint_id = Column(Integer, ForeignKey("sprints.id"), nullable=False)
+    persona_id = Column(Integer, ForeignKey("personas.id"), nullable=True)
+    assignee_nombre = Column(String(160), nullable=True)
+    issue_key = Column(String(60), nullable=False)
+    issue_type = Column(String(60), nullable=False)
+    summary = Column(String(255), nullable=False)
+    status = Column(String(80), nullable=False)
+    story_points = Column(Float, nullable=True)
+    raw_data = Column(Text, nullable=True)
+    creado_en = Column(DateTime, nullable=False, default=now_py)
+
+    celula = relationship("Celula", back_populates="sprint_import_items")
+
+
+class ReleaseImportItem(Base):
+    __tablename__ = "release_import_items"
+    __table_args__ = (
+        UniqueConstraint("issue_key", name="uq_release_import_issue_key"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    celula_id = Column(Integer, ForeignKey("celulas.id"), nullable=False)
+    sprint_id = Column(Integer, ForeignKey("sprints.id"), nullable=True)
+    persona_id = Column(Integer, ForeignKey("personas.id"), nullable=True)
+    issue_type = Column(String(60), nullable=False)
+    issue_key = Column(String(60), nullable=False)
+    issue_id = Column(String(60), nullable=True)
+    summary = Column(String(255), nullable=False)
+    reporter = Column(String(160), nullable=True)
+    reporter_id = Column(String(120), nullable=True)
+    status = Column(String(80), nullable=False)
+    story_points = Column(Float, nullable=True)
+    assignee_nombre = Column(String(160), nullable=True)
+    assignee_id = Column(String(120), nullable=True)
+    sprint_nombre = Column(String(160), nullable=True)
+    release_tipo = Column(String(40), nullable=False, default="comprometido")
+    quarter = Column(String(20), nullable=True)
+    raw_data = Column(Text, nullable=True)
+    creado_en = Column(DateTime, nullable=False, default=now_py)
+
+    celula = relationship("Celula", back_populates="release_import_items")
 
 
 class SprintItem(Base):

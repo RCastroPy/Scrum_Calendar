@@ -431,12 +431,6 @@
                     </a>
                   </li>
                   <li class="nav-item">
-                    <a href="data-entry.html#releases" class="nav-link">
-                      <i class="nav-icon bi bi-circle"></i>
-                      <p>Importar Releases</p>
-                    </a>
-                  </li>
-                  <li class="nav-item">
                     <a href="data-entry.html#feriados" class="nav-link">
                       <i class="nav-icon bi bi-circle"></i>
                       <p>Feriados</p>
@@ -458,6 +452,12 @@
                     <a href="data-entry.html#importacion" class="nav-link">
                       <i class="nav-icon bi bi-circle"></i>
                       <p>Importacion CSV</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="data-entry.html#quarters" class="nav-link">
+                      <i class="nav-icon bi bi-circle"></i>
+                      <p>Quarter</p>
                     </a>
                   </li>
                 </ul>
@@ -933,7 +933,7 @@
           <div class="container-fluid">
             <section class="section data-entry" id="data-entry">
               <div class="section-head mb-3">
-                <h2>Carga de Releases</h2>
+                <h2>Carga de Tareas</h2>
                 <p>Completa una entidad a la vez para alimentar el dashboard.</p>
               </div>
 
@@ -1051,13 +1051,25 @@
                       <input type="file" name="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required />
                     </label>
                     <button class="btn btn-primary" type="submit">Subir</button>
-                    <div class="form-status" id="status-release-import"></div>
+                   <div class="form-status" id="status-release-import"></div>
+                 </form>
+               </div>
+
+                <div class="section-block" data-section="quarters" id="quarters">
+                  <form class="entry-card" id="form-quarter">
+                    <h3>5. Quarters</h3>
+                    <label>
+                      Quarter (ej: Q4-25, Q1-26)
+                      <input type="text" name="label" placeholder="Q4-25" required />
+                    </label>
+                    <button class="btn primary" type="submit">Guardar quarter</button>
+                    <div class="form-status" id="status-quarter"></div>
                   </form>
                 </div>
 
                 <div class="section-block" data-section="feriados" id="feriados">
                   <form class="entry-card" id="form-feriado">
-                    <h3>5. Feriados</h3>
+                    <h3>6. Feriados</h3>
                     <p class="helper">Aplica a todas las celulas (actuales y futuras).</p>
                     <label>
                       Fecha
@@ -1081,7 +1093,7 @@
 
                 <div class="section-block" data-section="tipos-evento" id="tipos-evento">
                   <form class="entry-card" id="form-evento-tipo">
-                    <h3>6. Tipos de evento</h3>
+                    <h3>7. Tipos de evento</h3>
                     <p class="helper">Define impacto base para el calculo de capacidad.</p>
                     <label>
                       Nombre
@@ -1112,7 +1124,7 @@
 
                 <div class="section-block" data-section="eventos" id="eventos">
                   <form class="entry-card" id="form-evento">
-                    <h3>7. Eventos</h3>
+                    <h3>8. Eventos</h3>
                     <label>
                       Persona
                       <select name="persona" required></select>
@@ -1165,7 +1177,7 @@
 
                 <div class="section-block" data-section="importacion" id="importacion">
                   <div class="entry-card">
-                    <h3>8. Importar sprint (CSV/XLSX)</h3>
+                    <h3>9. Importar sprint (CSV/XLSX)</h3>
                     <div class="import-card">
                       <form id="form-import" class="import-form">
                         <input type="file" name="archivo" accept=".csv,.xlsx" required />
@@ -1173,12 +1185,36 @@
                         <button class="btn ghost" type="button" id="clear-sprint-items">Eliminar registros</button>
                       </form>
                       <div class="form-status" id="status-import"></div>
+                      <div class="import-summary" id="import-summary">
+                        <div class="import-summary-item">
+                          <span class="label">Releases cargados</span>
+                          <span class="value" id="import-summary-releases">0</span>
+                        </div>
+                        <div class="import-summary-item">
+                          <span class="label">Total tareas</span>
+                          <span class="value" id="import-summary-tareas">0</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div class="admin-panel" id="admin-panel">
+            </section>
+
+              <section class="section admin-panel" id="admin-panel">
+                <div class="section-head admin-head">
+                  <div>
+                    <h2>Listado de datos</h2>
+                    <p>Visualiza todo lo cargado y edita o elimina registros.</p>
+                  </div>
+                  <div class="admin-tools">
+                    <label class="admin-search">
+                      Buscar
+                      <input type="search" id="admin-search" placeholder="Buscar por cualquier campo" />
+                    </label>
+                  </div>
+                </div>
                 <div class="admin-status" id="admin-status"></div>
                 <div class="admin-progress hidden" id="admin-progress">
                   <div class="admin-progress-label" id="admin-progress-label"></div>
@@ -1186,6 +1222,7 @@
                     <div class="admin-progress-bar" id="admin-progress-bar"></div>
                   </div>
                 </div>
+                <div class="admin-grid">
                 <div class="admin-card" data-section="celulas">
                   <div class="card-head">
                     <h3>Listado de celulas</h3>
@@ -1203,6 +1240,12 @@
                     <h3>Listado de sprints</h3>
                   </div>
                   <div class="admin-table" id="admin-sprints"></div>
+                </div>
+                <div class="admin-card" data-section="quarters">
+                  <div class="card-head">
+                    <h3>Listado de quarters</h3>
+                  </div>
+                  <div class="admin-table" id="admin-quarters"></div>
                 </div>
                 <div class="admin-card" data-section="feriados">
                   <div class="card-head">
@@ -1222,20 +1265,14 @@
                   </div>
                   <div class="admin-table" id="admin-eventos"></div>
                 </div>
-                <div class="admin-card" data-section="releases">
+                <div class="admin-card" data-section="importacion">
                   <div class="card-head">
-                    <h3>Listado de releases</h3>
+                    <h3>Listado de datos</h3>
                   </div>
                   <div class="admin-table" id="admin-release-items"></div>
                 </div>
-                <div class="admin-card" data-section="importacion">
-                  <div class="card-head">
-                    <h3>Listado de datos importados</h3>
-                  </div>
-                  <div class="admin-table" id="admin-sprint-items"></div>
                 </div>
-              </div>
-            </section>
+              </section>
           </div>
         </div>
         <!--end::App Content-->
@@ -1310,7 +1347,6 @@
     <!--end::OverlayScrollbars Configure-->
 
     <!-- OPTIONAL SCRIPTS -->
-    </div>
         <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/datatables.net@1.13.8/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.8/js/dataTables.bootstrap5.min.js"></script>

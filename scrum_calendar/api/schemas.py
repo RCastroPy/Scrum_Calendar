@@ -513,6 +513,22 @@ class SprintItemImportOut(BaseModel):
     missing_celulas: List[str] = Field(default_factory=list)
 
 
+class SprintImportItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    celula_id: int
+    sprint_id: int
+    persona_id: Optional[int]
+    assignee_nombre: Optional[str]
+    issue_key: str
+    issue_type: str
+    summary: str
+    status: str
+    story_points: Optional[float]
+    creado_en: datetime
+
+
 class ReleaseItemOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -537,6 +553,7 @@ class ReleaseItemOut(BaseModel):
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     due_date: Optional[date] = None
+    raw_data: Optional[str] = None
     creado_en: datetime
 
 
@@ -557,6 +574,46 @@ class ReleaseItemImportOut(BaseModel):
     missing_personas: List[str] = Field(default_factory=list)
     missing_sprints: List[str] = Field(default_factory=list)
     missing_celulas: List[str] = Field(default_factory=list)
+
+
+class ReleaseImportItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    celula_id: int
+    sprint_id: Optional[int]
+    persona_id: Optional[int]
+    issue_type: str
+    issue_key: str
+    issue_id: Optional[str]
+    summary: str
+    reporter: Optional[str]
+    reporter_id: Optional[str]
+    status: str
+    story_points: Optional[float]
+    assignee_nombre: Optional[str]
+    assignee_id: Optional[str]
+    sprint_nombre: Optional[str]
+    release_tipo: str
+    quarter: Optional[str] = None
+    raw_data: Optional[str] = None
+    creado_en: datetime
+
+
+class QuarterOptionCreate(BaseModel):
+    label: str
+
+
+class QuarterOptionUpdate(BaseModel):
+    label: str
+
+
+class QuarterOptionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    label: str
+    creado_en: datetime
 
 
 class EventoUpdate(BaseModel):

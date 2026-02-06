@@ -1238,6 +1238,35 @@ h1 {
   color: #ff6b6b;
 }
 
+.import-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.import-summary-item {
+  flex: 1;
+  min-width: 160px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--card-border);
+  background: var(--card);
+}
+
+.import-summary-item .label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.import-summary-item .value {
+  display: block;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
 .form-actions {
   display: flex;
   flex-wrap: wrap;
@@ -4226,4 +4255,36 @@ body.qr-zoomed::before {
   color: rgba(255, 255, 255, 0.7);
   font-size: 0.92em;
   margin: 2px 0;
+}
+
+.sprint-history {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sprint-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.sprint-dot.green {
+  background: #16a34a;
+}
+
+.sprint-dot.orange {
+  background: #f59e0b;
+}
+
+.sprint-dot.red {
+  background: #dc2626;
+}
+
+.sprint-plus {
+  font-size: 12px;
+  font-weight: 700;
+  color: #dc2626;
+  margin-left: 2px;
 }
