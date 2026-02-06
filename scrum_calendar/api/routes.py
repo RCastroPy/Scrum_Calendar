@@ -21,6 +21,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
+from fastapi.responses import RedirectResponse
 from starlette.websockets import WebSocketState
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -370,6 +371,48 @@ def login(payload: AuthRequest, response: Response, db: Session = Depends(get_db
         path="/",
     )
     return user
+
+
+@router.post("/auth/login-form")
+def login_form(
+    response: Response,
+    username: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """
+    HTML form fallback for login.
+
+    This exists to keep login working even if the frontend JS doesn't run
+    (older browsers, blocked scripts, etc.). It sets the session cookie and
+    redirects to the UI entrypoint.
+    """
+    normalized = (username or "").strip().lower()
+    if not normalized or not password:
+        # Keep semantics similar to JSON login; UI will render login again.
+        raise HTTPException(status_code=400, detail="Credenciales invalidas")
+    user = db.query(Usuario).filter(Usuario.username == normalized).first()
+    if not user or not verify_password(password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Credenciales invalidas")
+    if not user.activo:
+        raise HTTPException(status_code=403, detail="Usuario inactivo")
+
+    token = new_session_token()
+    expires_at = now_py() + timedelta(days=SESSION_DAYS)
+    session = Sesion(usuario_id=user.id, token=token, expira_en=expires_at)
+    db.add(session)
+    db.commit()
+
+    redirect = RedirectResponse(url="/ui/index.html", status_code=303)
+    redirect.set_cookie(
+        SESSION_COOKIE,
+        token,
+        httponly=True,
+        samesite="lax",
+        max_age=SESSION_DAYS * 24 * 3600,
+        path="/",
+    )
+    return redirect
 
 
 @router.post("/auth/logout")
