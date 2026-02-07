@@ -1858,6 +1858,25 @@ body.qr-zoomed::before {
   background: rgba(15, 23, 42, 0.45);
   margin: 0;
   font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.retro-presence-list .presence-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85);
+}
+
+.retro-presence-list .presence-dot.online {
+  background: #28a745;
+}
+
+.retro-presence-list .presence-dot.offline {
+  background: #dc3545;
 }
 
 .retro-presence-list li.empty {

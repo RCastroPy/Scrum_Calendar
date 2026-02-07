@@ -1,6 +1,14 @@
 (() => {
+  // In PRD we must never "fallback" to localhost/127.0.0.1 because it causes long network timeouts
+  // (5-10s) on phones/browsers before eventually reaching the real host. Keep fallbacks only for local dev.
+  const isLocalHost = ["localhost", "127.0.0.1"].includes(window.location.hostname);
   const API_HOSTS = Array.from(
-    new Set([window.location.hostname, "localhost", "127.0.0.1"].filter(Boolean))
+    new Set(
+      (isLocalHost
+        ? [window.location.hostname, "localhost", "127.0.0.1"]
+        : [window.location.hostname]
+      ).filter(Boolean)
+    )
   );
   let API_BASE = `http://${API_HOSTS[0]}:8000`;
   const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
@@ -9832,6 +9840,11 @@
         const label = document.createElement("span");
         label.textContent = name;
         li.appendChild(label);
+        const online = persona.online !== false;
+        const dot = document.createElement("span");
+        dot.className = `presence-dot ${online ? "online" : "offline"}`;
+        dot.title = online ? "Conectado" : "Desconectado";
+        li.insertBefore(dot, label);
         const personaId = persona.persona_id;
         if (personaId != null && submittedIds.has(String(personaId))) {
           const badge = document.createElement("span");

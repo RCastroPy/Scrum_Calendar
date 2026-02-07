@@ -641,7 +641,12 @@ class RetroWSManager:
             sockets.remove(websocket)
         if not sockets and token in self.active:
             self.active.pop(token, None)
-        # Mantener presencia aunque el socket se desconecte (mobile sleep).
+        # Mantener presencia aunque el socket se desconecte (mobile sleep),
+        # pero marcar el registro como offline para que el SM lo vea.
+        meta = (self.presence.get(token, {}) or {}).get(websocket)
+        if isinstance(meta, dict):
+            meta["online"] = False
+            meta["last_seen"] = datetime.utcnow().isoformat()
 
     def set_presence(self, token: str, websocket: WebSocket, meta: dict) -> bool:
         presence = self.presence.setdefault(token, {})
@@ -670,7 +675,10 @@ class RetroWSManager:
             existing_name = (existing.get("nombre") or "").strip().lower()
             if nombre and existing_name == nombre:
                 return False
-        presence[websocket] = meta or {}
+        merged = dict(meta or {})
+        merged["online"] = True
+        merged["last_seen"] = datetime.utcnow().isoformat()
+        presence[websocket] = merged
         return True
 
     def clear_presence(self, token: str, websocket: WebSocket) -> None:
@@ -679,9 +687,14 @@ class RetroWSManager:
         if not presence and token in self.presence:
             self.presence.pop(token, None)
 
+    def touch(self, token: str, websocket: WebSocket) -> None:
+        meta = (self.presence.get(token, {}) or {}).get(websocket)
+        if isinstance(meta, dict):
+            meta["online"] = True
+            meta["last_seen"] = datetime.utcnow().isoformat()
+
     def build_presence_payload(self, token: str) -> dict:
-        entries = []
-        seen = set()
+        entries_map: Dict[str, dict] = {}
         for meta in (self.presence.get(token, {}) or {}).values():
             if not meta:
                 continue
@@ -690,10 +703,23 @@ class RetroWSManager:
                 continue
             persona_id = meta.get("persona_id")
             key = f"{persona_id}" if persona_id is not None else nombre.lower()
-            if key in seen:
+            online = bool(meta.get("online", True))
+            last_seen = meta.get("last_seen") or ""
+            current = entries_map.get(key)
+            if not current:
+                entries_map[key] = {
+                    "persona_id": persona_id,
+                    "nombre": nombre,
+                    "online": online,
+                    "last_seen": last_seen,
+                }
                 continue
-            seen.add(key)
-            entries.append({"persona_id": persona_id, "nombre": nombre})
+            # Prefer online if any record is online; otherwise keep the latest timestamp.
+            if online and not current.get("online"):
+                current["online"] = True
+            if last_seen and (not current.get("last_seen") or last_seen > current.get("last_seen")):
+                current["last_seen"] = last_seen
+        entries = list(entries_map.values())
         entries.sort(key=lambda item: (item.get("nombre") or "").lower())
         return {"type": "presence", "total": len(entries), "personas": entries}
 
@@ -781,7 +807,12 @@ class PokerWSManager:
             sockets.remove(websocket)
         if not sockets and token in self.active:
             self.active.pop(token, None)
-        # Mantener presencia aunque el socket se desconecte (mobile sleep).
+        # Mantener presencia aunque el socket se desconecte (mobile sleep),
+        # pero marcar offline para que el SM vea el estado.
+        meta = (self.presence.get(token, {}) or {}).get(websocket)
+        if isinstance(meta, dict):
+            meta["online"] = False
+            meta["last_seen"] = datetime.utcnow().isoformat()
 
     def set_presence(self, token: str, websocket: WebSocket, meta: dict) -> bool:
         presence = self.presence.setdefault(token, {})
@@ -798,7 +829,10 @@ class PokerWSManager:
             existing_name = (existing.get("nombre") or "").strip().lower()
             if nombre and existing_name == nombre:
                 return False
-        presence[websocket] = meta or {}
+        merged = dict(meta or {})
+        merged["online"] = True
+        merged["last_seen"] = datetime.utcnow().isoformat()
+        presence[websocket] = merged
         return True
 
     def clear_presence(self, token: str, websocket: WebSocket) -> None:
@@ -807,10 +841,15 @@ class PokerWSManager:
         if not presence and token in self.presence:
             self.presence.pop(token, None)
 
+    def touch(self, token: str, websocket: WebSocket) -> None:
+        meta = (self.presence.get(token, {}) or {}).get(websocket)
+        if isinstance(meta, dict):
+            meta["online"] = True
+            meta["last_seen"] = datetime.utcnow().isoformat()
+
     def build_presence_payload(self, token: str) -> dict:
         self.prune(token)
-        entries = []
-        seen = set()
+        entries_map: Dict[str, dict] = {}
         for meta in (self.presence.get(token, {}) or {}).values():
             if not meta:
                 continue
@@ -819,10 +858,22 @@ class PokerWSManager:
                 continue
             persona_id = meta.get("persona_id")
             key = f"{persona_id}" if persona_id is not None else nombre.lower()
-            if key in seen:
+            online = bool(meta.get("online", True))
+            last_seen = meta.get("last_seen") or ""
+            current = entries_map.get(key)
+            if not current:
+                entries_map[key] = {
+                    "persona_id": persona_id,
+                    "nombre": nombre,
+                    "online": online,
+                    "last_seen": last_seen,
+                }
                 continue
-            seen.add(key)
-            entries.append({"persona_id": persona_id, "nombre": nombre})
+            if online and not current.get("online"):
+                current["online"] = True
+            if last_seen and (not current.get("last_seen") or last_seen > current.get("last_seen")):
+                current["last_seen"] = last_seen
+        entries = list(entries_map.values())
         entries.sort(key=lambda item: (item.get("nombre") or "").lower())
         return {"type": "presence", "total": len(entries), "personas": entries}
 
@@ -1043,7 +1094,10 @@ async def retro_ws(websocket: WebSocket, token: str) -> None:
     try:
         while True:
             message = await websocket.receive_text()
-            if not message or message == "ping":
+            if not message:
+                continue
+            if message == "ping":
+                retro_ws_manager.touch(token, websocket)
                 continue
             try:
                 payload = json.loads(message)
@@ -1081,7 +1135,10 @@ async def poker_ws(websocket: WebSocket, token: str) -> None:
     try:
         while True:
             message = await websocket.receive_text()
-            if not message or message == "ping":
+            if not message:
+                continue
+            if message == "ping":
+                poker_ws_manager.touch(token, websocket)
                 continue
             try:
                 payload = json.loads(message)
@@ -1335,20 +1392,37 @@ def listar_retros(
     if not user:
         raise HTTPException(status_code=401, detail="No autenticado")
     require_admin(user)
-    query = (
-        db.query(Retrospective)
-        .options(joinedload(Retrospective.items))
-        .filter(Retrospective.celula_id == celula_id)
-    )
+    # IMPORTANT: don't eager-load all items for all retros (it grows quickly and makes the UI feel "hung").
+    query = db.query(Retrospective).filter(Retrospective.celula_id == celula_id)
     if sprint_id:
         query = query.filter(Retrospective.sprint_id == sprint_id)
     retros = query.order_by(Retrospective.actualizado_en.desc()).all()
+
+    # Aggregate counts per retro_id + tipo in one query.
+    retro_ids = [retro.id for retro in retros]
+    counts_map: Dict[int, Dict[str, int]] = {}
+    if retro_ids:
+        rows = (
+            db.query(
+                RetrospectiveItem.retro_id,
+                RetrospectiveItem.tipo,
+                func.count(RetrospectiveItem.id),
+            )
+            .filter(RetrospectiveItem.retro_id.in_(retro_ids))
+            .group_by(RetrospectiveItem.retro_id, RetrospectiveItem.tipo)
+            .all()
+        )
+        for retro_id, tipo, count in rows:
+            counts_map.setdefault(int(retro_id), {})[str(tipo)] = int(count)
+
     results = []
     for retro in retros:
-        counts = {"bien": 0, "mal": 0, "compromiso": 0}
-        for item in retro.items:
-            if item.tipo in counts:
-                counts[item.tipo] += 1
+        raw = counts_map.get(int(retro.id), {})
+        counts = {
+            "bien": int(raw.get("bien", 0)),
+            "mal": int(raw.get("mal", 0)),
+            "compromiso": int(raw.get("compromiso", 0)),
+        }
         results.append(retro_to_schema(retro, counts))
     return results
 

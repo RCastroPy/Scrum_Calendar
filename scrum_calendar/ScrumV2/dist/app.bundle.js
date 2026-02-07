@@ -1,6 +1,12 @@
 (() => {
+  const isLocalHost = ["localhost", "127.0.0.1"].includes(window.location.hostname);
   const API_HOSTS = Array.from(
-    new Set([window.location.hostname, "localhost", "127.0.0.1"].filter(Boolean))
+    new Set(
+      (isLocalHost
+        ? [window.location.hostname, "localhost", "127.0.0.1"]
+        : [window.location.hostname]
+      ).filter(Boolean)
+    )
   );
   let API_BASE = `http://${API_HOSTS[0]}:8000`;
   const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
