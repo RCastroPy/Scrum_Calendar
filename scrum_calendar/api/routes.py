@@ -85,6 +85,11 @@ from api.schemas import (
     PersonaCreate,
     PersonaOut,
     PersonaUpdate,
+    TaskCreate,
+    TaskOut,
+    TaskUpdate,
+    TaskCommentCreate,
+    TaskCommentOut,
     QuarterOptionCreate,
     QuarterOptionOut,
     QuarterOptionUpdate,
@@ -102,6 +107,8 @@ from data.models import (
     Evento,
     EventoTipo,
     Feriado,
+    Task,
+    TaskComment,
     OneOnOneEntry,
     OneOnOneNote,
     OneOnOneSession,
@@ -130,6 +137,8 @@ HORAS_POR_DIA = 7.0
 TZ_PY = ZoneInfo("America/Asuncion")
 SESSION_COOKIE = "scrum_session"
 SESSION_DAYS = 14
+TASK_STATUSES = {"backlog", "todo", "doing", "done", "archived"}
+TASK_PRIORITIES = {"baja", "media", "alta", "urgente"}
 
 
 def normalize_text(value: str) -> str:
@@ -185,6 +194,13 @@ def get_user_from_token(db: Session, token: Optional[str]) -> Optional[Usuario]:
 def require_admin(user: Usuario) -> None:
     if user.rol != "admin":
         raise HTTPException(status_code=403, detail="Sin permisos")
+
+
+def require_user(db: Session, token: Optional[str]) -> Usuario:
+    user = get_user_from_token(db, token)
+    if not user:
+        raise HTTPException(status_code=401, detail="No autenticado")
+    return user
 
 
 def coerce_cell(value: object) -> str:
@@ -2135,6 +2151,15 @@ def listar_celulas(db: Session = Depends(get_db)):
     return db.query(Celula).order_by(Celula.id).all()
 
 
+@router.get("/public/celulas", response_model=List[CelulaOut])
+def listar_celulas_publicas(db: Session = Depends(get_db)):
+    """
+    Public endpoint used by the login page to let the user pick a cell before
+    authenticating (selection is stored in localStorage).
+    """
+    return db.query(Celula).filter(Celula.activa == True).order_by(Celula.id).all()
+
+
 @router.post("/celulas", response_model=CelulaOut, status_code=status.HTTP_201_CREATED)
 def crear_celula(payload: CelulaCreate, db: Session = Depends(get_db)):
     existente = db.query(Celula).filter(Celula.nombre == payload.nombre).first()
@@ -3730,6 +3755,21 @@ def crear_evento(payload: EventoCreate, db: Session = Depends(get_db)):
         if not sprint:
             raise HTTPException(status_code=404, detail="Sprint no encontrado")
 
+    # Prevent duplicates: same person + event type + exact date range + jornada.
+    duplicate = (
+        db.query(Evento.id)
+        .filter(
+            Evento.persona_id == payload.persona_id,
+            Evento.tipo_evento_id == payload.tipo_evento_id,
+            Evento.fecha_inicio == payload.fecha_inicio,
+            Evento.fecha_fin == payload.fecha_fin,
+            Evento.jornada == payload.jornada,
+        )
+        .first()
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Evento duplicado para la misma persona en la misma fecha")
+
     factor_jornada = 1.0 if payload.jornada == "completo" else 0.5
     impacto = min(tipo_evento.impacto_capacidad * factor_jornada, 100.0)
 
@@ -3786,6 +3826,21 @@ def actualizar_evento(evento_id: int, payload: EventoUpdate, db: Session = Depen
     if evento.fecha_inicio > evento.fecha_fin:
         raise HTTPException(status_code=400, detail="Rango de fechas invalido")
 
+    duplicate = (
+        db.query(Evento.id)
+        .filter(
+            Evento.id != evento.id,
+            Evento.persona_id == evento.persona_id,
+            Evento.tipo_evento_id == evento.tipo_evento_id,
+            Evento.fecha_inicio == evento.fecha_inicio,
+            Evento.fecha_fin == evento.fecha_fin,
+            Evento.jornada == evento.jornada,
+        )
+        .first()
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Evento duplicado para la misma persona en la misma fecha")
+
     factor_jornada = 1.0 if evento.jornada == "completo" else 0.5
     evento.impacto_capacidad = min(tipo_evento.impacto_capacidad * factor_jornada, 100.0)
 
@@ -3800,6 +3855,230 @@ def eliminar_evento(evento_id: int, db: Session = Depends(get_db)):
     if not evento:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     db.delete(evento)
+    db.commit()
+    return None
+
+
+@router.get("/tasks", response_model=List[TaskOut])
+def listar_tasks(
+    celula_id: Optional[int] = None,
+    sprint_id: Optional[int] = None,
+    estado: Optional[str] = None,
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    require_user(db, scrum_session)
+    q = db.query(Task)
+    if celula_id is not None:
+        q = q.filter(Task.celula_id == celula_id)
+    if sprint_id is not None:
+        q = q.filter(Task.sprint_id == sprint_id)
+    if estado is not None:
+        q = q.filter(Task.estado == estado)
+    return q.order_by(Task.orden.asc(), Task.actualizado_en.desc(), Task.id.desc()).all()
+
+
+@router.post("/tasks", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
+def crear_task(
+    payload: TaskCreate,
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    user = require_user(db, scrum_session)
+    titulo = (payload.titulo or "").strip()
+    if not titulo:
+        raise HTTPException(status_code=400, detail="Titulo requerido")
+    estado = (payload.estado or "backlog").strip().lower()
+    if estado not in TASK_STATUSES:
+        raise HTTPException(status_code=400, detail="Estado invalido")
+    prioridad = (payload.prioridad or "media").strip().lower()
+    if prioridad not in TASK_PRIORITIES:
+        raise HTTPException(status_code=400, detail="Prioridad invalida")
+    if payload.celula_id is not None and not db.get(Celula, payload.celula_id):
+        raise HTTPException(status_code=404, detail="Celula no encontrada")
+    if payload.sprint_id is not None and not db.get(Sprint, payload.sprint_id):
+        raise HTTPException(status_code=404, detail="Sprint no encontrado")
+    if payload.assignee_persona_id is not None and not db.get(Persona, payload.assignee_persona_id):
+        raise HTTPException(status_code=404, detail="Persona no encontrada")
+    if payload.parent_id is not None:
+        parent = db.get(Task, payload.parent_id)
+        if not parent:
+            raise HTTPException(status_code=404, detail="Task padre no encontrado")
+    tipo = (payload.tipo or "").strip() or None
+    if tipo and len(tipo) > 30:
+        raise HTTPException(status_code=400, detail="Tipo demasiado largo")
+    etiquetas = (payload.etiquetas or "").strip() or None
+    if etiquetas and len(etiquetas) > 2000:
+        raise HTTPException(status_code=400, detail="Etiquetas demasiado largas")
+    orden = payload.orden if payload.orden is not None else now_py().timestamp()
+    task = Task(
+        titulo=titulo,
+        descripcion=payload.descripcion,
+        estado=estado,
+        prioridad=prioridad,
+        celula_id=payload.celula_id,
+        sprint_id=payload.sprint_id,
+        parent_id=payload.parent_id,
+        assignee_persona_id=payload.assignee_persona_id,
+        creado_por_usuario_id=user.id,
+        fecha_vencimiento=payload.fecha_vencimiento,
+        tipo=tipo,
+        etiquetas=etiquetas,
+        puntos=payload.puntos,
+        horas_estimadas=payload.horas_estimadas,
+        importante=bool(payload.importante) if payload.importante is not None else False,
+        orden=float(orden),
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+@router.put("/tasks/{task_id}", response_model=TaskOut)
+def actualizar_task(
+    task_id: int,
+    payload: TaskUpdate,
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    require_user(db, scrum_session)
+    task = db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task no encontrada")
+
+    if payload.titulo is not None:
+        titulo = (payload.titulo or "").strip()
+        if not titulo:
+            raise HTTPException(status_code=400, detail="Titulo requerido")
+        task.titulo = titulo
+    if payload.descripcion is not None:
+        task.descripcion = payload.descripcion
+    if payload.estado is not None:
+        estado = (payload.estado or "").strip().lower()
+        if estado not in TASK_STATUSES:
+            raise HTTPException(status_code=400, detail="Estado invalido")
+        task.estado = estado
+    if payload.prioridad is not None:
+        prioridad = (payload.prioridad or "").strip().lower()
+        if prioridad not in TASK_PRIORITIES:
+            raise HTTPException(status_code=400, detail="Prioridad invalida")
+        task.prioridad = prioridad
+    if payload.tipo is not None:
+        tipo = (payload.tipo or "").strip() or None
+        if tipo and len(tipo) > 30:
+            raise HTTPException(status_code=400, detail="Tipo demasiado largo")
+        task.tipo = tipo
+    if payload.etiquetas is not None:
+        etiquetas = (payload.etiquetas or "").strip() or None
+        if etiquetas and len(etiquetas) > 2000:
+            raise HTTPException(status_code=400, detail="Etiquetas demasiado largas")
+        task.etiquetas = etiquetas
+    if payload.puntos is not None:
+        task.puntos = payload.puntos
+    if payload.horas_estimadas is not None:
+        task.horas_estimadas = payload.horas_estimadas
+    if payload.importante is not None:
+        task.importante = bool(payload.importante)
+    if payload.celula_id is not None:
+        if payload.celula_id and not db.get(Celula, payload.celula_id):
+            raise HTTPException(status_code=404, detail="Celula no encontrada")
+        task.celula_id = payload.celula_id
+    if payload.sprint_id is not None:
+        if payload.sprint_id and not db.get(Sprint, payload.sprint_id):
+            raise HTTPException(status_code=404, detail="Sprint no encontrado")
+        task.sprint_id = payload.sprint_id
+    if payload.assignee_persona_id is not None:
+        if payload.assignee_persona_id and not db.get(Persona, payload.assignee_persona_id):
+            raise HTTPException(status_code=404, detail="Persona no encontrada")
+        task.assignee_persona_id = payload.assignee_persona_id
+    if payload.fecha_vencimiento is not None:
+        task.fecha_vencimiento = payload.fecha_vencimiento
+    if payload.orden is not None:
+        task.orden = float(payload.orden)
+    if payload.parent_id is not None:
+        if payload.parent_id == task.id:
+            raise HTTPException(status_code=400, detail="Task padre invalido")
+        if payload.parent_id is not None:
+            parent = db.get(Task, payload.parent_id) if payload.parent_id else None
+            if payload.parent_id and not parent:
+                raise HTTPException(status_code=404, detail="Task padre no encontrado")
+        task.parent_id = payload.parent_id
+
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+@router.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+def eliminar_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    require_user(db, scrum_session)
+    task = db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task no encontrada")
+    db.delete(task)
+    db.commit()
+    return None
+
+
+@router.get("/tasks/{task_id}/comments", response_model=List[TaskCommentOut])
+def listar_task_comments(
+    task_id: int,
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    require_user(db, scrum_session)
+    task = db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task no encontrada")
+    return (
+        db.query(TaskComment)
+        .options(joinedload(TaskComment.usuario))
+        .filter(TaskComment.task_id == task_id)
+        .order_by(TaskComment.creado_en.asc(), TaskComment.id.asc())
+        .all()
+    )
+
+
+@router.post("/tasks/{task_id}/comments", response_model=TaskCommentOut, status_code=status.HTTP_201_CREATED)
+def crear_task_comment(
+    task_id: int,
+    payload: TaskCommentCreate,
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    user = require_user(db, scrum_session)
+    task = db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task no encontrada")
+    texto = (payload.texto or "").strip()
+    if not texto:
+        raise HTTPException(status_code=400, detail="Texto requerido")
+    comment = TaskComment(task_id=task_id, usuario_id=user.id, texto=texto)
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+    return comment
+
+
+@router.delete("/tasks/{task_id}/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
+def eliminar_task_comment(
+    task_id: int,
+    comment_id: int,
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    user = require_user(db, scrum_session)
+    comment = db.get(TaskComment, comment_id)
+    if not comment or comment.task_id != task_id:
+        raise HTTPException(status_code=404, detail="Comentario no encontrado")
+    if user.rol != "admin" and comment.usuario_id != user.id:
+        raise HTTPException(status_code=403, detail="Sin permisos")
+    db.delete(comment)
     db.commit()
     return None
 

@@ -4288,3 +4288,526 @@ body.qr-zoomed::before {
   color: #dc2626;
   margin-left: 2px;
 }
+
+/* --- Tasks (Notion-like / Kanban) --- */
+.tasks-board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(260px, 1fr);
+  gap: 12px;
+  align-items: start;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+@media (max-width: 1200px) {
+  .tasks-board {
+    grid-auto-columns: 280px;
+  }
+}
+
+.tasks-col {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.6);
+  padding: 10px;
+  min-width: 260px;
+}
+
+body.theme-dark .tasks-col {
+  background: rgba(0, 0, 0, 0.2);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.tasks-col-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.tasks-col-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+}
+
+.tasks-quick-add {
+  margin-bottom: 8px;
+}
+
+.tasks-col-body {
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px;
+  border-radius: 10px;
+}
+
+.tasks-col-body.is-over {
+  outline: 2px dashed rgba(13, 110, 253, 0.4);
+  background: rgba(13, 110, 253, 0.06);
+}
+
+.task-card {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.95);
+  padding: 10px;
+  cursor: grab;
+  min-width: 0;
+  overflow: hidden;
+}
+
+body.theme-dark .task-card {
+  background: rgba(0, 0, 0, 0.35);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.task-card.is-dragging {
+  opacity: 0.6;
+}
+
+.task-card-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: start;
+}
+
+.task-card-title {
+  font-weight: 800;
+  font-size: 0.95rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.task-card-desc {
+  margin-top: 6px;
+  font-size: 0.9rem;
+  color: rgba(0, 0, 0, 0.7);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+body.theme-dark .task-card-desc {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.task-card-meta {
+  margin-top: 6px;
+  font-size: 0.82rem;
+  color: rgba(0, 0, 0, 0.55);
+}
+
+body.theme-dark .task-card-meta {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.task-card-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.task-card-subtasks {
+  margin-top: 8px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  padding-top: 8px;
+}
+body.theme-dark .task-card-subtasks {
+  border-top-color: rgba(255, 255, 255, 0.10);
+}
+.task-card-subtasks-toggle {
+  width: 100%;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0;
+  font-weight: 700;
+}
+.task-card-subtasks.is-collapsed .task-card-subtasks-list {
+  display: none;
+}
+.task-card-subtasks-list {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.task-card-subtask {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.03);
+}
+body.theme-dark .task-card-subtask {
+  background: rgba(255, 255, 255, 0.06);
+}
+.task-card-subtask-title {
+  border: none;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.task-card-subtask-title:hover {
+  text-decoration: underline;
+}
+.task-card-subtask-meta {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.55);
+  white-space: nowrap;
+}
+body.theme-dark .task-card-subtask-meta {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.tasks-backlog .tasks-item {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.85);
+  margin-bottom: 10px;
+}
+
+body.theme-dark .tasks-backlog .tasks-item {
+  background: rgba(0, 0, 0, 0.25);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.tasks-item-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: start;
+}
+
+.tasks-item-title {
+  font-weight: 800;
+}
+
+.tasks-item-badges {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: end;
+}
+
+.tasks-item-meta {
+  margin-top: 6px;
+  font-size: 0.85rem;
+  color: rgba(0, 0, 0, 0.6);
+}
+
+body.theme-dark .tasks-item-meta {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.tasks-item-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tasks-report-list {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+}
+
+.tasks-report-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+body.theme-dark .tasks-report-list li {
+  border-bottom-color: rgba(255, 255, 255, 0.12);
+}
+
+/* Notion-ish: compact toolbar + filter panel + table look */
+.tasks-toolbar label.form-label {
+  font-size: 0.75rem;
+  color: rgba(0, 0, 0, 0.55);
+}
+body.theme-dark .tasks-toolbar label.form-label {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.tasks-filter-panel .card {
+  border-radius: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+body.theme-dark .tasks-filter-panel .card {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.tasks-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tasks-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+  line-height: 1;
+}
+body.theme-dark .tasks-chip {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.25);
+}
+.tasks-chip button {
+  border: none;
+  background: transparent;
+  padding: 0;
+  line-height: 1;
+  opacity: 0.65;
+}
+.tasks-chip button:hover {
+  opacity: 1;
+}
+
+.tasks-notion-wrap {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.95);
+  max-width: 100%;
+}
+body.theme-dark .tasks-notion-wrap {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.tasks-notion-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tasks-notion-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+  table-layout: fixed;
+}
+.tasks-notion-table th,
+.tasks-notion-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  vertical-align: middle;
+}
+
+.tasks-notion-table th {
+  position: relative;
+  user-select: none;
+}
+
+.tasks-col-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 100%;
+  cursor: col-resize;
+  opacity: 0.0;
+}
+th:hover .tasks-col-resizer {
+  opacity: 1;
+}
+.tasks-col-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 4px;
+  width: 2px;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.18);
+}
+body.theme-dark .tasks-col-resizer::after {
+  background: rgba(255, 255, 255, 0.22);
+}
+body.theme-dark .tasks-notion-table th,
+body.theme-dark .tasks-notion-table td {
+  border-bottom-color: rgba(255, 255, 255, 0.10);
+}
+.tasks-notion-table th + th,
+.tasks-notion-table td + td {
+  border-left: 1px solid rgba(0, 0, 0, 0.04);
+}
+body.theme-dark .tasks-notion-table th + th,
+body.theme-dark .tasks-notion-table td + td {
+  border-left-color: rgba(255, 255, 255, 0.08);
+}
+
+.tasks-notion-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(245, 245, 245, 0.95);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: rgba(0, 0, 0, 0.55);
+}
+body.theme-dark .tasks-notion-table thead th {
+  background: rgba(30, 30, 30, 0.92);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.tasks-notion-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+}
+.tasks-notion-name button {
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-weight: 700;
+  color: inherit;
+}
+.tasks-notion-name button:hover {
+  text-decoration: underline;
+}
+
+.tasks-notion-cell select,
+.tasks-notion-cell input[type="date"] {
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 12px;
+  padding: 2px 6px;
+}
+
+.tasks-notion-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.04);
+}
+body.theme-dark .tasks-notion-pill {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.tasks-notion-actions {
+  display: inline-flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+tr:hover .tasks-notion-actions {
+  opacity: 1;
+}
+.tasks-notion-actions .btn {
+  padding: 2px 8px;
+}
+
+.tasks-notion-add {
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 10px;
+  text-align: left;
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.55);
+}
+body.theme-dark .tasks-notion-add {
+  color: rgba(255, 255, 255, 0.7);
+}
+.tasks-notion-add:hover {
+  background: rgba(13, 110, 253, 0.06);
+  color: rgba(13, 110, 253, 0.9);
+}
+
+.tasks-subtasks .tasks-subtask-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+body.theme-dark .tasks-subtasks .tasks-subtask-item {
+  border-bottom-color: rgba(255, 255, 255, 0.10);
+}
+.tasks-subtasks .tasks-subtask-link {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-weight: 700;
+  text-align: left;
+}
+.tasks-subtasks .tasks-subtask-link:hover {
+  text-decoration: underline;
+}
+
+.tasks-comments {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+.tasks-comment {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.85);
+}
+body.theme-dark .tasks-comment {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.25);
+}
+.tasks-comment-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+.tasks-comment-body {
+  white-space: pre-wrap;
+  font-size: 0.95rem;
+}
+.tasks-tree-toggle {
+  border: none;
+  background: transparent;
+  padding: 0 6px 0 0;
+  font-weight: 900;
+  opacity: 0.7;
+  min-width: 16px;
+  text-align: center;
+}
+.tasks-tree-toggle:hover {
+  opacity: 1;
+}
+.tasks-tree-spacer {
+  display: inline-block;
+  width: 16px;
+}

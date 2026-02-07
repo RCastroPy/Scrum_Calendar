@@ -38,6 +38,13 @@ class UsuarioOut(BaseModel):
     creado_en: datetime
 
 
+class UsuarioLite(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: str
+
+
 class OneOnOneNoteCreate(BaseModel):
     celula_id: int
     persona_id: int
@@ -426,6 +433,81 @@ class EventoOut(BaseModel):
     planificado: bool
     descripcion: Optional[str]
     creado_en: datetime
+
+
+class TaskCreate(BaseModel):
+    titulo: str
+    descripcion: Optional[str] = None
+    estado: str = "backlog"
+    prioridad: str = "media"
+    celula_id: Optional[int] = None
+    sprint_id: Optional[int] = None
+    parent_id: Optional[int] = None
+    assignee_persona_id: Optional[int] = None
+    fecha_vencimiento: Optional[date] = None
+    orden: Optional[float] = None
+    tipo: Optional[str] = None
+    etiquetas: Optional[str] = None
+    puntos: Optional[float] = None
+    horas_estimadas: Optional[float] = None
+    importante: Optional[bool] = False
+
+
+class TaskUpdate(BaseModel):
+    titulo: Optional[str] = None
+    descripcion: Optional[str] = None
+    estado: Optional[str] = None
+    prioridad: Optional[str] = None
+    celula_id: Optional[int] = None
+    sprint_id: Optional[int] = None
+    parent_id: Optional[int] = None
+    assignee_persona_id: Optional[int] = None
+    fecha_vencimiento: Optional[date] = None
+    orden: Optional[float] = None
+    tipo: Optional[str] = None
+    etiquetas: Optional[str] = None
+    puntos: Optional[float] = None
+    horas_estimadas: Optional[float] = None
+    importante: Optional[bool] = None
+
+
+class TaskOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    titulo: str
+    descripcion: Optional[str]
+    estado: str
+    prioridad: str
+    celula_id: Optional[int]
+    sprint_id: Optional[int]
+    parent_id: Optional[int]
+    assignee_persona_id: Optional[int]
+    creado_por_usuario_id: Optional[int]
+    fecha_vencimiento: Optional[date]
+    tipo: Optional[str] = None
+    etiquetas: Optional[str] = None
+    puntos: Optional[float] = None
+    horas_estimadas: Optional[float] = None
+    importante: bool
+    orden: float
+    creado_en: datetime
+    actualizado_en: datetime
+
+
+class TaskCommentCreate(BaseModel):
+    texto: str
+
+
+class TaskCommentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    task_id: int
+    usuario_id: int
+    texto: str
+    creado_en: datetime
+    usuario: Optional[UsuarioLite] = None
 
 
 class EventoTipoOut(BaseModel):

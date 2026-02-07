@@ -61,6 +61,7 @@ async def auth_middleware(request: Request, call_next):
     if (
         path == "/"
         or path.startswith("/auth")
+        or path.startswith("/public/")
         or path.startswith("/docs")
         or path.startswith("/openapi")
         or path.startswith("/redoc")
@@ -88,7 +89,11 @@ async def auth_middleware(request: Request, call_next):
                 db.delete(session)
                 db.commit()
             return JSONResponse(status_code=401, content={"detail": "No autenticado"})
-        if request.method not in {"GET", "HEAD", "OPTIONS"} and session.usuario.rol != "admin":
+        if (
+            request.method not in {"GET", "HEAD", "OPTIONS"}
+            and session.usuario.rol != "admin"
+            and not path.startswith("/tasks")
+        ):
             return JSONResponse(status_code=403, content={"detail": "Sin permisos"})
         request.state.user = session.usuario
         return await call_next(request)
@@ -141,6 +146,26 @@ def startup():
             column_names = {row[0] for row in columns}
             if "client_id" not in column_names:
                 conn.execute(text("alter table poker_claims add column client_id varchar(64)"))
+
+        # Tasks: add new columns if the table already exists (create_all doesn't alter).
+        tasks_cols = conn.execute(
+            text(
+                "select column_name from information_schema.columns "
+                "where table_name = 'tasks'"
+            )
+        ).fetchall()
+        if tasks_cols:
+            task_col_names = {row[0] for row in tasks_cols}
+            if "tipo" not in task_col_names:
+                conn.execute(text("alter table tasks add column tipo varchar(30)"))
+            if "etiquetas" not in task_col_names:
+                conn.execute(text("alter table tasks add column etiquetas text"))
+            if "puntos" not in task_col_names:
+                conn.execute(text("alter table tasks add column puntos double precision"))
+            if "horas_estimadas" not in task_col_names:
+                conn.execute(text("alter table tasks add column horas_estimadas double precision"))
+            if "importante" not in task_col_names:
+                conn.execute(text("alter table tasks add column importante boolean not null default false"))
 
 
 app.include_router(router)

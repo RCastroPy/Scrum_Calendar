@@ -300,6 +300,54 @@ class ReleaseItem(Base):
     persona = relationship("Persona", back_populates="release_items")
 
 
+class Task(Base):
+    __tablename__ = "tasks"
+
+    id = Column(Integer, primary_key=True)
+    celula_id = Column(Integer, ForeignKey("celulas.id"), nullable=True)
+    sprint_id = Column(Integer, ForeignKey("sprints.id"), nullable=True)
+    parent_id = Column(Integer, ForeignKey("tasks.id"), nullable=True)
+    assignee_persona_id = Column(Integer, ForeignKey("personas.id"), nullable=True)
+    creado_por_usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+
+    titulo = Column(String(200), nullable=False)
+    descripcion = Column(Text, nullable=True)
+    estado = Column(String(20), nullable=False, default="backlog")
+    prioridad = Column(String(20), nullable=False, default="media")
+    fecha_vencimiento = Column(Date, nullable=True)
+    tipo = Column(String(30), nullable=True)
+    etiquetas = Column(Text, nullable=True)  # Comma-separated for now: "ui, backend"
+    puntos = Column(Float, nullable=True)
+    horas_estimadas = Column(Float, nullable=True)
+    importante = Column(Boolean, nullable=False, default=False)
+
+    orden = Column(Float, nullable=False, default=0.0)
+    creado_en = Column(DateTime, nullable=False, default=now_py)
+    actualizado_en = Column(DateTime, nullable=False, default=now_py, onupdate=now_py)
+
+    celula = relationship("Celula")
+    sprint = relationship("Sprint")
+    assignee = relationship("Persona")
+    creado_por = relationship("Usuario")
+
+    parent = relationship("Task", remote_side=[id], back_populates="subtasks")
+    subtasks = relationship("Task", back_populates="parent", cascade="all, delete-orphan")
+    comments = relationship("TaskComment", back_populates="task", cascade="all, delete-orphan")
+
+
+class TaskComment(Base):
+    __tablename__ = "task_comments"
+
+    id = Column(Integer, primary_key=True)
+    task_id = Column(Integer, ForeignKey("tasks.id"), nullable=False)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    texto = Column(Text, nullable=False)
+    creado_en = Column(DateTime, nullable=False, default=now_py)
+
+    task = relationship("Task", back_populates="comments")
+    usuario = relationship("Usuario")
+
+
 class OneOnOneNote(Base):
     __tablename__ = "oneonone_notes"
     __table_args__ = (

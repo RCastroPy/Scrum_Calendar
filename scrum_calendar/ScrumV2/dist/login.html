@@ -1,42 +1,141 @@
 <!doctype html>
 <html lang="es">
+  <!--begin::Head-->
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Scrum Calendar · Login</title>
-    <link rel="stylesheet" href="styles.css?v=20260110" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>ScrumIA | Login</title>
+
+    <!--begin::Accessibility Meta Tags-->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#0d6efd" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1a1a1a" media="(prefers-color-scheme: dark)" />
+    <!--end::Accessibility Meta Tags-->
+
+    <!--begin::Fonts-->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@fontsource/source-sans-3@5.0.12/index.css"
+      integrity="sha256-tXJfXfp6Ewt1ilPzLDtQnJV4hclT9XuaZUKyUvmyr+Q="
+      crossorigin="anonymous"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <!--end::Fonts-->
+
+    <!--begin::Third Party Plugin(OverlayScrollbars)-->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/overlayscrollbars@2.11.0/styles/overlayscrollbars.min.css"
+      crossorigin="anonymous"
+    />
+    <!--end::Third Party Plugin(OverlayScrollbars)-->
+
+    <!--begin::Third Party Plugin(Bootstrap Icons)-->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css"
+      crossorigin="anonymous"
+    />
+    <!--end::Third Party Plugin(Bootstrap Icons)-->
+
+    <!--begin::Required Plugin(AdminLTE)-->
+    <link rel="stylesheet" href="./css/adminlte.css" />
+    <!--end::Required Plugin(AdminLTE)-->
+
+    <!-- Small tweaks for the ScrumIA login -->
+    <style>
+      .login-logo a { text-decoration: none; }
+      #login-error { min-height: 1.25rem; }
+    </style>
   </head>
-  <body data-page="login">
-    <div class="bg-ambient">
-      <span class="orb orb-a"></span>
-      <span class="orb orb-b"></span>
-      <span class="orb orb-c"></span>
-      <span class="grid-lines"></span>
+  <!--end::Head-->
+  <!--begin::Body-->
+  <body class="login-page bg-body-secondary adminlte-base" data-page="login">
+    <div class="login-box">
+      <div class="login-logo">
+        <a href="./index.html"><b>Scrum</b>IA</a>
+      </div>
+      <div class="card">
+        <div class="card-body login-card-body">
+          <p class="login-box-msg">Ingresa para acceder al panel</p>
+
+          <form id="login-form" method="post" action="/auth/login-form">
+            <div class="input-group mb-3">
+              <input
+                type="text"
+                class="form-control"
+                name="username"
+                autocomplete="username"
+                placeholder="Usuario"
+                required
+              />
+              <div class="input-group-text">
+                <span class="bi bi-person-fill"></span>
+              </div>
+            </div>
+
+            <div class="input-group mb-3">
+              <input
+                type="password"
+                class="form-control"
+                name="password"
+                autocomplete="current-password"
+                placeholder="Password"
+                required
+              />
+              <div class="input-group-text">
+                <span class="bi bi-lock-fill"></span>
+              </div>
+            </div>
+
+            <div class="input-group mb-3">
+              <select id="login-cell" class="form-select" aria-label="Celula">
+                <option value="">Todas las celulas</option>
+              </select>
+              <div class="input-group-text">
+                <span class="bi bi-diagram-3-fill"></span>
+              </div>
+            </div>
+
+            <div class="row">
+              <div class="col-12">
+                <div class="d-grid gap-2">
+                  <button type="submit" class="btn btn-primary">Ingresar</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-2 text-danger small" id="login-error" role="alert"></div>
+          </form>
+
+          <div class="mt-3 pt-3 border-top">
+            <p class="text-muted mb-2 small">Primera vez en el sistema?</p>
+            <div class="d-grid gap-2">
+              <button class="btn btn-outline-secondary" type="button" id="bootstrap-btn">
+                Crear admin inicial
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <main class="login-layout">
-      <div class="login-card">
-        <div class="login-brand">
-          <h1>Scrum Calendar</h1>
-          <p>Acceso al panel operativo</p>
-        </div>
-        <form id="login-form" class="login-form" method="post" action="/auth/login-form">
-          <label>
-            Usuario
-            <input type="text" name="username" autocomplete="username" required />
-          </label>
-          <label>
-            Password
-            <input type="password" name="password" autocomplete="current-password" required />
-          </label>
-          <button class="btn primary" type="submit">Ingresar</button>
-          <div class="login-error" id="login-error"></div>
-        </form>
-        <div class="login-divider">Primera vez en el sistema?</div>
-        <button class="btn ghost" type="button" id="bootstrap-btn">Crear admin inicial</button>
-      </div>
-    </main>
+    <!--begin::Required scripts (Bootstrap + AdminLTE)-->
+    <script
+      src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.min.js"
+      crossorigin="anonymous"
+    ></script>
+    <script src="./js/adminlte.js"></script>
+    <!--end::Required scripts-->
 
-    <script src="app.js?v=dev"></script>
+    <!-- Scrum Calendar app -->
+    <script src="./app.js?v=dev"></script>
   </body>
+  <!--end::Body-->
 </html>
+

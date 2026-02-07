@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Scrum Calendar · Login</title>
+    <title>ScrumIA · Login</title>
     <link rel="stylesheet" href="styles.css?v=20260110" />
   </head>
   <body data-page="login">
@@ -28,6 +28,12 @@
           <label>
             Password
             <input type="password" name="password" autocomplete="current-password" required />
+          </label>
+          <label>
+            Celula (opcional)
+            <select id="login-cell">
+              <option value="">Todas</option>
+            </select>
           </label>
           <button class="btn primary" type="submit">Ingresar</button>
           <div class="login-error" id="login-error"></div>

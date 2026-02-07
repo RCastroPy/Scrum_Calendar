@@ -68,14 +68,18 @@
       document.body.setAttribute("data-bs-theme", mode);
       document.body.classList.toggle("theme-dark", mode === "dark");
     }
+    // AdminLTE pages often hardcode sidebar theme; sync it so the toggle is visible.
+    document.querySelectorAll(".app-sidebar").forEach((sidebar) => {
+      sidebar.setAttribute("data-bs-theme", mode);
+    });
   };
 
   const themeState = { value: resolveTheme() };
   applyTheme(themeState.value);
 
-  const state = {
-    base: null,
-    user: null,
+	  const state = {
+	    base: null,
+	    user: null,
     capacidadSeries: [],
     lastSprintCelulaId: "",
     selectedCelulaId: "",
@@ -97,10 +101,25 @@
     dailyStatusOpen: false,
     dailyStatusOutsideBound: false,
     dailyStatusTouched: false,
-    dailySprintOpen: false,
-    retroCommitmentFilter: "pendiente",
-    retroPresence: { total: 0, personas: [] },
-    retroActiveId: "",
+	    dailySprintOpen: false,
+	    tasksView: "board",
+	    tasksSearch: "",
+	    tasksStatusFilter: "",
+	    tasksSprintFilter: "",
+	    tasksCache: [],
+	    tasksFilters: {
+	      statuses: ["backlog", "todo", "doing", "done"],
+	      priorities: ["baja", "media", "alta", "urgente"],
+	      assignees: [],
+	      dueFrom: "",
+	      dueTo: "",
+	      hideSubtasks: false,
+	    },
+	    tasksBacklogExpanded: {},
+	    tasksColumnsConfig: null,
+	    retroCommitmentFilter: "pendiente",
+	    retroPresence: { total: 0, personas: [] },
+	    retroActiveId: "",
     pokerSessionId: "",
     pokerPresence: { total: 0, personas: [] },
     pokerVotes: [],
@@ -502,6 +521,7 @@
     if (!form) return null;
     const error = qs("#login-error");
     const bootstrapBtn = qs("#bootstrap-btn");
+    const loginCellSelect = qs("#login-cell");
     const nextParam = new URLSearchParams(window.location.search).get("next") || "";
     const safeNext = nextParam && !nextParam.includes("/") ? nextParam : "index.html";
 
@@ -510,6 +530,24 @@
         error.textContent = message || "";
       }
     };
+
+    if (loginCellSelect && !loginCellSelect.dataset.bound) {
+      loginCellSelect.dataset.bound = "true";
+      // Populate cells in login without auth.
+      fetchJson("/public/celulas")
+        .then((cells) => {
+          if (!Array.isArray(cells)) return;
+          fillSelect(loginCellSelect, cells, { includeEmpty: true });
+          if (loginCellSelect.options.length) {
+            loginCellSelect.options[0].textContent = "Todas";
+          }
+          const saved = localStorage.getItem("scrum_calendar_celula_id");
+          if (saved && Array.from(loginCellSelect.options).some((opt) => opt.value === saved)) {
+            loginCellSelect.value = saved;
+          }
+        })
+        .catch(() => {});
+    }
 
     try {
       const me = await fetchJson("/auth/me");
@@ -524,11 +562,19 @@
     const submitAuth = async (endpoint) => {
       const username = (form.username?.value || "").trim();
       const password = form.password?.value || "";
+      const selectedCell = loginCellSelect?.value ? String(loginCellSelect.value) : "";
       if (!username || !password) {
         setError("Completa usuario y password.");
         return;
       }
       setError("");
+      // Persist selected cell for the dashboard filtering after login.
+      try {
+        if (selectedCell) localStorage.setItem("scrum_calendar_celula_id", selectedCell);
+        else localStorage.removeItem("scrum_calendar_celula_id");
+      } catch {
+        // ignore storage errors
+      }
       const submitBtn = form.querySelector('button[type="submit"]');
       if (submitBtn) submitBtn.disabled = true;
       if (bootstrapBtn) bootstrapBtn.disabled = true;
@@ -627,9 +673,9 @@
   }
 
   function fillSelect(select, items, opts = {}) {
-    const { valueKey = "id", labelKey = "nombre", includeEmpty = false } = opts;
+    const { valueKey = "id", labelKey = "nombre", includeEmpty = false, emptyLabel = "Sin sprint" } = opts;
     if (!select) return;
-    select.innerHTML = includeEmpty ? '<option value="">Sin sprint</option>' : "";
+    select.innerHTML = includeEmpty ? `<option value="">${emptyLabel}</option>` : "";
     items.forEach((item) => {
       const opt = document.createElement("option");
       opt.value = item[valueKey];
@@ -2108,16 +2154,38 @@
       id: p.id,
       nombre: `${p.nombre} ${p.apellido}`,
     }));
-    if (personaSelect) {
+    const getExistingPersonIds = () => {
+      const typeId = typeSelect?.value ? Number(typeSelect.value) : null;
+      const jornada = jornadaSelect?.value || "completo";
+      if (!typeId) return new Set();
+      const target = parseDateOnly(dateKey);
+      if (!target) return new Set();
+      const ids = new Set();
+      (base.eventos || []).forEach((evento) => {
+        if (Number(evento.tipo_evento_id) !== Number(typeId)) return;
+        if ((evento.jornada || "completo") !== jornada) return;
+        const start = parseDateOnly(evento.fecha_inicio);
+        const end = parseDateOnly(evento.fecha_fin);
+        if (!start || !end) return;
+        if (target < start || target > end) return;
+        ids.add(String(evento.persona_id));
+      });
+      return ids;
+    };
+    const renderPersonaSelect = () => {
+      if (!personaSelect) return;
+      const existing = getExistingPersonIds();
       personaSelect.innerHTML = '<option value="">Seleccionar</option>';
-      personaOptions.forEach((item) => {
+      const available = personaOptions.filter((p) => !existing.has(String(p.id)));
+      available.forEach((item) => {
         const opt = document.createElement("option");
         opt.value = item.id;
         opt.textContent = item.nombre;
         personaSelect.appendChild(opt);
       });
-      personaSelect.disabled = !personaOptions.length;
-    }
+      personaSelect.disabled = !available.length;
+    };
+    renderPersonaSelect();
 
     if (typeSelect) {
       typeSelect.innerHTML = '<option value="">Seleccionar</option>';
@@ -2169,6 +2237,14 @@
         } else {
           details.classList.add("is-hidden");
         }
+        renderPersonaSelect();
+      });
+    }
+
+    if (jornadaSelect && !jornadaSelect.dataset.boundDayModal) {
+      jornadaSelect.dataset.boundDayModal = "true";
+      jornadaSelect.addEventListener("change", () => {
+        renderPersonaSelect();
       });
     }
 
@@ -2198,11 +2274,29 @@
           };
           await postJson("/eventos", payload);
           setStatus("#day-event-status", "Evento creado.", "ok");
+          // Prevent adding the same combo again in the same modal session.
+          base.eventos = base.eventos || [];
+          base.eventos.push({
+            persona_id: payload.persona_id,
+            tipo_evento_id: payload.tipo_evento_id,
+            sprint_id: payload.sprint_id,
+            fecha_inicio: payload.fecha_inicio,
+            fecha_fin: payload.fecha_fin,
+            jornada: payload.jornada,
+            descripcion: payload.descripcion,
+          });
           await reloadAll();
           const updated = collectDayEventsForDate(currentDateKey);
           openDayModal(currentDateKey, updated);
         } catch (err) {
-          setStatus("#day-event-status", err.message || "Error al crear evento.", "error");
+          let message = err?.message || "Error al crear evento.";
+          try {
+            const parsed = JSON.parse(message);
+            if (parsed?.detail) message = parsed.detail;
+          } catch {
+            // ignore
+          }
+          setStatus("#day-event-status", message, "error");
         }
       });
     }
@@ -2898,9 +2992,7 @@
   }
 
   function toggleMenuVisibility() {
-    const menu = qs(".menu");
-    if (!menu) return;
-    menu.classList.toggle("menu-hidden", !state.selectedCelulaId);
+    // Keep navigation visible even when no cell is selected (use "Todas").
     applyRoleVisibility();
   }
 
@@ -2913,7 +3005,6 @@
     const eventoForm = qs("#form-evento");
     const tipoForm = qs("#form-evento-tipo");
     const releaseImportForm = qs("#form-release-import");
-    const quarterForm = qs("#form-quarter");
     const importClearBtn = qs("#import-clear");
     const importForm = qs("#form-import");
 
@@ -5524,19 +5615,14 @@
   function customizeNavbar(user) {
     const header = document.querySelector(".app-header");
     if (!header) return;
+    // Remove default AdminLTE links that we don't use.
+    header
+      .querySelectorAll(".navbar-nav .nav-item.d-none.d-md-block")
+      .forEach((item) => item.remove());
     const hideByText = new Set(["Home", "Contact"]);
     header.querySelectorAll(".navbar-nav a.nav-link").forEach((link) => {
       const text = link.textContent?.trim();
-      if (text && hideByText.has(text)) {
-        const item = link.closest(".nav-item");
-        if (item) {
-          item.dataset.scrumiaHidden = "true";
-          item.remove();
-        } else {
-          link.dataset.scrumiaHidden = "true";
-          link.remove();
-        }
-      }
+      if (text && hideByText.has(text)) link.closest(".nav-item")?.remove();
     });
     const searchToggle = header.querySelector('[data-widget="navbar-search"]');
     searchToggle?.closest(".nav-item")?.classList.add("d-none");
@@ -7003,6 +7089,2109 @@
     }
 
     renderDaily(state.base);
+  }
+
+  function initTasks() {
+    const root = qs("#tasks-root");
+    if (!root || !state.base) return;
+
+    const base = state.base;
+    const statusEl = qs("#tasks-status");
+    const backlogPanel = qs("#tasks-view-backlog-panel");
+    const boardPanel = qs("#tasks-view-board-panel");
+    const reportsPanel = qs("#tasks-view-reports-panel");
+    const backlogList = qs("#tasks-backlog-list");
+    const board = qs("#tasks-board");
+    const reportStatus = qs("#tasks-report-status");
+    const reportAssignee = qs("#tasks-report-assignee");
+    const sprintSelect = qs("#tasks-filter-sprint");
+    const statusSelect = qs("#tasks-filter-status");
+    const filtersBtn = qs("#tasks-filters-btn");
+    const filterPanel = qs("#tasks-filter-panel");
+    const filterChips = qs("#tasks-filter-chips");
+    const filterAssignee = qs("#tasks-filter-assignee");
+    const filterDueFrom = qs("#tasks-filter-due-from");
+    const filterDueTo = qs("#tasks-filter-due-to");
+    const filterHideSubtasks = qs("#tasks-filter-hide-subtasks");
+    const filterClearBtn = qs("#tasks-filter-clear");
+    const filterCloseBtn = qs("#tasks-filter-close");
+    const columnsBtn = qs("#tasks-columns-btn");
+    const columnsPanel = qs("#tasks-columns-panel");
+    const columnsList = qs("#tasks-columns-list");
+    const columnsCloseBtn = qs("#tasks-columns-close");
+    const columnsResetBtn = qs("#tasks-columns-reset");
+    const searchInput = qs("#tasks-search");
+    const createBtn = qs("#task-create-btn");
+
+    const STATUS_ORDER = ["backlog", "todo", "doing", "done", "archived"];
+    const STATUS_LABEL = {
+      backlog: "Backlog",
+      todo: "To Do",
+      doing: "Doing",
+      done: "Done",
+      archived: "Archivado",
+    };
+    const PRIORITY_LABEL = {
+      baja: "Baja",
+      media: "Media",
+      alta: "Alta",
+      urgente: "Urgente",
+    };
+
+    const TASK_TYPES = [
+      { id: "", nombre: "Sin tipo" },
+      { id: "feature", nombre: "Feature" },
+      { id: "bug", nombre: "Bug" },
+      { id: "spike", nombre: "Spike" },
+      { id: "chore", nombre: "Chore" },
+    ];
+
+    const TASK_COLUMNS_KEY = "scrum_calendar_tasks_columns_v2";
+    const DEFAULT_COLUMNS = [
+      "titulo",
+      "estado",
+      "prioridad",
+      "tipo",
+      "etiquetas",
+      "assignee_persona_id",
+      "sprint_id",
+      "fecha_vencimiento",
+      "puntos",
+      "horas_estimadas",
+      "importante",
+      "actions",
+    ];
+    const COLUMN_LABEL = {
+      titulo: "Tarea",
+      estado: "Estado",
+      prioridad: "Prioridad",
+      tipo: "Tipo",
+      etiquetas: "Etiquetas",
+      assignee_persona_id: "Responsable",
+      sprint_id: "Sprint",
+      fecha_vencimiento: "Vencimiento",
+      puntos: "Puntos",
+      horas_estimadas: "Horas",
+      importante: "Importante",
+      actions: "",
+    };
+
+    const loadColumnsConfig = () => {
+      if (state.tasksColumnsConfig) return state.tasksColumnsConfig;
+      try {
+        const raw = localStorage.getItem(TASK_COLUMNS_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (
+            parsed &&
+            Array.isArray(parsed.order) &&
+            parsed.hidden &&
+            typeof parsed.hidden === "object" &&
+            (!parsed.widths || typeof parsed.widths === "object")
+          ) {
+            state.tasksColumnsConfig = parsed;
+            return parsed;
+          }
+        }
+      } catch {
+        // ignore
+      }
+      state.tasksColumnsConfig = { order: [...DEFAULT_COLUMNS], hidden: {}, widths: {} };
+      return state.tasksColumnsConfig;
+    };
+
+    const saveColumnsConfig = () => {
+      try {
+        localStorage.setItem(TASK_COLUMNS_KEY, JSON.stringify(state.tasksColumnsConfig));
+      } catch {
+        // ignore
+      }
+    };
+
+    const setColumnWidth = (key, px) => {
+      const cfg = loadColumnsConfig();
+      const widths = { ...(cfg.widths || {}) };
+      const n = Number(px);
+      if (!Number.isFinite(n) || n <= 0) return;
+      widths[key] = Math.round(n);
+      state.tasksColumnsConfig = { ...cfg, widths };
+      saveColumnsConfig();
+    };
+
+    const getColumnWidth = (key) => {
+      const cfg = loadColumnsConfig();
+      const widths = cfg.widths || {};
+      const n = Number(widths[key] || 0);
+      return Number.isFinite(n) && n > 0 ? n : 0;
+    };
+
+    const getVisibleColumns = () => {
+      const cfg = loadColumnsConfig();
+      const order = Array.isArray(cfg.order) ? cfg.order.slice() : [...DEFAULT_COLUMNS];
+      const hidden = cfg.hidden || {};
+      const normalized = [];
+      order.forEach((k) => {
+        if (!k) return;
+        if (!DEFAULT_COLUMNS.includes(k)) return;
+        if (hidden[k]) return;
+        normalized.push(k);
+      });
+      // Ensure any missing default columns appear (except hidden).
+      DEFAULT_COLUMNS.forEach((k) => {
+        if (hidden[k]) return;
+        if (!normalized.includes(k)) normalized.push(k);
+      });
+      return normalized;
+    };
+    const statusBadgeClass = (estado) => {
+      switch (estado) {
+        case "backlog":
+          return "text-bg-secondary";
+        case "todo":
+          return "text-bg-primary";
+        case "doing":
+          return "text-bg-warning";
+        case "done":
+          return "text-bg-success";
+        case "archived":
+          return "text-bg-dark";
+        default:
+          return "text-bg-secondary";
+      }
+    };
+    const priorityBadgeClass = (prioridad) => {
+      switch (prioridad) {
+        case "urgente":
+          return "text-bg-danger";
+        case "alta":
+          return "text-bg-warning";
+        case "media":
+          return "text-bg-info";
+        case "baja":
+          return "text-bg-secondary";
+        default:
+          return "text-bg-secondary";
+      }
+    };
+
+    const personasActivas = filterActivePersonas(base.personas || []);
+    const personaMap = Object.fromEntries(
+      personasActivas.map((p) => [String(p.id), `${p.nombre} ${p.apellido}`.trim()])
+    );
+    const sprintNameById = Object.fromEntries(
+      (base.sprints || []).map((s) => [String(s.id), String(s.nombre || "").trim() || `Sprint ${s.id}`])
+    );
+
+    const personaBelongsToCelula = (persona, celulaId) => {
+      if (!celulaId) return true;
+      return (persona.celulas || []).some((celula) => String(celula.id) === String(celulaId));
+    };
+
+    const resolveCelulaId = () => (state.selectedCelulaId ? Number(state.selectedCelulaId) : 0);
+    const resolveSelectedSprintId = () => {
+      const value = sprintSelect?.value || state.tasksSprintFilter || "";
+      return value ? Number(value) : 0;
+    };
+
+    const sortTasks = (items) =>
+      [...items].sort((a, b) => {
+        const ao = Number(a.orden || 0);
+        const bo = Number(b.orden || 0);
+        if (ao !== bo) return ao - bo;
+        const ad = new Date(a.actualizado_en || a.creado_en || 0).getTime();
+        const bd = new Date(b.actualizado_en || b.creado_en || 0).getTime();
+        if (ad !== bd) return bd - ad;
+        return (b.id || 0) - (a.id || 0);
+      });
+
+    const setTasksStatus = (text, type = "info") => {
+      if (!statusEl) return;
+      statusEl.textContent = text;
+      statusEl.dataset.type = type;
+    };
+
+    const setActiveView = (view) => {
+      state.tasksView = view;
+      if (backlogPanel) backlogPanel.classList.toggle("hidden", view !== "backlog");
+      if (boardPanel) boardPanel.classList.toggle("hidden", view !== "board");
+      if (reportsPanel) reportsPanel.classList.toggle("hidden", view !== "reports");
+      const map = {
+        backlog: qs("#tasks-view-backlog"),
+        board: qs("#tasks-view-board"),
+        reports: qs("#tasks-view-reports"),
+      };
+      Object.entries(map).forEach(([key, btn]) => {
+        if (!btn) return;
+        btn.classList.toggle("btn-primary", key === view);
+        btn.classList.toggle("btn-outline-primary", key !== view);
+      });
+    };
+
+    const ensureTaskForm = () => {
+      let form = qs("#task-form");
+      if (!form) {
+        let host = qs("#tasks-form-host");
+        if (!host) {
+          host = document.createElement("div");
+          host.id = "tasks-form-host";
+          host.style.display = "none";
+          document.body.appendChild(host);
+        }
+        form = document.createElement("form");
+	        form.id = "task-form";
+	        form.className = "adminlte-form tasks-form";
+	        form.innerHTML = `
+	          <div class="row">
+            <div class="col-md-8">
+              <div class="mb-3">
+                <label class="form-label" for="task-titulo">Titulo</label>
+                <input class="form-control" id="task-titulo" name="titulo" type="text" required />
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="task-descripcion">Descripcion</label>
+                <textarea class="form-control" id="task-descripcion" name="descripcion" rows="4"></textarea>
+              </div>
+              <div class="small text-muted mb-2" id="task-parent-hint"></div>
+            </div>
+            <div class="col-md-4">
+              <div class="mb-3">
+                <label class="form-label" for="task-estado">Estado</label>
+                <select class="form-select" id="task-estado" name="estado" required>
+                  <option value="backlog">Backlog</option>
+                  <option value="todo">To Do</option>
+                  <option value="doing">Doing</option>
+                  <option value="done">Done</option>
+                  <option value="archived">Archivado</option>
+                </select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="task-prioridad">Prioridad</label>
+                <select class="form-select" id="task-prioridad" name="prioridad" required>
+                  <option value="baja">Baja</option>
+                  <option value="media" selected>Media</option>
+                  <option value="alta">Alta</option>
+                  <option value="urgente">Urgente</option>
+                </select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="task-assignee">Responsable</label>
+                <select class="form-select" id="task-assignee" name="assignee_persona_id"></select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="task-sprint">Sprint</label>
+                <select class="form-select" id="task-sprint" name="sprint_id"></select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="task-due">Vencimiento</label>
+                <input class="form-control" id="task-due" name="fecha_vencimiento" type="date" />
+              </div>
+	            </div>
+	          </div>
+	          <div id="task-existing-only" class="hidden">
+	            <div class="row g-3 mt-1">
+	              <div class="col-12 col-lg-6">
+	                <div class="card mb-0">
+	                  <div class="card-header border-0 py-2">
+	                    <div class="d-flex align-items-center justify-content-between gap-2">
+	                      <h3 class="card-title mb-0">Subtareas</h3>
+	                      <button class="btn btn-outline-primary btn-sm" type="button" id="task-subtask-add">
+	                        <i class="bi bi-plus-lg me-1"></i>Subtarea
+	                      </button>
+	                    </div>
+	                  </div>
+	                  <div class="card-body pt-0">
+	                    <div id="task-subtasks-list" class="tasks-subtasks"></div>
+	                    <div class="input-group input-group-sm mt-2">
+	                      <input class="form-control" id="task-subtask-title" type="text" placeholder="Titulo subtarea..." />
+	                      <button class="btn btn-outline-primary" type="button" id="task-subtask-create">Crear</button>
+	                    </div>
+	                  </div>
+	                </div>
+	              </div>
+	              <div class="col-12 col-lg-6">
+	                <div class="card mb-0">
+	                  <div class="card-header border-0 py-2">
+	                    <h3 class="card-title mb-0">Comentarios</h3>
+	                  </div>
+	                  <div class="card-body pt-0">
+	                    <div id="task-comments-list" class="tasks-comments"></div>
+	                    <div class="mt-2">
+	                      <textarea class="form-control" id="task-comment-text" rows="3" placeholder="Escribe un comentario..."></textarea>
+	                      <div class="d-flex gap-2 mt-2">
+	                        <button class="btn btn-primary btn-sm" type="button" id="task-comment-submit">Comentar</button>
+	                        <button class="btn btn-outline-secondary btn-sm" type="button" id="task-comments-refresh">
+	                          Actualizar
+	                        </button>
+	                      </div>
+	                    </div>
+	                  </div>
+	                </div>
+	              </div>
+	            </div>
+	          </div>
+	          <div class="d-flex gap-2 align-items-center">
+	            <button class="btn btn-primary" type="submit">Guardar</button>
+	            <button class="btn btn-outline-secondary" type="button" id="task-cancel-btn">Cancelar</button>
+	            <button class="btn btn-outline-danger ms-auto hidden" type="button" id="task-delete-btn">
+	              Eliminar
+	            </button>
+	          </div>
+	          <p class="form-status mt-2 mb-0" id="task-form-status"></p>
+	        `;
+        host.appendChild(form);
+        resetFormMode(form, "Guardar");
+      }
+      return form;
+    };
+
+	    const openTaskModal = (opts = {}) => {
+      const {
+        task = null,
+        parentId = null,
+        status = null,
+        sprintId = null,
+        celulaId = null,
+      } = opts;
+
+	      const form = ensureTaskForm();
+	      const cancelBtn = form.querySelector("#task-cancel-btn");
+	      const deleteBtn = form.querySelector("#task-delete-btn");
+	      const formStatus = form.querySelector("#task-form-status");
+	      const parentHint = form.querySelector("#task-parent-hint");
+	      const existingOnly = form.querySelector("#task-existing-only");
+	      const subtasksList = form.querySelector("#task-subtasks-list");
+	      const subtaskTitle = form.querySelector("#task-subtask-title");
+	      const subtaskCreate = form.querySelector("#task-subtask-create");
+	      const subtaskAdd = form.querySelector("#task-subtask-add");
+	      const commentsList = form.querySelector("#task-comments-list");
+	      const commentText = form.querySelector("#task-comment-text");
+	      const commentSubmit = form.querySelector("#task-comment-submit");
+	      const commentsRefresh = form.querySelector("#task-comments-refresh");
+
+      const resolvedCelulaId = celulaId || resolveCelulaId() || 0;
+      const personasFiltradas = personasActivas
+        .filter((p) => personaBelongsToCelula(p, resolvedCelulaId))
+        .map((p) => ({ id: p.id, nombre: `${p.nombre} ${p.apellido}`.trim() }))
+        .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
+      const sprintsFiltrados = [...(base.sprints || [])]
+        .filter((s) => !resolvedCelulaId || String(s.celula_id) === String(resolvedCelulaId))
+        .map((s) => ({ id: s.id, nombre: s.nombre }))
+        .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
+
+      fillSelect(form.assignee_persona_id, personasFiltradas, {
+        includeEmpty: true,
+        emptyLabel: "Sin responsable",
+      });
+      fillSelect(form.sprint_id, sprintsFiltrados, { includeEmpty: true });
+
+      const currentSprintId = sprintId || resolveSelectedSprintId() || 0;
+      if (currentSprintId && form.sprint_id) {
+        form.sprint_id.value = String(currentSprintId);
+      } else if (form.sprint_id) {
+        form.sprint_id.value = "";
+      }
+
+      form.dataset.parentId = parentId ? String(parentId) : "";
+	      if (parentHint) {
+        if (parentId) {
+          const parent = (state.tasksCache || []).find((t) => String(t.id) === String(parentId));
+          parentHint.textContent = parent ? `Subtarea de: ${parent.titulo}` : `Subtarea de: #${parentId}`;
+        } else {
+          parentHint.textContent = "";
+        }
+	      }
+
+	      const renderSubtasks = () => {
+	        const taskId = Number(form.dataset.currentTaskId || 0);
+	        if (!subtasksList) return;
+	        if (!taskId) {
+	          subtasksList.innerHTML = "";
+	          return;
+	        }
+	        const subtasks = sortTasks((state.tasksCache || []).filter((t) => Number(t.parent_id || 0) === taskId));
+	        if (!subtasks.length) {
+	          subtasksList.innerHTML = `<p class="empty small mb-0">No hay subtareas.</p>`;
+	          return;
+	        }
+	        subtasksList.innerHTML = subtasks
+	          .map((t) => {
+	            const statusLabel = STATUS_LABEL[t.estado] || t.estado || "-";
+	            const prLabel = PRIORITY_LABEL[t.prioridad] || t.prioridad || "-";
+	            return `
+	              <div class="tasks-subtask-item" data-task-id="${t.id}">
+	                <button type="button" class="tasks-subtask-link" data-action="edit-subtask">${t.titulo || `Task #${t.id}`}</button>
+	                <span class="text-muted small ms-2">${statusLabel} · ${prLabel}</span>
+	              </div>
+	            `;
+	          })
+	          .join("");
+	      };
+
+	      const renderComments = (items) => {
+	        if (!commentsList) return;
+	        const comments = Array.isArray(items) ? items : [];
+	        if (!comments.length) {
+	          commentsList.innerHTML = `<p class="empty small mb-0">Sin comentarios.</p>`;
+	          return;
+	        }
+	        commentsList.innerHTML = comments
+	          .map((c) => {
+	            const who = c?.usuario?.username || `Usuario ${c.usuario_id || ""}` || "Usuario";
+	            const when = c?.creado_en ? new Date(c.creado_en).toLocaleString() : "";
+	            const text = String(c?.texto || "");
+	            return `
+	              <div class="tasks-comment">
+	                <div class="tasks-comment-head">
+	                  <strong>${who}</strong>
+	                  <span class="text-muted small">${when}</span>
+	                </div>
+	                <div class="tasks-comment-body"></div>
+	              </div>
+	            `;
+	          })
+	          .join("");
+	        // Fill bodies safely (no HTML injection)
+	        Array.from(commentsList.querySelectorAll(".tasks-comment")).forEach((node, idx) => {
+	          const body = node.querySelector(".tasks-comment-body");
+	          if (body) body.textContent = String(comments[idx]?.texto || "");
+	        });
+	      };
+
+	      const loadComments = async () => {
+	        const taskId = Number(form.dataset.currentTaskId || 0);
+	        if (!taskId) return;
+	        try {
+	          const items = await fetchJson(`/tasks/${taskId}/comments`);
+	          renderComments(items);
+	        } catch (err) {
+	          if (commentsList) {
+	            commentsList.innerHTML = `<p class="empty small mb-0">No se pudieron cargar comentarios.</p>`;
+	          }
+	        }
+	      };
+
+	      const refreshDetails = async () => {
+	        renderSubtasks();
+	        await loadComments();
+	      };
+
+	      if (task) {
+	        form.dataset.currentTaskId = String(task.id);
+	        form.titulo.value = task.titulo || "";
+	        form.descripcion.value = task.descripcion || "";
+	        form.estado.value = task.estado || "backlog";
+	        form.prioridad.value = task.prioridad || "media";
+	        form.assignee_persona_id.value = task.assignee_persona_id ? String(task.assignee_persona_id) : "";
+	        form.sprint_id.value = task.sprint_id ? String(task.sprint_id) : form.sprint_id.value || "";
+	        form.fecha_vencimiento.value = task.fecha_vencimiento || "";
+	        setFormMode(form, "edit", task.id, "Guardar");
+	        if (deleteBtn) deleteBtn.classList.remove("hidden");
+	        if (existingOnly) existingOnly.classList.remove("hidden");
+	        if (commentsList) commentsList.innerHTML = `<p class="empty small mb-0">Cargando...</p>`;
+	        refreshDetails();
+	      } else {
+	        form.dataset.currentTaskId = "";
+	        form.reset();
+	        resetFormMode(form, "Guardar");
+	        form.estado.value = status || "backlog";
+	        if (status) form.estado.value = status;
+	        if (currentSprintId && form.sprint_id) {
+	          form.sprint_id.value = String(currentSprintId);
+	        } else if (form.sprint_id) {
+	          form.sprint_id.value = "";
+	        }
+	        if (deleteBtn) deleteBtn.classList.add("hidden");
+	        if (existingOnly) existingOnly.classList.add("hidden");
+	        if (subtasksList) subtasksList.innerHTML = "";
+	        if (commentsList) commentsList.innerHTML = "";
+	      }
+
+      if (formStatus) formStatus.textContent = "";
+      openAdminModal(form, task ? "Editar tarea" : "Nueva tarea");
+
+      if (cancelBtn && !cancelBtn.dataset.bound) {
+        cancelBtn.dataset.bound = "true";
+        cancelBtn.addEventListener("click", () => closeAdminModal(true));
+      }
+	      if (deleteBtn && !deleteBtn.dataset.bound) {
+        deleteBtn.dataset.bound = "true";
+        deleteBtn.addEventListener("click", async () => {
+          const editId = form.dataset.editId;
+          if (!editId) return;
+          if (!confirm("Eliminar esta tarea? (incluye subtareas)")) return;
+          try {
+            deleteBtn.disabled = true;
+            const res = await fetchWithFallback(`/tasks/${editId}`, { method: "DELETE" });
+            if (!res.ok) {
+              const text = await res.text();
+              throw new Error(text || "No se pudo eliminar.");
+            }
+            closeAdminModal(true);
+            await root.__tasksApi?.loadAndRender?.();
+          } catch (err) {
+            if (formStatus) {
+              formStatus.textContent = err.message || "No se pudo eliminar.";
+              formStatus.dataset.type = "error";
+            }
+          } finally {
+            deleteBtn.disabled = false;
+          }
+        });
+	      }
+
+	      if (subtaskCreate && !subtaskCreate.dataset.bound) {
+	        subtaskCreate.dataset.bound = "true";
+	        subtaskCreate.addEventListener("click", async () => {
+	          const taskId = Number(form.dataset.currentTaskId || 0);
+	          if (!taskId) return;
+	          const title = (subtaskTitle?.value || "").trim();
+	          if (!title) return;
+	          const parent = (state.tasksCache || []).find((t) => t.id === taskId);
+	          if (!parent) return;
+	          try {
+	            subtaskCreate.disabled = true;
+	            await postJson("/tasks", {
+	              titulo: title,
+	              descripcion: null,
+	              estado: parent.estado || "backlog",
+	              prioridad: parent.prioridad || "media",
+	              celula_id: parent.celula_id || resolveCelulaId() || null,
+	              sprint_id: parent.sprint_id || null,
+	              parent_id: taskId,
+	              assignee_persona_id: parent.assignee_persona_id || null,
+	              fecha_vencimiento: null,
+	            });
+	            if (subtaskTitle) subtaskTitle.value = "";
+	            await root.__tasksApi?.loadAndRender?.();
+	            renderSubtasks();
+	          } catch (err) {
+	            if (formStatus) {
+	              formStatus.textContent = err.message || "No se pudo crear la subtarea.";
+	              formStatus.dataset.type = "error";
+	            }
+	          } finally {
+	            subtaskCreate.disabled = false;
+	          }
+	        });
+	      }
+
+	      if (subtaskAdd && !subtaskAdd.dataset.bound) {
+	        subtaskAdd.dataset.bound = "true";
+	        subtaskAdd.addEventListener("click", () => {
+	          const taskId = Number(form.dataset.currentTaskId || 0);
+	          if (!taskId) return;
+	          const parent = (state.tasksCache || []).find((t) => t.id === taskId);
+	          root.__tasksApi?.openTaskModal?.({
+	            task: null,
+	            parentId: taskId,
+	            status: parent?.estado || "backlog",
+	            sprintId: parent?.sprint_id || null,
+	            celulaId: parent?.celula_id || null,
+	          });
+	        });
+	      }
+
+	      if (subtasksList && !subtasksList.dataset.bound) {
+	        subtasksList.dataset.bound = "true";
+	        subtasksList.addEventListener("click", (event) => {
+	          const btn = event.target.closest("button[data-action='edit-subtask']");
+	          if (!btn) return;
+	          const row = btn.closest("[data-task-id]");
+	          const id = Number(row?.dataset?.taskId || 0);
+	          if (!id) return;
+	          const sub = (state.tasksCache || []).find((t) => t.id === id);
+	          if (!sub) return;
+	          root.__tasksApi?.openTaskModal?.({ task: sub });
+	        });
+	      }
+
+	      if (commentSubmit && !commentSubmit.dataset.bound) {
+	        commentSubmit.dataset.bound = "true";
+	        commentSubmit.addEventListener("click", async () => {
+	          const taskId = Number(form.dataset.currentTaskId || 0);
+	          if (!taskId) return;
+	          const text = (commentText?.value || "").trim();
+	          if (!text) return;
+	          try {
+	            commentSubmit.disabled = true;
+	            await postJson(`/tasks/${taskId}/comments`, { texto: text });
+	            if (commentText) commentText.value = "";
+	            await loadComments();
+	          } catch (err) {
+	            if (formStatus) {
+	              formStatus.textContent = err.message || "No se pudo guardar el comentario.";
+	              formStatus.dataset.type = "error";
+	            }
+	          } finally {
+	            commentSubmit.disabled = false;
+	          }
+	        });
+	      }
+
+	      if (commentsRefresh && !commentsRefresh.dataset.bound) {
+	        commentsRefresh.dataset.bound = "true";
+	        commentsRefresh.addEventListener("click", loadComments);
+	      }
+
+	      if (!form.dataset.bound) {
+        form.dataset.bound = "true";
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const titulo = form.titulo.value.trim();
+          if (!titulo) return;
+          const payload = {
+            titulo,
+            descripcion: form.descripcion.value || null,
+            estado: (form.estado.value || "backlog").trim().toLowerCase(),
+            prioridad: (form.prioridad.value || "media").trim().toLowerCase(),
+            celula_id: resolveCelulaId() || null,
+            sprint_id: form.sprint_id.value ? Number(form.sprint_id.value) : null,
+            parent_id: form.dataset.parentId ? Number(form.dataset.parentId) : null,
+            assignee_persona_id: form.assignee_persona_id.value ? Number(form.assignee_persona_id.value) : null,
+            fecha_vencimiento: form.fecha_vencimiento.value || null,
+          };
+
+          const submitBtn = form.querySelector("button[type='submit']");
+          const formStatus = form.querySelector("#task-form-status");
+          try {
+            if (formStatus) formStatus.textContent = "";
+            await withButtonBusy(
+              submitBtn,
+              async () => {
+                const editId = form.dataset.editId;
+                if (editId) {
+                  await putJson(`/tasks/${editId}`, payload);
+                } else {
+                  await postJson("/tasks", payload);
+                }
+              },
+              "Guardando..."
+            );
+            closeAdminModal(true);
+            await root.__tasksApi?.loadAndRender?.();
+          } catch (err) {
+            if (formStatus) {
+              formStatus.textContent = err.message || "No se pudo guardar.";
+              formStatus.dataset.type = "error";
+            }
+          }
+        });
+      }
+    };
+
+    const applyFilters = (items) => {
+      const query = normalizeText(state.tasksSearch || "");
+      const statusFilter = (state.tasksStatusFilter || "").trim().toLowerCase();
+      const statusSet = new Set(
+        (state.tasksFilters?.statuses || []).map((v) => String(v || "").trim().toLowerCase()).filter(Boolean)
+      );
+      const statusAllowed = statusFilter ? new Set([statusFilter]) : statusSet.size ? statusSet : null;
+      const sprintFilter = state.tasksSprintFilter ? String(state.tasksSprintFilter) : "";
+      const prioritySet = new Set(
+        (state.tasksFilters?.priorities || []).map((v) => String(v || "").trim().toLowerCase()).filter(Boolean)
+      );
+      const assigneeSet = new Set(
+        (state.tasksFilters?.assignees || []).map((v) => String(v || "").trim()).filter(Boolean)
+      );
+      const dueFrom = state.tasksFilters?.dueFrom ? String(state.tasksFilters.dueFrom) : "";
+      const dueTo = state.tasksFilters?.dueTo ? String(state.tasksFilters.dueTo) : "";
+      const hideSubtasks = Boolean(state.tasksFilters?.hideSubtasks);
+      return items.filter((task) => {
+        if (hideSubtasks && task.parent_id) return false;
+        if (statusAllowed && !statusAllowed.has(String(task.estado || "").toLowerCase())) return false;
+        if (sprintFilter && String(task.sprint_id || "") !== sprintFilter) return false;
+        if (prioritySet.size && !prioritySet.has(String(task.prioridad || "").toLowerCase())) return false;
+        if (assigneeSet.size) {
+          const key = task.assignee_persona_id ? String(task.assignee_persona_id) : "__none__";
+          if (!assigneeSet.has(key)) return false;
+        }
+        if (dueFrom || dueTo) {
+          const due = task.fecha_vencimiento ? String(task.fecha_vencimiento) : "";
+          if (!due) return false;
+          if (dueFrom && due < dueFrom) return false;
+          if (dueTo && due > dueTo) return false;
+        }
+        if (!query) return true;
+        return (
+          normalizeText(task.titulo).includes(query) || normalizeText(task.descripcion || "").includes(query)
+        );
+      });
+    };
+
+    const buildBacklogContext = (filtered, all) => {
+      const byId = new Map((all || []).map((t) => [String(t.id), t]));
+      const keep = new Map();
+      (filtered || []).forEach((t) => {
+        keep.set(String(t.id), t);
+      });
+      (filtered || []).forEach((t) => {
+        let parentId = t?.parent_id ? String(t.parent_id) : "";
+        while (parentId) {
+          const parent = byId.get(parentId);
+          if (!parent) break;
+          if (keep.has(parentId)) break;
+          keep.set(parentId, parent);
+          parentId = parent.parent_id ? String(parent.parent_id) : "";
+        }
+      });
+      return Array.from(keep.values());
+    };
+
+    const renderBacklog = (filtered, all) => {
+      if (!backlogList) return;
+
+      const tasks = buildBacklogContext(filtered || [], all || []);
+
+      const celulaId = resolveCelulaId();
+      const sprintsCelula = [...(base.sprints || [])].filter((s) => String(s.celula_id) === String(celulaId));
+      const sprintMap = Object.fromEntries(sprintsCelula.map((s) => [String(s.id), s.nombre]));
+      const sprintOptions = sprintsCelula
+        .map((s) => ({ id: s.id, nombre: s.nombre }))
+        .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
+
+      const personasFiltradas = personasActivas
+        .filter((p) => personaBelongsToCelula(p, celulaId))
+        .map((p) => ({ id: p.id, nombre: `${p.nombre} ${p.apellido}`.trim() }))
+        .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
+
+      backlogList.innerHTML = "";
+      if (!tasks.length) {
+        backlogList.innerHTML = `<p class="empty">No hay tareas. Crea una nueva tarea para comenzar.</p>`;
+        return;
+      }
+
+      const roots = tasks.filter((t) => !t.parent_id);
+      const childrenByParent = new Map();
+      tasks.forEach((t) => {
+        if (!t.parent_id) return;
+        const key = String(t.parent_id);
+        if (!childrenByParent.has(key)) childrenByParent.set(key, []);
+        childrenByParent.get(key).push(t);
+      });
+
+      const wrap = document.createElement("div");
+      wrap.className = "tasks-notion-wrap";
+      wrap.style.maxWidth = "100%";
+      const scroll = document.createElement("div");
+      scroll.className = "tasks-notion-scroll";
+
+      const table = document.createElement("table");
+      table.className = "tasks-notion-table";
+      table.innerHTML = `<thead><tr></tr></thead><tbody></tbody>`;
+      const theadRow = table.querySelector("thead tr");
+      const tbody = table.querySelector("tbody");
+
+      const visibleColumns = getVisibleColumns();
+      const widthPxDefaults = {
+        titulo: 360,
+        estado: 150,
+        prioridad: 150,
+        tipo: 150,
+        etiquetas: 220,
+        assignee_persona_id: 240,
+        sprint_id: 240,
+        fecha_vencimiento: 150,
+        puntos: 120,
+        horas_estimadas: 120,
+        importante: 120,
+        actions: 70,
+      };
+      const resolveWidthPx = (key) => getColumnWidth(key) || widthPxDefaults[key] || 140;
+
+      const buildTh = (key) => {
+        const th = document.createElement("th");
+        th.textContent = COLUMN_LABEL[key] ?? key;
+        th.dataset.colKey = key;
+        th.draggable = true;
+        const px = resolveWidthPx(key);
+        th.style.width = `${px}px`;
+        th.style.minWidth = `${Math.max(60, px)}px`;
+        const resizer = document.createElement("span");
+        resizer.className = "tasks-col-resizer";
+        resizer.dataset.action = "resize-col";
+        th.appendChild(resizer);
+        return th;
+      };
+      if (theadRow) {
+        theadRow.innerHTML = "";
+        visibleColumns.forEach((key) => theadRow.appendChild(buildTh(key)));
+      }
+      // Use colgroup so width affects all cells.
+      let colgroup = table.querySelector("colgroup");
+      if (!colgroup) {
+        colgroup = document.createElement("colgroup");
+        table.insertBefore(colgroup, table.firstChild);
+      }
+      colgroup.innerHTML = "";
+      visibleColumns.forEach((key) => {
+        const col = document.createElement("col");
+        col.dataset.colKey = key;
+        const px = resolveWidthPx(key);
+        col.style.width = `${px}px`;
+        colgroup.appendChild(col);
+      });
+      // Fix table width to the sum of column widths so resizing doesn't force other columns to shrink.
+      const tableWidth = visibleColumns.reduce((acc, key) => acc + resolveWidthPx(key), 0);
+      table.style.width = `${tableWidth}px`;
+      table.style.minWidth = `${tableWidth}px`;
+
+      const buildStatusSelect = (task) => {
+        const pill = document.createElement("span");
+        pill.className = "tasks-notion-pill";
+        const select = document.createElement("select");
+        select.className = "";
+        select.dataset.field = "estado";
+        STATUS_ORDER.forEach((key) => {
+          const opt = document.createElement("option");
+          opt.value = key;
+          opt.textContent = STATUS_LABEL[key] || key;
+          select.appendChild(opt);
+        });
+        select.value = task.estado || "backlog";
+        pill.appendChild(select);
+        const cell = document.createElement("div");
+        cell.className = "tasks-notion-cell";
+        cell.appendChild(pill);
+        return cell;
+      };
+
+      const buildPrioritySelect = (task) => {
+        const pill = document.createElement("span");
+        pill.className = "tasks-notion-pill";
+        const select = document.createElement("select");
+        select.className = "";
+        select.dataset.field = "prioridad";
+        ["baja", "media", "alta", "urgente"].forEach((key) => {
+          const opt = document.createElement("option");
+          opt.value = key;
+          opt.textContent = PRIORITY_LABEL[key] || key;
+          select.appendChild(opt);
+        });
+        select.value = task.prioridad || "media";
+        pill.appendChild(select);
+        const cell = document.createElement("div");
+        cell.className = "tasks-notion-cell";
+        cell.appendChild(pill);
+        return cell;
+      };
+
+      const buildTypeSelect = (task) => {
+        const pill = document.createElement("span");
+        pill.className = "tasks-notion-pill";
+        const select = document.createElement("select");
+        select.className = "";
+        select.dataset.field = "tipo";
+        TASK_TYPES.forEach((t) => {
+          const opt = document.createElement("option");
+          opt.value = t.id;
+          opt.textContent = t.nombre;
+          select.appendChild(opt);
+        });
+        select.value = task.tipo ? String(task.tipo) : "";
+        pill.appendChild(select);
+        const cell = document.createElement("div");
+        cell.className = "tasks-notion-cell";
+        cell.appendChild(pill);
+        return cell;
+      };
+
+      const buildTagsInput = (task) => {
+        const cell = document.createElement("div");
+        cell.className = "tasks-notion-cell";
+        const pill = document.createElement("span");
+        pill.className = "tasks-notion-pill";
+        const input = document.createElement("input");
+        input.type = "text";
+        input.placeholder = "ui, backend";
+        input.value = task.etiquetas || "";
+        input.dataset.field = "etiquetas";
+        pill.appendChild(input);
+        cell.appendChild(pill);
+        return cell;
+      };
+
+      const buildNumberCell = (task, field, placeholder) => {
+        const cell = document.createElement("div");
+        cell.className = "tasks-notion-cell";
+        const pill = document.createElement("span");
+        pill.className = "tasks-notion-pill";
+        const input = document.createElement("input");
+        input.type = "number";
+        input.step = "0.1";
+        input.placeholder = placeholder || "";
+        const raw = task[field];
+        input.value = raw === null || raw === undefined ? "" : String(raw);
+        input.dataset.field = field;
+        pill.appendChild(input);
+        cell.appendChild(pill);
+        return cell;
+      };
+
+      const buildCheckboxCell = (task) => {
+        const cell = document.createElement("div");
+        cell.className = "tasks-notion-cell";
+        const pill = document.createElement("span");
+        pill.className = "tasks-notion-pill";
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.checked = Boolean(task.importante);
+        input.dataset.field = "importante";
+        pill.appendChild(input);
+        cell.appendChild(pill);
+        return cell;
+      };
+
+      const buildAssigneeSelect = (task) => {
+        const pill = document.createElement("span");
+        pill.className = "tasks-notion-pill";
+        const select = document.createElement("select");
+        select.className = "";
+        select.dataset.field = "assignee_persona_id";
+        const empty = document.createElement("option");
+        empty.value = "";
+        empty.textContent = "Sin responsable";
+        select.appendChild(empty);
+        personasFiltradas.forEach((p) => {
+          const opt = document.createElement("option");
+          opt.value = String(p.id);
+          opt.textContent = p.nombre;
+          select.appendChild(opt);
+        });
+        select.value = task.assignee_persona_id ? String(task.assignee_persona_id) : "";
+        pill.appendChild(select);
+        const cell = document.createElement("div");
+        cell.className = "tasks-notion-cell";
+        cell.appendChild(pill);
+        return cell;
+      };
+
+      const buildSprintSelect = (task) => {
+        const pill = document.createElement("span");
+        pill.className = "tasks-notion-pill";
+        const select = document.createElement("select");
+        select.className = "";
+        select.dataset.field = "sprint_id";
+        const empty = document.createElement("option");
+        empty.value = "";
+        empty.textContent = "Sin sprint";
+        select.appendChild(empty);
+        sprintOptions.forEach((s) => {
+          const opt = document.createElement("option");
+          opt.value = String(s.id);
+          opt.textContent = s.nombre;
+          select.appendChild(opt);
+        });
+        select.value = task.sprint_id ? String(task.sprint_id) : "";
+        pill.appendChild(select);
+        const cell = document.createElement("div");
+        cell.className = "tasks-notion-cell";
+        cell.appendChild(pill);
+        return cell;
+      };
+
+      const buildDueInput = (task) => {
+        const input = document.createElement("input");
+        input.type = "date";
+        input.className = "";
+        input.dataset.field = "fecha_vencimiento";
+        input.value = task.fecha_vencimiento || "";
+        const cell = document.createElement("div");
+        cell.className = "tasks-notion-cell";
+        const pill = document.createElement("span");
+        pill.className = "tasks-notion-pill";
+        pill.appendChild(input);
+        cell.appendChild(pill);
+        return cell;
+      };
+
+      const buildActions = () => {
+        const td = document.createElement("td");
+        td.innerHTML = `
+          <div class="tasks-notion-actions">
+            <button class="btn btn-outline-secondary btn-sm" type="button" title="Editar" data-action="edit">
+              <i class="bi bi-pencil"></i>
+            </button>
+            <button class="btn btn-outline-primary btn-sm" type="button" title="Subtarea" data-action="subtask">
+              <i class="bi bi-node-plus"></i>
+            </button>
+            <button class="btn btn-outline-danger btn-sm" type="button" title="Eliminar" data-action="delete">
+              <i class="bi bi-trash"></i>
+            </button>
+          </div>
+        `;
+        return td;
+      };
+
+      const renderRow = (task, depth = 0) => {
+        const hideSubtasks = Boolean(state.tasksFilters?.hideSubtasks);
+        const children = sortTasks(childrenByParent.get(String(task.id)) || []);
+        const hasChildren = !hideSubtasks && children.length > 0;
+        const expanded = Boolean(state.tasksBacklogExpanded?.[String(task.id)]);
+
+        const tr = document.createElement("tr");
+        tr.dataset.taskId = String(task.id);
+
+        const buildTitleTd = () => {
+          const titleTd = document.createElement("td");
+        const titleWrap = document.createElement("div");
+        titleWrap.className = "tasks-notion-name";
+        titleWrap.style.paddingLeft = `${depth * 16}px`;
+
+        if (hasChildren) {
+          const toggle = document.createElement("button");
+          toggle.type = "button";
+          toggle.className = "tasks-tree-toggle";
+          toggle.dataset.action = "toggle-subtasks";
+          toggle.title = expanded ? "Ocultar subtareas" : "Mostrar subtareas";
+          toggle.textContent = expanded ? "▾" : "▸";
+          titleWrap.appendChild(toggle);
+        } else {
+          const spacer = document.createElement("span");
+          spacer.className = "tasks-tree-spacer";
+          spacer.textContent = task.parent_id ? " " : "";
+          titleWrap.appendChild(spacer);
+        }
+
+        const titleBtn = document.createElement("button");
+        titleBtn.type = "button";
+        titleBtn.dataset.action = "edit";
+        titleBtn.textContent = `${task.parent_id ? "↳ " : ""}${task.titulo || `Task #${task.id}`}`;
+        titleWrap.appendChild(titleBtn);
+        if (task.descripcion) {
+          const hint = document.createElement("div");
+          hint.className = "text-muted small";
+          hint.textContent = String(task.descripcion).slice(0, 120);
+          titleWrap.appendChild(hint);
+        }
+        titleTd.appendChild(titleWrap);
+          return titleTd;
+        };
+
+        const columnCell = (key) => {
+          const td = document.createElement("td");
+          if (key === "titulo") return buildTitleTd();
+          if (key === "estado") {
+            td.appendChild(buildStatusSelect(task));
+            return td;
+          }
+          if (key === "prioridad") {
+            td.appendChild(buildPrioritySelect(task));
+            return td;
+          }
+          if (key === "tipo") {
+            td.appendChild(buildTypeSelect(task));
+            return td;
+          }
+          if (key === "etiquetas") {
+            td.appendChild(buildTagsInput(task));
+            return td;
+          }
+          if (key === "assignee_persona_id") {
+            td.appendChild(buildAssigneeSelect(task));
+            return td;
+          }
+          if (key === "sprint_id") {
+            td.appendChild(buildSprintSelect(task));
+            return td;
+          }
+          if (key === "fecha_vencimiento") {
+            td.appendChild(buildDueInput(task));
+            return td;
+          }
+          if (key === "puntos") {
+            td.appendChild(buildNumberCell(task, "puntos", "0"));
+            return td;
+          }
+          if (key === "horas_estimadas") {
+            td.appendChild(buildNumberCell(task, "horas_estimadas", "0"));
+            return td;
+          }
+          if (key === "importante") {
+            td.appendChild(buildCheckboxCell(task));
+            return td;
+          }
+          if (key === "actions") return buildActions();
+          td.textContent = "";
+          return td;
+        };
+
+        visibleColumns.forEach((key) => tr.appendChild(columnCell(key)));
+        tbody.appendChild(tr);
+
+        if (hasChildren && expanded) {
+          children.forEach((child) => renderRow(child, depth + 1));
+        }
+      };
+
+      sortTasks(roots).forEach((t) => renderRow(t, 0));
+      scroll.appendChild(table);
+      wrap.appendChild(scroll);
+
+      const addRowBtn = document.createElement("button");
+      addRowBtn.type = "button";
+      addRowBtn.className = "tasks-notion-add";
+      addRowBtn.dataset.action = "create";
+      addRowBtn.innerHTML = `<i class="bi bi-plus-lg me-2"></i>Nueva tarea`;
+      wrap.appendChild(addRowBtn);
+
+      backlogList.appendChild(wrap);
+    };
+
+    const renderBoard = (filtered, all) => {
+      if (!board) return;
+      board.innerHTML = "";
+
+      const allTasks = Array.isArray(all) ? all : filtered;
+      const childrenByParent = new Map();
+      allTasks.forEach((t) => {
+        if (!t?.parent_id) return;
+        const key = String(t.parent_id);
+        if (!childrenByParent.has(key)) childrenByParent.set(key, []);
+        childrenByParent.get(key).push(t);
+      });
+
+      const byStatus = Object.fromEntries(STATUS_ORDER.map((s) => [s, []]));
+      (filtered || [])
+        .filter((t) => !t.parent_id) // tablero: tarjetas principales, subtareas dentro
+        .forEach((t) => {
+          const key = STATUS_ORDER.includes(t.estado) ? t.estado : "backlog";
+          byStatus[key].push(t);
+        });
+      STATUS_ORDER.forEach((s) => {
+        byStatus[s] = sortTasks(byStatus[s]);
+      });
+
+      STATUS_ORDER.forEach((statusKey) => {
+        const col = document.createElement("div");
+        col.className = "tasks-col";
+        col.dataset.status = statusKey;
+
+        const head = document.createElement("div");
+        head.className = "tasks-col-head";
+        head.innerHTML = `
+          <div class="tasks-col-title">
+            <span>${STATUS_LABEL[statusKey] || statusKey}</span>
+            <span class="badge text-bg-light">${byStatus[statusKey].length}</span>
+          </div>
+        `;
+
+        const quick = document.createElement("form");
+        quick.className = "tasks-quick-add";
+        quick.innerHTML = `
+          <div class="input-group input-group-sm">
+            <input class="form-control" name="titulo" placeholder="Agregar..." autocomplete="off" />
+            <button class="btn btn-outline-primary" type="submit" title="Crear">+</button>
+          </div>
+        `;
+        quick.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const input = quick.querySelector("input[name='titulo']");
+          const titulo = (input?.value || "").trim();
+          if (!titulo) return;
+          const celulaId = resolveCelulaId() || null;
+          try {
+            await postJson("/tasks", {
+              titulo,
+              descripcion: null,
+              estado: statusKey,
+              prioridad: "media",
+              celula_id: celulaId,
+              sprint_id: resolveSelectedSprintId() || null,
+              parent_id: null,
+              assignee_persona_id: null,
+              fecha_vencimiento: null,
+            });
+            if (input) input.value = "";
+            await root.__tasksApi?.loadAndRender?.();
+          } catch (err) {
+            setTasksStatus(err.message || "No se pudo crear la tarea.", "error");
+          }
+        });
+
+        const list = document.createElement("div");
+        list.className = "tasks-col-body";
+        list.dataset.dropzone = "true";
+
+        list.addEventListener("dragover", (event) => {
+          event.preventDefault();
+          list.classList.add("is-over");
+        });
+        list.addEventListener("dragleave", () => list.classList.remove("is-over"));
+        list.addEventListener("drop", async (event) => {
+          event.preventDefault();
+          list.classList.remove("is-over");
+          const raw = event.dataTransfer?.getData("text/plain") || "";
+          const taskId = Number(raw);
+          if (!taskId) return;
+          const task = (state.tasksCache || []).find((t) => t.id === taskId);
+          if (!task || task.estado === statusKey) return;
+          try {
+            await putJson(`/tasks/${taskId}`, { estado: statusKey });
+            await root.__tasksApi?.loadAndRender?.();
+          } catch (err) {
+            setTasksStatus(err.message || "No se pudo mover la tarea.", "error");
+          }
+        });
+
+        byStatus[statusKey].forEach((task) => {
+          const card = document.createElement("div");
+          card.className = "task-card";
+          card.draggable = true;
+          card.dataset.taskId = String(task.id);
+          card.addEventListener("dragstart", (e) => {
+            card.classList.add("is-dragging");
+            e.dataTransfer?.setData("text/plain", String(task.id));
+            e.dataTransfer?.setDragImage?.(card, 10, 10);
+          });
+          card.addEventListener("dragend", () => card.classList.remove("is-dragging"));
+
+          const top = document.createElement("div");
+          top.className = "task-card-top";
+
+          const title = document.createElement("div");
+          title.className = "task-card-title";
+          title.textContent = task.titulo || `Task #${task.id}`;
+
+          const badges = document.createElement("div");
+          badges.className = "task-card-badges";
+          const pr = document.createElement("span");
+          pr.className = `badge ${priorityBadgeClass(task.prioridad)}`;
+          pr.textContent = PRIORITY_LABEL[task.prioridad] || task.prioridad || "-";
+          badges.appendChild(pr);
+
+          top.appendChild(title);
+          top.appendChild(badges);
+
+          const meta = document.createElement("div");
+          meta.className = "task-card-meta";
+          const assignee = task.assignee_persona_id
+            ? personaMap[String(task.assignee_persona_id)] || `Persona ${task.assignee_persona_id}`
+            : "Sin responsable";
+          const due = task.fecha_vencimiento ? ` · ${formatDate(task.fecha_vencimiento)}` : "";
+          meta.textContent = `${assignee}${due}`;
+
+          const actions = document.createElement("div");
+          actions.className = "task-card-actions";
+          actions.innerHTML = `
+            <button class="btn btn-outline-secondary btn-sm" type="button" data-action="edit">Editar</button>
+            <button class="btn btn-outline-primary btn-sm" type="button" data-action="subtask">Subtarea</button>
+            <button class="btn btn-outline-danger btn-sm" type="button" data-action="delete">Eliminar</button>
+          `;
+
+          card.appendChild(top);
+          if (task.descripcion) {
+            const desc = document.createElement("div");
+            desc.className = "task-card-desc";
+            desc.textContent = String(task.descripcion);
+            card.appendChild(desc);
+          }
+          card.appendChild(meta);
+
+          // Subtasks (inside card)
+          if (!state.tasksFilters?.hideSubtasks) {
+            const subs = sortTasks(childrenByParent.get(String(task.id)) || []);
+            if (subs.length) {
+              const subWrap = document.createElement("div");
+              subWrap.className = "task-card-subtasks";
+              subWrap.innerHTML = `
+                <button type="button" class="task-card-subtasks-toggle" data-action="toggle-subtasks">
+                  <span>Subtareas</span>
+                  <span class="badge text-bg-light">${subs.length}</span>
+                </button>
+                <div class="task-card-subtasks-list"></div>
+              `;
+              const listEl = subWrap.querySelector(".task-card-subtasks-list");
+              const expanded = Boolean(state.tasksBacklogExpanded?.[`kanban:${task.id}`]);
+              subWrap.classList.toggle("is-collapsed", !expanded);
+              if (listEl) {
+                listEl.innerHTML = subs
+                  .map((s) => {
+                    const st = STATUS_LABEL[s.estado] || s.estado || "-";
+                    return `
+                      <div class="task-card-subtask" data-task-id="${s.id}">
+                        <button type="button" class="task-card-subtask-title" data-action="edit-subtask">${s.titulo || `Task #${s.id}`}</button>
+                        <span class="task-card-subtask-meta">${st}</span>
+                      </div>
+                    `;
+                  })
+                  .join("");
+              }
+              card.appendChild(subWrap);
+            }
+          }
+
+          card.appendChild(actions);
+          list.appendChild(card);
+        });
+
+        col.appendChild(head);
+        col.appendChild(quick);
+        col.appendChild(list);
+        board.appendChild(col);
+      });
+    };
+
+    const renderReports = (tasks) => {
+      if (!reportStatus || !reportAssignee) return;
+
+      const countsByStatus = {};
+      const countsByAssignee = {};
+      tasks.forEach((t) => {
+        const st = t.estado || "backlog";
+        countsByStatus[st] = (countsByStatus[st] || 0) + 1;
+        const key = t.assignee_persona_id
+          ? personaMap[String(t.assignee_persona_id)] || `Persona ${t.assignee_persona_id}`
+          : "Sin responsable";
+        countsByAssignee[key] = (countsByAssignee[key] || 0) + 1;
+      });
+
+      const statusLines = STATUS_ORDER.map((st) => ({
+        label: STATUS_LABEL[st] || st,
+        count: countsByStatus[st] || 0,
+      })).filter((x) => x.count > 0);
+      reportStatus.innerHTML = statusLines.length
+        ? `<ul class="tasks-report-list">${statusLines
+            .map((x) => `<li><span>${x.label}</span><strong>${x.count}</strong></li>`)
+            .join("")}</ul>`
+        : `<p class="empty">Sin datos.</p>`;
+
+      const assigneeLines = Object.entries(countsByAssignee)
+        .map(([label, count]) => ({ label, count }))
+        .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, "es"));
+      reportAssignee.innerHTML = assigneeLines.length
+        ? `<ul class="tasks-report-list">${assigneeLines
+            .map((x) => `<li><span>${x.label}</span><strong>${x.count}</strong></li>`)
+            .join("")}</ul>`
+        : `<p class="empty">Sin datos.</p>`;
+    };
+
+    const updateTaskLocal = async (taskId, payload, okMessage) => {
+      try {
+        const updated = await putJson(`/tasks/${taskId}`, payload);
+        const idx = (state.tasksCache || []).findIndex((t) => t.id === taskId);
+        if (idx >= 0) {
+          state.tasksCache[idx] = updated;
+        } else {
+          state.tasksCache = [...(state.tasksCache || []), updated];
+        }
+        if (okMessage) {
+          setTasksStatus(okMessage, "ok");
+        }
+        renderAll();
+        return updated;
+      } catch (err) {
+        setTasksStatus(err.message || "No se pudo actualizar la tarea.", "error");
+        throw err;
+      }
+    };
+
+    const renderAll = () => {
+      const filtered = applyFilters(state.tasksCache || []);
+      renderBacklog(filtered, state.tasksCache || []);
+      renderBoard(filtered, state.tasksCache || []);
+      renderReports(filtered);
+    };
+
+    const loadAndRender = async () => {
+      const celulaId = resolveCelulaId();
+      if (!celulaId) {
+        setTasksStatus("Selecciona una celula para ver/crear tareas.", "info");
+        if (backlogList) backlogList.innerHTML = `<p class="empty">Selecciona una celula.</p>`;
+        if (board) board.innerHTML = `<p class="empty">Selecciona una celula.</p>`;
+        if (reportStatus) reportStatus.innerHTML = `<p class="empty">Selecciona una celula.</p>`;
+        if (reportAssignee) reportAssignee.innerHTML = `<p class="empty">Selecciona una celula.</p>`;
+        return;
+      }
+
+      const celula = (base.cells || []).find((c) => String(c.id) === String(celulaId));
+      const sprints = [...(base.sprints || [])].filter((s) => String(s.celula_id) === String(celulaId));
+      const sprintNameMap = Object.fromEntries(
+        sprints.map((s) => [String(s.id), String(s.nombre || "").trim() || `Sprint ${s.id}`])
+      );
+      const sprintOptions = sprints
+        .map((s) => ({ id: s.id, nombre: s.nombre }))
+        .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
+
+      if (sprintSelect) {
+        const previous = sprintSelect.value || state.tasksSprintFilter || "";
+        sprintSelect.innerHTML = `<option value="">Todos</option>`;
+        sprintOptions.forEach((opt) => {
+          const o = document.createElement("option");
+          o.value = String(opt.id);
+          o.textContent = opt.nombre;
+          sprintSelect.appendChild(o);
+        });
+        if (state.selectedSprintId && sprintOptions.some((s) => String(s.id) === String(state.selectedSprintId))) {
+          sprintSelect.value = state.tasksSprintFilter || state.selectedSprintId;
+        } else if (previous && sprintOptions.some((s) => String(s.id) === String(previous))) {
+          sprintSelect.value = previous;
+        } else {
+          sprintSelect.value = state.tasksSprintFilter || "";
+        }
+        state.tasksSprintFilter = sprintSelect.value || "";
+      }
+
+      try {
+        setTasksStatus("Cargando tareas...", "info");
+        const items = await fetchJson(`/tasks?celula_id=${celulaId}`);
+        state.tasksCache = Array.isArray(items) ? items : [];
+        const sprintLabel = state.tasksSprintFilter
+          ? sprintNameMap[String(state.tasksSprintFilter)] || `Sprint ${state.tasksSprintFilter}`
+          : "Todos los sprints";
+        setTasksStatus(
+          `${celula?.nombre || `Celula ${celulaId}`} · ${sprintLabel} · ${state.tasksCache.length} tarea(s)`,
+          "ok"
+        );
+        renderAll();
+      } catch (err) {
+        setTasksStatus(err.message || "No se pudieron cargar las tareas.", "error");
+      }
+    };
+
+    root.__tasksApi = {
+      loadAndRender,
+      openTaskModal,
+    };
+
+    if (!root.dataset.bound) {
+      root.dataset.bound = "true";
+
+      const viewButtons = [qs("#tasks-view-backlog"), qs("#tasks-view-board"), qs("#tasks-view-reports")].filter(
+        Boolean
+      );
+      viewButtons.forEach((btn) => {
+        if (btn.dataset.bound) return;
+        btn.dataset.bound = "true";
+        btn.addEventListener("click", () => {
+          const view = btn.dataset.view;
+          if (!view) return;
+          setActiveView(view);
+        });
+      });
+
+      if (sprintSelect && !sprintSelect.dataset.bound) {
+        sprintSelect.dataset.bound = "true";
+        sprintSelect.addEventListener("change", () => {
+          state.tasksSprintFilter = sprintSelect.value || "";
+          renderAll();
+        });
+      }
+      if (statusSelect && !statusSelect.dataset.bound) {
+        statusSelect.dataset.bound = "true";
+        statusSelect.addEventListener("change", () => {
+          state.tasksStatusFilter = (statusSelect.value || "").trim().toLowerCase();
+          renderAll();
+        });
+      }
+      if (searchInput && !searchInput.dataset.bound) {
+        searchInput.dataset.bound = "true";
+        let timer = null;
+        searchInput.addEventListener("input", () => {
+          state.tasksSearch = searchInput.value || "";
+          if (timer) window.clearTimeout(timer);
+          timer = window.setTimeout(() => renderAll(), 120);
+        });
+      }
+      if (createBtn && !createBtn.dataset.bound) {
+        createBtn.dataset.bound = "true";
+        createBtn.addEventListener("click", () => {
+          const sprintId = resolveSelectedSprintId() || null;
+          root.__tasksApi?.openTaskModal?.({ task: null, sprintId });
+        });
+      }
+
+      const toggleFilterPanel = (open) => {
+        if (!filterPanel) return;
+        const next = open ?? filterPanel.classList.contains("hidden");
+        filterPanel.classList.toggle("hidden", !next);
+      };
+      const toggleColumnsPanel = (open) => {
+        if (!columnsPanel) return;
+        const next = open ?? columnsPanel.classList.contains("hidden");
+        columnsPanel.classList.toggle("hidden", !next);
+      };
+
+      if (filtersBtn && !filtersBtn.dataset.bound) {
+        filtersBtn.dataset.bound = "true";
+        filtersBtn.addEventListener("click", () => toggleFilterPanel());
+      }
+      if (filterCloseBtn && !filterCloseBtn.dataset.bound) {
+        filterCloseBtn.dataset.bound = "true";
+        filterCloseBtn.addEventListener("click", () => toggleFilterPanel(false));
+      }
+
+      const renderColumnsManager = () => {
+        if (!columnsList) return;
+        const cfg = loadColumnsConfig();
+        const order = Array.isArray(cfg.order) ? cfg.order.slice() : [...DEFAULT_COLUMNS];
+        const hidden = cfg.hidden || {};
+        const rows = order.filter((k) => DEFAULT_COLUMNS.includes(k) && k !== "actions");
+        // Add missing columns at the end (so user can "add" them).
+        DEFAULT_COLUMNS.forEach((k) => {
+          if (k === "actions") return;
+          if (!rows.includes(k)) rows.push(k);
+        });
+        if (!rows.includes("actions")) {
+          // keep actions as implicit/always available
+        }
+        columnsList.innerHTML = rows
+          .map((key, idx) => {
+            const label = COLUMN_LABEL[key] ?? key;
+            const checked = !hidden[key];
+            return `
+              <div class="d-flex align-items-center gap-2 mb-2" data-col="${key}" draggable="true">
+                <input class="form-check-input" type="checkbox" data-action="toggle" ${checked ? "checked" : ""} />
+                <div class="flex-grow-1">${label}</div>
+                <button class="btn btn-outline-secondary btn-sm" type="button" data-action="up" ${idx === 0 ? "disabled" : ""}>
+                  ↑
+                </button>
+                <button class="btn btn-outline-secondary btn-sm" type="button" data-action="down" ${
+                  idx === rows.length - 1 ? "disabled" : ""
+                }>
+                  ↓
+                </button>
+              </div>
+            `;
+          })
+          .join("");
+      };
+
+      if (columnsBtn && !columnsBtn.dataset.bound) {
+        columnsBtn.dataset.bound = "true";
+        columnsBtn.addEventListener("click", () => {
+          renderColumnsManager();
+          toggleColumnsPanel();
+        });
+      }
+      if (columnsCloseBtn && !columnsCloseBtn.dataset.bound) {
+        columnsCloseBtn.dataset.bound = "true";
+        columnsCloseBtn.addEventListener("click", () => toggleColumnsPanel(false));
+      }
+      if (columnsResetBtn && !columnsResetBtn.dataset.bound) {
+        columnsResetBtn.dataset.bound = "true";
+        columnsResetBtn.addEventListener("click", () => {
+          state.tasksColumnsConfig = { order: [...DEFAULT_COLUMNS], hidden: {}, widths: {} };
+          saveColumnsConfig();
+          renderColumnsManager();
+          renderAll();
+        });
+      }
+      if (columnsList && !columnsList.dataset.bound) {
+        columnsList.dataset.bound = "true";
+        let dragKey = "";
+        columnsList.addEventListener("dragstart", (event) => {
+          const row = event.target.closest("[data-col]");
+          if (!row) return;
+          dragKey = row.dataset.col || "";
+          event.dataTransfer?.setData("application/x-scrum-col", dragKey);
+          event.dataTransfer?.setData("text/plain", dragKey);
+        });
+        columnsList.addEventListener("dragover", (event) => {
+          const row = event.target.closest("[data-col]");
+          if (!row) return;
+          event.preventDefault();
+        });
+        columnsList.addEventListener("drop", (event) => {
+          const row = event.target.closest("[data-col]");
+          if (!row) return;
+          event.preventDefault();
+          const fromKey =
+            event.dataTransfer?.getData("application/x-scrum-col") ||
+            event.dataTransfer?.getData("text/plain") ||
+            dragKey ||
+            "";
+          const toKey = row.dataset.col || "";
+          if (!fromKey || !toKey || fromKey === toKey) return;
+          const cfg = loadColumnsConfig();
+          const order = Array.isArray(cfg.order) ? cfg.order.slice() : [...DEFAULT_COLUMNS];
+          const fromIdx = order.indexOf(fromKey);
+          const toIdx = order.indexOf(toKey);
+          if (fromIdx < 0 || toIdx < 0) return;
+          order.splice(fromIdx, 1);
+          order.splice(toIdx, 0, fromKey);
+          state.tasksColumnsConfig = { ...cfg, order };
+          saveColumnsConfig();
+          renderColumnsManager();
+          renderAll();
+        });
+        columnsList.addEventListener("click", (event) => {
+          const btn = event.target.closest("button[data-action]");
+          if (!btn) return;
+          const row = btn.closest("[data-col]");
+          const key = row?.dataset?.col;
+          if (!key) return;
+          const action = btn.dataset.action;
+          const cfg = loadColumnsConfig();
+          const order = Array.isArray(cfg.order) ? cfg.order.slice() : [...DEFAULT_COLUMNS];
+          const idx = order.indexOf(key);
+          if (idx < 0) return;
+          if (action === "up" && idx > 0) {
+            const tmp = order[idx - 1];
+            order[idx - 1] = order[idx];
+            order[idx] = tmp;
+          } else if (action === "down" && idx >= 0 && idx < order.length - 1) {
+            const tmp = order[idx + 1];
+            order[idx + 1] = order[idx];
+            order[idx] = tmp;
+          }
+          state.tasksColumnsConfig = { ...cfg, order };
+          saveColumnsConfig();
+          renderColumnsManager();
+          renderAll();
+        });
+        columnsList.addEventListener("change", (event) => {
+          const cb = event.target.closest("input[type='checkbox'][data-action='toggle']");
+          if (!cb) return;
+          const row = cb.closest("[data-col]");
+          const key = row?.dataset?.col;
+          if (!key) return;
+          const cfg = loadColumnsConfig();
+          const hidden = { ...(cfg.hidden || {}) };
+          hidden[key] = !cb.checked;
+          state.tasksColumnsConfig = { ...cfg, hidden };
+          saveColumnsConfig();
+          renderAll();
+        });
+      }
+
+      if (!window.__tasksColumnsSyncBound) {
+        window.__tasksColumnsSyncBound = true;
+        window.addEventListener("tasks:columns-updated", () => renderColumnsManager());
+      }
+      if (filterClearBtn && !filterClearBtn.dataset.bound) {
+        filterClearBtn.dataset.bound = "true";
+        filterClearBtn.addEventListener("click", () => {
+          state.tasksStatusFilter = "";
+          if (statusSelect) statusSelect.value = "";
+          state.tasksSprintFilter = "";
+          if (sprintSelect) sprintSelect.value = "";
+          state.tasksFilters = {
+            statuses: ["backlog", "todo", "doing", "done"],
+            priorities: ["baja", "media", "alta", "urgente"],
+            assignees: [],
+            dueFrom: "",
+            dueTo: "",
+            hideSubtasks: false,
+          };
+          if (filterDueFrom) filterDueFrom.value = "";
+          if (filterDueTo) filterDueTo.value = "";
+          if (filterHideSubtasks) filterHideSubtasks.checked = false;
+          if (filterAssignee) Array.from(filterAssignee.options).forEach((o) => (o.selected = false));
+          // status/prio checkboxes
+          root.querySelectorAll("#tasks-filter-statuses input[type='checkbox']").forEach((cb) => {
+            cb.checked = cb.value !== "archived";
+          });
+          root.querySelectorAll("#tasks-filter-priorities input[type='checkbox']").forEach((cb) => {
+            cb.checked = true;
+          });
+          renderAll();
+          renderFilterChips();
+        });
+      }
+
+      const readCheckboxGroup = (containerId) =>
+        Array.from(root.querySelectorAll(`${containerId} input[type='checkbox']`))
+          .filter((cb) => cb.checked)
+          .map((cb) => cb.value);
+
+      const syncAdvancedFiltersFromUI = () => {
+        const statuses = readCheckboxGroup("#tasks-filter-statuses");
+        const priorities = readCheckboxGroup("#tasks-filter-priorities");
+        const assignees = filterAssignee
+          ? Array.from(filterAssignee.selectedOptions).map((o) => String(o.value))
+          : [];
+        state.tasksFilters = {
+          ...state.tasksFilters,
+          statuses,
+          priorities,
+          assignees,
+          dueFrom: filterDueFrom?.value || "",
+          dueTo: filterDueTo?.value || "",
+          hideSubtasks: Boolean(filterHideSubtasks?.checked),
+        };
+      };
+
+      const renderFilterChips = () => {
+        if (!filterChips) return;
+        const chips = [];
+        if (state.tasksStatusFilter) {
+          chips.push({
+            key: "estado",
+            label: `Estado: ${STATUS_LABEL[state.tasksStatusFilter] || state.tasksStatusFilter}`,
+          });
+        }
+        if (state.tasksSprintFilter) {
+          chips.push({
+            key: "sprint",
+            label: `Sprint: ${sprintNameById[String(state.tasksSprintFilter)] || state.tasksSprintFilter}`,
+          });
+        }
+        const s = state.tasksFilters?.statuses || [];
+        const p = state.tasksFilters?.priorities || [];
+        const a = state.tasksFilters?.assignees || [];
+        if (s.length && s.length < 5) {
+          chips.push({ key: "statuses", label: `Estados: ${s.map((x) => STATUS_LABEL[x] || x).join(", ")}` });
+        }
+        if (p.length && p.length < 4) {
+          chips.push({ key: "priorities", label: `Prioridad: ${p.map((x) => PRIORITY_LABEL[x] || x).join(", ")}` });
+        }
+        if (a.length) {
+          const label = a
+            .map((id) => (id === "__none__" ? "Sin responsable" : personaMap[id] || `Persona ${id}`))
+            .join(", ");
+          chips.push({ key: "assignees", label: `Resp: ${label}` });
+        }
+        if (state.tasksFilters?.dueFrom || state.tasksFilters?.dueTo) {
+          chips.push({
+            key: "due",
+            label: `Vence: ${state.tasksFilters.dueFrom || "…"} - ${state.tasksFilters.dueTo || "…"}`,
+          });
+        }
+        if (state.tasksFilters?.hideSubtasks) chips.push({ key: "hideSub", label: "Sin subtareas" });
+
+        filterChips.innerHTML = chips
+          .map(
+            (c) => `
+              <span class="tasks-chip" data-chip="${c.key}">
+                <span>${c.label}</span>
+                <button type="button" aria-label="Quitar filtro" data-action="remove-chip">×</button>
+              </span>
+            `
+          )
+          .join("");
+      };
+
+      root.__tasksRenderFilterChips = renderFilterChips;
+
+      if (filterPanel && !filterPanel.dataset.bound) {
+        filterPanel.dataset.bound = "true";
+        filterPanel.addEventListener("change", () => {
+          syncAdvancedFiltersFromUI();
+          renderAll();
+          renderFilterChips();
+        });
+      }
+
+      if (filterChips && !filterChips.dataset.bound) {
+        filterChips.dataset.bound = "true";
+        filterChips.addEventListener("click", (event) => {
+          const btn = event.target.closest("button[data-action='remove-chip']");
+          if (!btn) return;
+          const chip = btn.closest("[data-chip]");
+          const key = chip?.dataset?.chip;
+          if (!key) return;
+          if (key === "estado") {
+            state.tasksStatusFilter = "";
+            if (statusSelect) statusSelect.value = "";
+          } else if (key === "sprint") {
+            state.tasksSprintFilter = "";
+            if (sprintSelect) sprintSelect.value = "";
+          } else if (key === "statuses") {
+            root.querySelectorAll("#tasks-filter-statuses input[type='checkbox']").forEach((cb) => {
+              cb.checked = cb.value !== "archived";
+            });
+          } else if (key === "priorities") {
+            root.querySelectorAll("#tasks-filter-priorities input[type='checkbox']").forEach((cb) => (cb.checked = true));
+          } else if (key === "assignees") {
+            if (filterAssignee) Array.from(filterAssignee.options).forEach((o) => (o.selected = false));
+          } else if (key === "due") {
+            if (filterDueFrom) filterDueFrom.value = "";
+            if (filterDueTo) filterDueTo.value = "";
+          } else if (key === "hideSub") {
+            if (filterHideSubtasks) filterHideSubtasks.checked = false;
+          }
+          syncAdvancedFiltersFromUI();
+          renderAll();
+          renderFilterChips();
+        });
+      }
+
+      if (backlogList && !backlogList.dataset.bound) {
+        backlogList.dataset.bound = "true";
+        backlogList.addEventListener("pointerdown", (event) => {
+          const handle = event.target.closest("[data-action='resize-col']");
+          if (!handle) return;
+          const th = handle.closest("th[data-col-key]");
+          if (!th) return;
+          const key = th.dataset.colKey;
+          if (!key) return;
+          const table = th.closest("table");
+          if (!table) return;
+          const col = table.querySelector(`colgroup col[data-col-key="${CSS.escape(key)}"]`);
+          const startX = event.clientX;
+          const startW = th.getBoundingClientRect().width;
+          const startTableW = table.getBoundingClientRect().width;
+          th.setPointerCapture?.(event.pointerId);
+          event.preventDefault();
+
+          const min = 70;
+          const onMove = (e) => {
+            const dx = e.clientX - startX;
+            const next = Math.max(min, Math.round(startW + dx));
+            th.style.width = `${next}px`;
+            th.style.minWidth = `${next}px`;
+            if (col) col.style.width = `${next}px`;
+            const nextTableW = Math.max(320, Math.round(startTableW + dx));
+            table.style.width = `${nextTableW}px`;
+            table.style.minWidth = `${nextTableW}px`;
+          };
+          const onUp = (e) => {
+            document.removeEventListener("pointermove", onMove, true);
+            document.removeEventListener("pointerup", onUp, true);
+            const finalW = th.getBoundingClientRect().width;
+            setColumnWidth(key, finalW);
+          };
+          document.addEventListener("pointermove", onMove, true);
+          document.addEventListener("pointerup", onUp, true);
+        });
+
+        // Column drag & drop on header (Notion-style).
+        backlogList.addEventListener("dragstart", (event) => {
+          const th = event.target.closest("th[data-col-key]");
+          if (!th) return;
+          event.dataTransfer?.setData("text/plain", th.dataset.colKey || "");
+          event.dataTransfer?.setData("application/x-scrum-col", th.dataset.colKey || "");
+        });
+        backlogList.addEventListener("dragover", (event) => {
+          const th = event.target.closest("th[data-col-key]");
+          if (!th) return;
+          event.preventDefault();
+        });
+        backlogList.addEventListener("drop", (event) => {
+          const th = event.target.closest("th[data-col-key]");
+          if (!th) return;
+          event.preventDefault();
+          const fromKey =
+            event.dataTransfer?.getData("application/x-scrum-col") ||
+            event.dataTransfer?.getData("text/plain") ||
+            "";
+          const toKey = th.dataset.colKey || "";
+          if (!fromKey || !toKey || fromKey === toKey) return;
+
+          const cfg = loadColumnsConfig();
+          const order = Array.isArray(cfg.order) ? cfg.order.slice() : [...DEFAULT_COLUMNS];
+          const fromIdx = order.indexOf(fromKey);
+          const toIdx = order.indexOf(toKey);
+          if (fromIdx < 0 || toIdx < 0) return;
+          order.splice(fromIdx, 1);
+          order.splice(toIdx, 0, fromKey);
+          state.tasksColumnsConfig = { ...cfg, order };
+          saveColumnsConfig();
+          renderAll();
+          if (columnsList && !columnsPanel?.classList?.contains("hidden")) {
+            // keep manager UI in sync if open
+            const ev = new Event("tasks:columns-updated");
+            window.dispatchEvent(ev);
+          }
+        });
+
+        backlogList.addEventListener("change", async (event) => {
+          const el = event.target;
+          const field = el?.dataset?.field;
+          if (!field) return;
+          const row = el.closest("[data-task-id]");
+          const taskId = Number(row?.dataset?.taskId || 0);
+          if (!taskId) return;
+          const task = (state.tasksCache || []).find((t) => t.id === taskId);
+          if (!task) return;
+
+          try {
+            if (field === "estado") {
+              await updateTaskLocal(taskId, { estado: String(el.value || "").trim().toLowerCase() }, "Actualizado.");
+              return;
+            }
+            if (field === "prioridad") {
+              await updateTaskLocal(
+                taskId,
+                { prioridad: String(el.value || "").trim().toLowerCase() },
+                "Actualizado."
+              );
+              return;
+            }
+            if (field === "tipo") {
+              await updateTaskLocal(taskId, { tipo: String(el.value || "").trim().toLowerCase() || null }, "Actualizado.");
+              return;
+            }
+            if (field === "etiquetas") {
+              await updateTaskLocal(taskId, { etiquetas: String(el.value || "").trim() || null }, "Actualizado.");
+              return;
+            }
+            if (field === "assignee_persona_id") {
+              const v = String(el.value || "");
+              await updateTaskLocal(taskId, { assignee_persona_id: v ? Number(v) : null }, "Actualizado.");
+              return;
+            }
+            if (field === "sprint_id") {
+              const v = String(el.value || "");
+              await updateTaskLocal(taskId, { sprint_id: v ? Number(v) : null }, "Actualizado.");
+              return;
+            }
+            if (field === "fecha_vencimiento") {
+              const v = String(el.value || "");
+              await updateTaskLocal(taskId, { fecha_vencimiento: v || null }, "Actualizado.");
+              return;
+            }
+            if (field === "puntos" || field === "horas_estimadas") {
+              const raw = String(el.value || "").trim();
+              const value = raw ? Number(raw) : null;
+              await updateTaskLocal(taskId, { [field]: Number.isNaN(value) ? null : value }, "Actualizado.");
+              return;
+            }
+            if (field === "importante") {
+              await updateTaskLocal(taskId, { importante: Boolean(el.checked) }, "Actualizado.");
+              return;
+            }
+          } catch {
+            // status already set
+          }
+        });
+        backlogList.addEventListener("click", async (event) => {
+          const btn = event.target.closest("button[data-action]");
+          if (!btn) return;
+          const row = btn.closest("[data-task-id]");
+          const taskId = Number(row?.dataset?.taskId || 0);
+          const action = btn.dataset.action;
+          if (action === "toggle-subtasks") {
+            if (!taskId) return;
+            state.tasksBacklogExpanded[String(taskId)] = !state.tasksBacklogExpanded[String(taskId)];
+            renderAll();
+            return;
+          }
+          if (action === "create") {
+            const sprintId = resolveSelectedSprintId() || null;
+            root.__tasksApi?.openTaskModal?.({ task: null, sprintId });
+            return;
+          }
+          if (!taskId) return;
+          const task = (state.tasksCache || []).find((t) => t.id === taskId);
+          if (!task) return;
+          if (action === "edit") {
+            root.__tasksApi?.openTaskModal?.({ task });
+            return;
+          }
+          if (action === "subtask") {
+            root.__tasksApi?.openTaskModal?.({ task: null, parentId: taskId, status: task.estado || "backlog" });
+            return;
+          }
+          if (action === "delete") {
+            if (!confirm("Eliminar esta tarea? (incluye subtareas)")) return;
+            try {
+              const res = await fetchWithFallback(`/tasks/${taskId}`, { method: "DELETE" });
+              if (!res.ok) {
+                const text = await res.text();
+                throw new Error(text || "No se pudo eliminar.");
+              }
+              await root.__tasksApi?.loadAndRender?.();
+            } catch (err) {
+              setTasksStatus(err.message || "No se pudo eliminar.", "error");
+            }
+          }
+        });
+      }
+
+      if (board && !board.dataset.bound) {
+        board.dataset.bound = "true";
+        board.addEventListener("click", async (event) => {
+          const btn = event.target.closest("button[data-action]");
+          if (!btn) return;
+          const card = btn.closest("[data-task-id]");
+          const taskId = Number(card?.dataset?.taskId || 0);
+          if (!taskId) return;
+          const task = (state.tasksCache || []).find((t) => t.id === taskId);
+          const action = btn.dataset.action;
+          if (action === "toggle-subtasks") {
+            const key = `kanban:${taskId}`;
+            state.tasksBacklogExpanded[key] = !state.tasksBacklogExpanded[key];
+            renderAll();
+            return;
+          }
+          if (action === "edit-subtask") {
+            const row = btn.closest("[data-task-id]");
+            const subId = Number(row?.dataset?.taskId || 0);
+            if (!subId) return;
+            const sub = (state.tasksCache || []).find((t) => t.id === subId);
+            if (!sub) return;
+            root.__tasksApi?.openTaskModal?.({ task: sub });
+            return;
+          }
+          if (!task) return;
+          if (action === "edit") {
+            root.__tasksApi?.openTaskModal?.({ task });
+            return;
+          }
+          if (action === "subtask") {
+            root.__tasksApi?.openTaskModal?.({ task: null, parentId: taskId, status: task.estado || "backlog" });
+            return;
+          }
+          if (action === "delete") {
+            if (!confirm("Eliminar esta tarea? (incluye subtareas)")) return;
+            try {
+              const res = await fetchWithFallback(`/tasks/${taskId}`, { method: "DELETE" });
+              if (!res.ok) {
+                const text = await res.text();
+                throw new Error(text || "No se pudo eliminar.");
+              }
+              await root.__tasksApi?.loadAndRender?.();
+            } catch (err) {
+              setTasksStatus(err.message || "No se pudo eliminar.", "error");
+            }
+          }
+        });
+      }
+    }
+
+    // defaults (every time initTasks is called)
+      if (!state.tasksStatusFilter && statusSelect) {
+        statusSelect.value = "";
+      } else if (statusSelect) {
+        statusSelect.value = state.tasksStatusFilter || "";
+      }
+      if (searchInput) {
+        searchInput.value = state.tasksSearch || "";
+      }
+      // Clear expanded state when user explicitly hides subtasks.
+      if (state.tasksFilters?.hideSubtasks) {
+        Object.keys(state.tasksBacklogExpanded || {}).forEach((k) => {
+          if (k.startsWith("kanban:")) {
+            state.tasksBacklogExpanded[k] = false;
+          } else {
+            state.tasksBacklogExpanded[k] = false;
+          }
+        });
+      }
+    // advanced filters UI bootstrap
+    const setCheckboxes = (containerSelector, values) => {
+      const set = new Set((values || []).map((v) => String(v)));
+      root.querySelectorAll(`${containerSelector} input[type='checkbox']`).forEach((cb) => {
+        cb.checked = set.has(String(cb.value));
+      });
+    };
+    setCheckboxes("#tasks-filter-statuses", state.tasksFilters?.statuses || []);
+    setCheckboxes("#tasks-filter-priorities", state.tasksFilters?.priorities || []);
+    if (filterAssignee) {
+      const celulaId = resolveCelulaId();
+      const opts = [
+        { id: "__none__", nombre: "Sin responsable" },
+        ...personasActivas
+          .filter((p) => personaBelongsToCelula(p, celulaId))
+          .map((p) => ({ id: String(p.id), nombre: `${p.nombre} ${p.apellido}`.trim() })),
+      ];
+      filterAssignee.innerHTML = "";
+      opts.forEach((o) => {
+        const opt = document.createElement("option");
+        opt.value = String(o.id);
+        opt.textContent = o.nombre;
+        filterAssignee.appendChild(opt);
+      });
+      const selected = new Set((state.tasksFilters?.assignees || []).map((v) => String(v)));
+      Array.from(filterAssignee.options).forEach((o) => (o.selected = selected.has(String(o.value))));
+    }
+    if (filterDueFrom) filterDueFrom.value = state.tasksFilters?.dueFrom || "";
+    if (filterDueTo) filterDueTo.value = state.tasksFilters?.dueTo || "";
+    if (filterHideSubtasks) filterHideSubtasks.checked = Boolean(state.tasksFilters?.hideSubtasks);
+    setActiveView(state.tasksView || "board");
+    loadAndRender();
+    if (root.__tasksRenderFilterChips) root.__tasksRenderFilterChips();
   }
 
   function classifyReleaseStatus(status) {
@@ -10066,6 +12255,7 @@
     }
     initCelulaSelector(base);
     initDaily();
+    initTasks();
     initReleaseTable();
     initOneToOne();
     initRetrospective();
@@ -10102,6 +12292,7 @@
       initCelulaSelector(base);
       initDataEntrySections();
       initDaily();
+      initTasks();
       initReleaseTable();
       initOneToOne();
       initRetrospective();
@@ -10964,8 +13155,16 @@
     const li = document.createElement("li");
     li.className = "nav-item";
     li.dataset.key = "tasks-menu";
+    const isTasksPage =
+      document.body?.dataset?.page === "tasks" ||
+      String(window.location.pathname || "").endsWith("/tasks.html") ||
+      String(window.location.href || "").includes("tasks.html");
+    if (isTasksPage) {
+      const dailyLink = dailyItem.querySelector("a.nav-link");
+      if (dailyLink) dailyLink.classList.remove("active");
+    }
     li.innerHTML = `
-      <a href="daily.html" class="nav-link">
+      <a href="tasks.html" class="nav-link ${isTasksPage ? "active" : ""}">
         <i class="nav-icon bi bi-list-check"></i>
         <p>Tareas</p>
       </a>
