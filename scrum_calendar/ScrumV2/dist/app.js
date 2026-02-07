@@ -10107,7 +10107,7 @@
       window.__retroAdminPoll = window.setInterval(() => {
         if (document.hidden) return;
         initRetrospective({ skipPolling: true });
-      }, 2000);
+      }, 8000);
     }
     if (state.retroActiveId) {
       const exists = retros.some((retro) => String(retro.id) === state.retroActiveId);
@@ -11198,8 +11198,9 @@
     if (!skipPolling && !window.__retroPublicPoll) {
       window.__retroPublicPoll = window.setInterval(() => {
         if (document.hidden) return;
+        if (window.__retroPublicSubmitting) return;
         loadRetroInfo();
-      }, 2000);
+      }, 8000);
     }
     if (!window.__retroPublicVis) {
       window.__retroPublicVis = true;
@@ -11324,6 +11325,7 @@
                 setStatusText("Link invalido. Falta token.", "error");
                 return;
               }
+              window.__retroPublicSubmitting = true;
               await postJson(`/retros/public/${resolvedToken}/items`, payload);
               if (detailInput) detailInput.value = "";
               if (assigneeSelect) assigneeSelect.value = "";
@@ -11334,6 +11336,8 @@
               emitPresence();
             } catch {
               setStatusText("No se pudo guardar.", "error");
+            } finally {
+              window.__retroPublicSubmitting = false;
             }
           },
           "Enviando..."
