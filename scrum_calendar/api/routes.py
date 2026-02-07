@@ -5,10 +5,12 @@ import re
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
+import time
 from typing import Dict, List, Optional
 from zoneinfo import ZoneInfo
 
 import anyio
+from fastapi.encoders import jsonable_encoder
 from fastapi import (
     APIRouter,
     Cookie,
@@ -22,7 +24,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.websockets import WebSocketState
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -1470,7 +1472,11 @@ def crear_retro_item(
         estado=estado,
     )
     db.add(item)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Persona invalida")
     db.refresh(item)
     notify_retro(
         retro.token,
@@ -1743,6 +1749,7 @@ def crear_retro_item_publico(
     payload: RetroPublicItemCreate,
     db: Session = Depends(get_db),
 ):
+    started = time.perf_counter()
     retro = db.query(Retrospective).filter(Retrospective.token == token).first()
     if not retro:
         raise HTTPException(status_code=404, detail="Retrospectiva no encontrada")
@@ -1769,7 +1776,11 @@ def crear_retro_item_publico(
         estado=estado,
     )
     db.add(item)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Persona invalida")
     db.refresh(item)
     notify_retro(
         retro.token,
@@ -1779,7 +1790,13 @@ def crear_retro_item_publico(
             "item": retro_item_to_schema(item),
         },
     )
-    return retro_item_to_schema(item)
+    elapsed_ms = (time.perf_counter() - started) * 1000.0
+    data = retro_item_to_schema(item)
+    headers = {
+        "Server-Timing": f"app;dur={elapsed_ms:.1f}",
+        "X-App-Duration-Ms": f"{elapsed_ms:.1f}",
+    }
+    return JSONResponse(content=jsonable_encoder(data), headers=headers)
 
 
 @router.get("/poker/sessions", response_model=List[PokerSessionOut])
@@ -2133,6 +2150,7 @@ def actualizar_retro(
     scrum_session: Optional[str] = Cookie(default=None),
     db: Session = Depends(get_db),
 ):
+    started = time.perf_counter()
     user = get_user_from_token(db, scrum_session)
     if not user:
         raise HTTPException(status_code=401, detail="No autenticado")
@@ -2169,7 +2187,13 @@ def actualizar_retro(
             anyio.from_thread.run(retro_ws_manager.close_all, retro.token)
         except RuntimeError:
             pass
-    return retro_to_schema(retro)
+    elapsed_ms = (time.perf_counter() - started) * 1000.0
+    data = retro_to_schema(retro)
+    headers = {
+        "Server-Timing": f"app;dur={elapsed_ms:.1f}",
+        "X-App-Duration-Ms": f"{elapsed_ms:.1f}",
+    }
+    return JSONResponse(content=jsonable_encoder(data), headers=headers)
 
 
 @router.delete("/retros/{retro_id}")
