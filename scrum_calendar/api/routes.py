@@ -629,6 +629,8 @@ class RetroWSManager:
     def __init__(self) -> None:
         self.active: Dict[str, List[WebSocket]] = {}
         self.presence: Dict[str, Dict[WebSocket, dict]] = {}
+        # If we don't receive a ping/join for this many seconds, consider the user offline.
+        self.stale_after_seconds = 35.0
 
     async def connect(self, token: str, websocket: WebSocket) -> None:
         await websocket.accept()
@@ -646,7 +648,9 @@ class RetroWSManager:
         meta = (self.presence.get(token, {}) or {}).get(websocket)
         if isinstance(meta, dict):
             meta["online"] = False
-            meta["last_seen"] = datetime.utcnow().isoformat()
+            now = time.time()
+            meta["last_seen_ts"] = now
+            meta["last_seen"] = datetime.utcfromtimestamp(now).isoformat()
 
     def set_presence(self, token: str, websocket: WebSocket, meta: dict) -> bool:
         presence = self.presence.setdefault(token, {})
@@ -676,8 +680,10 @@ class RetroWSManager:
             if nombre and existing_name == nombre:
                 return False
         merged = dict(meta or {})
+        now = time.time()
         merged["online"] = True
-        merged["last_seen"] = datetime.utcnow().isoformat()
+        merged["last_seen_ts"] = now
+        merged["last_seen"] = datetime.utcfromtimestamp(now).isoformat()
         presence[websocket] = merged
         return True
 
@@ -690,10 +696,13 @@ class RetroWSManager:
     def touch(self, token: str, websocket: WebSocket) -> None:
         meta = (self.presence.get(token, {}) or {}).get(websocket)
         if isinstance(meta, dict):
+            now = time.time()
             meta["online"] = True
-            meta["last_seen"] = datetime.utcnow().isoformat()
+            meta["last_seen_ts"] = now
+            meta["last_seen"] = datetime.utcfromtimestamp(now).isoformat()
 
     def build_presence_payload(self, token: str) -> dict:
+        now = time.time()
         entries_map: Dict[str, dict] = {}
         for meta in (self.presence.get(token, {}) or {}).values():
             if not meta:
@@ -703,7 +712,14 @@ class RetroWSManager:
                 continue
             persona_id = meta.get("persona_id")
             key = f"{persona_id}" if persona_id is not None else nombre.lower()
-            online = bool(meta.get("online", True))
+            last_seen_ts = meta.get("last_seen_ts")
+            online_flag = bool(meta.get("online", True))
+            # If the browser is paused (phone locked), the socket might not close; use last_seen as heartbeat.
+            fresh = (
+                isinstance(last_seen_ts, (int, float))
+                and (now - float(last_seen_ts)) <= self.stale_after_seconds
+            )
+            online = bool(online_flag and fresh)
             last_seen = meta.get("last_seen") or ""
             current = entries_map.get(key)
             if not current:
@@ -770,6 +786,7 @@ class PokerWSManager:
     def __init__(self) -> None:
         self.active: Dict[str, List[WebSocket]] = {}
         self.presence: Dict[str, Dict[WebSocket, dict]] = {}
+        self.stale_after_seconds = 35.0
 
     def prune(self, token: str) -> None:
         sockets = list(self.active.get(token, []) or [])
@@ -812,7 +829,9 @@ class PokerWSManager:
         meta = (self.presence.get(token, {}) or {}).get(websocket)
         if isinstance(meta, dict):
             meta["online"] = False
-            meta["last_seen"] = datetime.utcnow().isoformat()
+            now = time.time()
+            meta["last_seen_ts"] = now
+            meta["last_seen"] = datetime.utcfromtimestamp(now).isoformat()
 
     def set_presence(self, token: str, websocket: WebSocket, meta: dict) -> bool:
         presence = self.presence.setdefault(token, {})
@@ -830,8 +849,10 @@ class PokerWSManager:
             if nombre and existing_name == nombre:
                 return False
         merged = dict(meta or {})
+        now = time.time()
         merged["online"] = True
-        merged["last_seen"] = datetime.utcnow().isoformat()
+        merged["last_seen_ts"] = now
+        merged["last_seen"] = datetime.utcfromtimestamp(now).isoformat()
         presence[websocket] = merged
         return True
 
@@ -844,11 +865,14 @@ class PokerWSManager:
     def touch(self, token: str, websocket: WebSocket) -> None:
         meta = (self.presence.get(token, {}) or {}).get(websocket)
         if isinstance(meta, dict):
+            now = time.time()
             meta["online"] = True
-            meta["last_seen"] = datetime.utcnow().isoformat()
+            meta["last_seen_ts"] = now
+            meta["last_seen"] = datetime.utcfromtimestamp(now).isoformat()
 
     def build_presence_payload(self, token: str) -> dict:
         self.prune(token)
+        now = time.time()
         entries_map: Dict[str, dict] = {}
         for meta in (self.presence.get(token, {}) or {}).values():
             if not meta:
@@ -858,7 +882,13 @@ class PokerWSManager:
                 continue
             persona_id = meta.get("persona_id")
             key = f"{persona_id}" if persona_id is not None else nombre.lower()
-            online = bool(meta.get("online", True))
+            last_seen_ts = meta.get("last_seen_ts")
+            online_flag = bool(meta.get("online", True))
+            fresh = (
+                isinstance(last_seen_ts, (int, float))
+                and (now - float(last_seen_ts)) <= self.stale_after_seconds
+            )
+            online = bool(online_flag and fresh)
             last_seen = meta.get("last_seen") or ""
             current = entries_map.get(key)
             if not current:

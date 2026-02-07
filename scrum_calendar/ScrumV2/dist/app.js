@@ -10195,12 +10195,13 @@
       }
     }
     let items = [];
-    if (currentRetro) {
+    const detailRetro = shareRetro || currentRetro;
+    if (detailRetro) {
       try {
-        const detail = await fetchJson(`/retros/${currentRetro.id}`);
+        const detail = await fetchJson(`/retros/${detailRetro.id}`);
         items = detail.items || [];
         try {
-          state.retroPresence = await fetchJson(`/retros/${currentRetro.id}/presence`);
+          state.retroPresence = await fetchJson(`/retros/${detailRetro.id}/presence`);
           renderPresence(state.retroPresence);
         } catch {
           // ignore
@@ -11114,11 +11115,23 @@
           });
         }
         if (phaseLabel) {
-          phaseLabel.textContent = "Retro cerrada";
+          phaseLabel.textContent = "Sesion cerrada";
           phaseLabel.classList.remove("is-waiting", "is-active");
           phaseLabel.classList.add("is-closed");
         }
-        setStatusText("Retro cerrada por el SM.", "warn");
+        setStatusText("La sesion ha sido cerrada por el SM.", "warn");
+        // Replace the body of the page with a clear message so users understand the session ended.
+        if (container && !container.dataset.closedShown) {
+          container.dataset.closedShown = "true";
+          container.innerHTML = `
+            <div class="card daily-card">
+              <div class="card-body">
+                <h3>Sesion cerrada</h3>
+                <p>La sesion fue cerrada por el Scrum Master. Puedes cerrar esta ventana.</p>
+              </div>
+            </div>
+          `;
+        }
         return;
       }
       if (payload.type === "claims_updated") {
