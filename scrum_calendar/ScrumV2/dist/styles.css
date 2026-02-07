@@ -2685,6 +2685,11 @@ body.qr-zoomed::before {
   align-content: start;
 }
 
+.oneonone-form-grid .form-col + .form-col {
+  border-left: 1px solid var(--line);
+  padding-left: 16px;
+}
+
 .oneonone-form-grid .form-label {
   display: grid;
   gap: 6px;
@@ -2706,6 +2711,54 @@ body.qr-zoomed::before {
   gap: 10px;
 }
 
+.oneonone-commitments-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.oneonone-commitments-controls .commitments-filter {
+  min-width: min(360px, 100%);
+}
+
+.scope-toggle {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.scope-toggle .btn.is-active {
+  background: rgba(75, 163, 255, 0.18);
+  border-color: rgba(75, 163, 255, 0.4);
+  color: var(--ink);
+}
+
+.oneonone-commitments-controls .status-filter-option {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  color: var(--ink);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.oneonone-commitments-controls .status-filter-option:hover {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.oneonone-commitments-controls .status-filter-option input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent-2);
+}
+
 .oneonone-commitments-table table {
   width: 100%;
   border-collapse: collapse;
@@ -2722,6 +2775,106 @@ body.qr-zoomed::before {
 
 .oneonone-commitments-table th {
   background: rgba(8, 12, 20, 0.65);
+}
+
+.oneonone-commitments-table input[type="date"] {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  padding: 4px 8px;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  min-width: 0;
+}
+
+.oneonone-commitments-table select:not(.status-pill):not(.session-status-select) {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  padding: 4px 8px;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  min-width: 0;
+}
+
+.oneonone-commitments-table input[type="date"] {
+  width: 100%;
+}
+
+.oneonone-commitments-table .commitment-text {
+  display: block;
+  word-break: break-word;
+}
+
+.oneonone-commitments-table tr.is-overdue td {
+  background: rgba(255, 75, 75, 0.06);
+}
+
+.oneonone-commitments-table select.status-pill.status-danger,
+.oneonone-commitments-table select.status-pill.status-warn,
+.oneonone-commitments-table select.status-pill.status-ok,
+.oneonone-commitments-table select.status-pill.status-muted {
+  border: 1px solid transparent;
+}
+
+.oneonone-commitments-table select.status-pill.status-danger {
+  background: rgba(255, 75, 75, 0.15) !important;
+  border-color: rgba(255, 75, 75, 0.4) !important;
+  color: #ff4b4b !important;
+}
+
+.oneonone-commitments-table select.status-pill.status-warn {
+  background: rgba(255, 200, 87, 0.15) !important;
+  border-color: rgba(255, 200, 87, 0.4) !important;
+  color: #ffc857 !important;
+}
+
+.oneonone-commitments-table select.status-pill.status-ok {
+  background: rgba(57, 255, 20, 0.15) !important;
+  border-color: rgba(57, 255, 20, 0.4) !important;
+  color: #39ff14 !important;
+}
+
+.oneonone-commitments-table select.status-pill.status-muted {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  color: var(--muted) !important;
+}
+
+.oneonone-commitments-table td.due-overdue input[type="date"] {
+  border-color: rgba(255, 75, 75, 0.6);
+  color: #ff4b4b;
+}
+
+.oneonone-commitments-table td.due-today input[type="date"] {
+  border-color: rgba(255, 200, 87, 0.65);
+  color: #ffc857;
+}
+
+.oneonone-commitments-table td.due-future input[type="date"] {
+  border-color: rgba(57, 255, 20, 0.45);
+  color: #a7f36a;
+}
+
+.oneonone-commitments-table td.due-closed input[type="date"] {
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--muted);
+}
+
+.oneonone-commitments-table td.due-overdue {
+  background: rgba(255, 75, 75, 0.08);
+}
+
+.oneonone-commitments-table td.due-today {
+  background: rgba(255, 200, 87, 0.08);
+}
+
+.oneonone-commitments-table td.due-future {
+  background: rgba(167, 243, 106, 0.06);
+}
+
+.oneonone-commitments-table td.due-closed {
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .oneonone-history-summary {
@@ -3735,6 +3888,14 @@ body.qr-zoomed::before {
   .oneonone-form-grid {
     grid-template-columns: 1fr;
   }
+
+  .oneonone-form-grid .form-col + .form-col {
+    border-left: none;
+    padding-left: 0;
+    border-top: 1px solid var(--line);
+    padding-top: 16px;
+    margin-top: 6px;
+  }
 }
 
 @media (max-width: 640px) {
@@ -3951,6 +4112,10 @@ body.qr-zoomed::before {
   display: grid;
   gap: 12px;
   color: var(--ink);
+}
+
+.modal-content.modal-lg {
+  width: min(980px, 96vw);
 }
 
 .modal-head {

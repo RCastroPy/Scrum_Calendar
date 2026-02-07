@@ -3627,6 +3627,23 @@
     const historyTable = qs("#oneonone-history-table");
     const commitmentsTable = qs("#oneonone-commitments-table");
     const commitmentsSummary = qs("#oneonone-commitments-summary");
+    const commitmentsStatusFilter = qs("#oneonone-commitments-status-filter");
+    const commitmentsScopePersonBtn = qs("#oneonone-commitments-scope-person");
+    const commitmentsScopeCellBtn = qs("#oneonone-commitments-scope-cell");
+    const editModal = qs("#oneonone-edit-modal");
+    const editModalTitle = qs("#oneonone-edit-modal-title");
+    const editModalDate = qs("#oneonone-edit-modal-date");
+    const editChecklistEl = qs("#oneonone-edit-checklist");
+    const editChecklistAddBtn = qs("#oneonone-edit-checklist-add");
+    const editAgreementsEl = qs("#oneonone-edit-agreements");
+    const editAgreementsAddBtn = qs("#oneonone-edit-agreements-add");
+    const editMoodSelect = qs("#oneonone-edit-mood");
+    const editMoodLabel = qs("#oneonone-edit-mood-label");
+    const editFeedbackPos = qs("#oneonone-edit-feedback-pos");
+    const editFeedbackNeg = qs("#oneonone-edit-feedback-neg");
+    const editGrowth = qs("#oneonone-edit-growth");
+    const editSaveBtn = qs("#oneonone-edit-save");
+    const editCancelBtn = qs("#oneonone-edit-cancel");
     if (!membersList || !calendarGrid || !eventsList || !kpiWrap) return;
 
     const normalizeLabel = (value) => String(value ?? "").trim().toLowerCase();
@@ -3670,6 +3687,8 @@
       if (emptyEl) emptyEl.textContent = "";
       kpiWrap.innerHTML = "";
       if (historyTable) historyTable.innerHTML = "";
+      if (commitmentsTable) commitmentsTable.innerHTML = "";
+      if (commitmentsSummary) commitmentsSummary.textContent = "";
       calendarGrid.innerHTML = "";
       return;
     }
@@ -3692,6 +3711,8 @@
       if (feedbackNeg) feedbackNeg.value = "";
       if (growthEl) growthEl.value = "";
       if (historyTable) historyTable.innerHTML = "";
+      if (commitmentsTable) commitmentsTable.innerHTML = "";
+      if (commitmentsSummary) commitmentsSummary.textContent = "";
       calendarGrid.innerHTML = "";
       return;
     }
@@ -4108,6 +4129,10 @@
           id: item.id ?? Date.now() + Math.random(),
           text: item.text ?? "",
           due: item.due ?? "",
+          estado:
+            item.estado ||
+            item.status ||
+            (Boolean(item.done) ? "cerrado" : "pendiente"),
           done: Boolean(item.done),
         })),
         mood: payload.mood || "",
@@ -4271,97 +4296,570 @@
         .join(" · ");
     };
 
+    const upsertSessionCaches = (saved, personaNameHint = "") => {
+      if (!saved) return;
+      state.oneononeSessionsCache = state.oneononeSessionsCache || {};
+
+      // Keep selected-persona history list in sync.
+      if (String(saved.persona_id) === String(selected.id)) {
+        if (Array.isArray(sessions)) {
+          const idx = sessions.findIndex((item) => String(item.id) === String(saved.id));
+          if (idx >= 0) {
+            sessions = sessions.map((item) => (String(item.id) === String(saved.id) ? saved : item));
+          } else {
+            sessions.unshift(saved);
+          }
+          state.oneononeSessionsCache[sessionsKey] = sessions;
+        }
+      }
+
+      // Keep the per-person cache in sync (used to build commitments across the cell).
+      if (saved.persona_id) {
+        const key = `${state.selectedCelulaId}:${saved.persona_id}`;
+        const cached = state.oneononeSessionsCache[key];
+        if (Array.isArray(cached)) {
+          const idx = cached.findIndex((item) => String(item.id) === String(saved.id));
+          if (idx >= 0) {
+            state.oneononeSessionsCache[key] = cached.map((item) =>
+              String(item.id) === String(saved.id) ? saved : item
+            );
+          } else {
+            state.oneononeSessionsCache[key] = [saved, ...cached];
+          }
+        }
+      }
+
+      // Update the commitments source list used by renderCommitments().
+      const existingIdx = commitmentSessions.findIndex((item) => String(item.id) === String(saved.id));
+      const persona_nombre =
+        (existingIdx >= 0 && commitmentSessions[existingIdx]?.persona_nombre) ||
+        personaNameHint ||
+        fullName ||
+        "";
+      const merged = { ...saved, persona_nombre };
+      if (existingIdx >= 0) {
+        commitmentSessions[existingIdx] = merged;
+      } else {
+        commitmentSessions.unshift(merged);
+      }
+    };
+
+    const bindModalShell = (modal) => {
+      if (!modal || modal.dataset.bound) return;
+      modal.dataset.bound = "true";
+      const closeBtn = modal.querySelector(".modal-close");
+      if (closeBtn) {
+        closeBtn.addEventListener("click", () => {
+          modal.classList.remove("open");
+          modal.setAttribute("aria-hidden", "true");
+          if (modal.id === "oneonone-edit-modal") {
+            state.oneononeEditSessionId = "";
+            state.oneononeEditDraft = null;
+          }
+        });
+      }
+      modal.addEventListener("click", (event) => {
+        if (event.target === modal) {
+          modal.classList.remove("open");
+          modal.setAttribute("aria-hidden", "true");
+          if (modal.id === "oneonone-edit-modal") {
+            state.oneononeEditSessionId = "";
+            state.oneononeEditDraft = null;
+          }
+        }
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          modal.classList.remove("open");
+          modal.setAttribute("aria-hidden", "true");
+          if (modal.id === "oneonone-edit-modal") {
+            state.oneononeEditSessionId = "";
+            state.oneononeEditDraft = null;
+          }
+        }
+      });
+    };
+
+    const openOneOnOneEditModal = (session) => {
+      if (!editModal || !session) return;
+      bindModalShell(editModal);
+
+      const normalizeChecklist = (items) =>
+        (Array.isArray(items) ? items : []).map((item) => ({
+          id: item?.id ?? Date.now() + Math.random(),
+          text: item?.text ?? "",
+          done: Boolean(item?.done),
+        }));
+      const normalizeAgreements = (items) =>
+        (Array.isArray(items) ? items : []).map((item) => ({
+          id: item?.id ?? Date.now() + Math.random(),
+          text: item?.text ?? "",
+          due: item?.due ?? "",
+          estado:
+            item?.estado || item?.status || (Boolean(item?.done) ? "cerrado" : "pendiente"),
+          done: Boolean(item?.done),
+        }));
+
+      state.oneononeEditSessionId = String(session.id);
+      state.oneononeEditDraft = {
+        fecha: session.fecha,
+        checklist: normalizeChecklist(session.checklist),
+        agreements: normalizeAgreements(session.agreements),
+        mood: session.mood || "",
+        feedback_pos: session.feedback_pos || "",
+        feedback_neg: session.feedback_neg || "",
+        growth: session.growth || "",
+      };
+
+      const renderEditList = (container, items, opts = {}) => {
+        if (!container) return;
+        container.innerHTML = "";
+        items.forEach((item) => {
+          const row = document.createElement("div");
+          row.className = "note-row";
+
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.checked = Boolean(item.done);
+          checkbox.addEventListener("change", () => {
+            item.done = checkbox.checked;
+          });
+
+          const textInput = document.createElement("input");
+          textInput.type = "text";
+          textInput.placeholder = opts.placeholder || "Detalle";
+          textInput.value = item.text || "";
+          textInput.addEventListener("input", () => {
+            item.text = textInput.value;
+          });
+
+          row.appendChild(checkbox);
+          row.appendChild(textInput);
+
+          if (opts.withDate) {
+            const dateInput = document.createElement("input");
+            dateInput.type = "date";
+            dateInput.value = item.due || "";
+            dateInput.addEventListener("input", () => {
+              item.due = dateInput.value;
+            });
+            row.appendChild(dateInput);
+          }
+
+          const removeBtn = document.createElement("button");
+          removeBtn.type = "button";
+          removeBtn.className = "note-remove";
+          removeBtn.textContent = "x";
+          removeBtn.addEventListener("click", () => {
+            const index = items.findIndex((entry) => String(entry.id) === String(item.id));
+            if (index >= 0) {
+              items.splice(index, 1);
+              renderEditModal();
+            }
+          });
+          row.appendChild(removeBtn);
+          container.appendChild(row);
+        });
+      };
+
+      const renderEditModal = () => {
+        const draft = state.oneononeEditDraft;
+        if (!draft) return;
+        if (editModalTitle) editModalTitle.textContent = "Editar 1:1";
+        if (editModalDate) editModalDate.textContent = formatSessionDate(draft.fecha);
+        renderEditList(editChecklistEl, draft.checklist, { placeholder: "Item" });
+        renderEditList(editAgreementsEl, draft.agreements, { placeholder: "Acuerdo", withDate: true });
+        if (editMoodSelect) editMoodSelect.value = draft.mood || "";
+        if (editMoodLabel) {
+          editMoodLabel.textContent = draft.mood ? `Seleccionado: ${draft.mood}` : "";
+        }
+        if (editFeedbackPos) editFeedbackPos.value = draft.feedback_pos || "";
+        if (editFeedbackNeg) editFeedbackNeg.value = draft.feedback_neg || "";
+        if (editGrowth) editGrowth.value = draft.growth || "";
+      };
+
+      if (editChecklistAddBtn) {
+        editChecklistAddBtn.onclick = () => {
+          state.oneononeEditDraft?.checklist?.push({
+            id: Date.now() + Math.random(),
+            text: "",
+            done: false,
+          });
+          renderEditModal();
+        };
+      }
+      if (editAgreementsAddBtn) {
+        editAgreementsAddBtn.onclick = () => {
+          state.oneononeEditDraft?.agreements?.push({
+            id: Date.now() + Math.random(),
+            text: "",
+            due: "",
+            estado: "pendiente",
+            done: false,
+          });
+          renderEditModal();
+        };
+      }
+
+      if (editMoodSelect) {
+        editMoodSelect.onchange = () => {
+          if (!state.oneononeEditDraft) return;
+          state.oneononeEditDraft.mood = editMoodSelect.value;
+          renderEditModal();
+        };
+      }
+      if (editFeedbackPos) {
+        editFeedbackPos.oninput = () => {
+          if (!state.oneononeEditDraft) return;
+          state.oneononeEditDraft.feedback_pos = editFeedbackPos.value;
+        };
+      }
+      if (editFeedbackNeg) {
+        editFeedbackNeg.oninput = () => {
+          if (!state.oneononeEditDraft) return;
+          state.oneononeEditDraft.feedback_neg = editFeedbackNeg.value;
+        };
+      }
+      if (editGrowth) {
+        editGrowth.oninput = () => {
+          if (!state.oneononeEditDraft) return;
+          state.oneononeEditDraft.growth = editGrowth.value;
+        };
+      }
+
+      if (editCancelBtn) {
+        editCancelBtn.onclick = () => {
+          editModal.classList.remove("open");
+          editModal.setAttribute("aria-hidden", "true");
+          state.oneononeEditSessionId = "";
+          state.oneononeEditDraft = null;
+        };
+      }
+
+      if (editSaveBtn) {
+        editSaveBtn.onclick = async () => {
+          const sessionId = state.oneononeEditSessionId;
+          const draft = state.oneononeEditDraft;
+          if (!sessionId || !draft) return;
+          const agreements = (draft.agreements || []).map((item) => ({
+            id: item.id ?? Date.now() + Math.random(),
+            text: String(item.text || "").trim(),
+            due: item.due || "",
+            estado: item.estado || (Boolean(item.done) ? "cerrado" : "pendiente"),
+            done: Boolean(item.done) || String(item.estado || "") === "cerrado",
+          }));
+          const missing = [];
+          if (!agreements.some((item) => item.text)) missing.push("Acuerdos");
+          if (!draft.mood) missing.push("Estado de animo");
+          if (missing.length) {
+            alert(`Campos obligatorios: ${missing.join(", ")}`);
+            return;
+          }
+          editSaveBtn.disabled = true;
+          try {
+            const updatePayload = {
+              fecha: draft.fecha,
+              checklist: (draft.checklist || []).map((item) => ({
+                id: item.id ?? Date.now() + Math.random(),
+                text: String(item.text || "").trim(),
+                done: Boolean(item.done),
+              })),
+              agreements,
+              mood: draft.mood || "",
+              feedback_pos: draft.feedback_pos || "",
+              feedback_neg: draft.feedback_neg || "",
+              growth: draft.growth || "",
+            };
+            const saved = await putJson(`/oneonone-sessions/${sessionId}`, updatePayload);
+            upsertSessionCaches(saved, fullName || "");
+            editModal.classList.remove("open");
+            editModal.setAttribute("aria-hidden", "true");
+            state.oneononeEditSessionId = "";
+            state.oneononeEditDraft = null;
+            renderSessions();
+          } catch {
+            // ignore
+          } finally {
+            editSaveBtn.disabled = false;
+          }
+        };
+      }
+
+      renderEditModal();
+      editModal.classList.add("open");
+      editModal.setAttribute("aria-hidden", "false");
+    };
+
     const renderCommitments = () => {
       if (!commitmentsTable) return;
       const todayValue = getToday();
+      const scope = state.oneononeCommitmentsScope || "persona"; // "persona" | "celula"
+      const selectedStatuses = new Set(state.oneononeCommitmentStatusFilters || []);
+      const shouldFilterByStatus = selectedStatuses.size > 0;
+      const normalizeEstado = (value, done) => {
+        const raw = String(value || "").trim().toLowerCase();
+        if (raw === "cerrado" || raw === "close" || raw === "closed") return "cerrado";
+        if (raw === "en_progreso" || raw === "en progreso" || raw === "progress") return "en_progreso";
+        if (raw === "pendiente" || raw === "pending") return "pendiente";
+        if (Boolean(done)) return "cerrado";
+        return "pendiente";
+      };
+      const estadoOptions = [
+        { value: "pendiente", label: "Pendiente", className: "status-danger" },
+        { value: "en_progreso", label: "En progreso", className: "status-warn" },
+        { value: "cerrado", label: "Cerrado", className: "status-ok" },
+      ];
+      const estadoToClass = Object.fromEntries(estadoOptions.map((o) => [o.value, o.className]));
       const entries = [];
-      let pendingCount = 0;
-      let overdueCount = 0;
+
+      const pushAgreement = (entry) => {
+        const normalizedEstado = normalizeEstado(entry.estado, entry.done);
+        if (shouldFilterByStatus && !selectedStatuses.has(normalizedEstado)) return;
+        entry.estado = normalizedEstado;
+        const dueDate = entry.due ? parseDateOnly(entry.due) : null;
+        const todayIso = formatISO(todayValue);
+        const dueIso = dueDate ? formatISO(dueDate) : "";
+        const isToday = Boolean(dueIso && dueIso === todayIso && entry.estado !== "cerrado");
+        const isOverdue = Boolean(dueDate && dueDate < todayValue && entry.estado !== "cerrado");
+        const dueSort = dueDate ? dueDate.getTime() : Number.POSITIVE_INFINITY;
+        const rank = isOverdue ? 0 : 1;
+        entries.push({ ...entry, isToday, isOverdue, dueSort, rank });
+      };
+
+      // Draft agreements (notes) should show up immediately as commitments.
+      (Array.isArray(notes.agreements) ? notes.agreements : []).forEach((item) => {
+        if (!item || !String(item.text || "").trim()) return;
+        pushAgreement({
+          source: "note",
+          agreementId: item.id ?? Date.now() + Math.random(),
+          text: String(item.text || "").trim(),
+          due: item.due || "",
+          estado: normalizeEstado(item.estado, item.done),
+          done: Boolean(item.done),
+          assignedLabel: fullName || "-",
+          sessionDate: "Borrador",
+        });
+      });
+
       commitmentSessions.forEach((session) => {
+        if (scope === "persona" && String(session.persona_id) !== String(selected.id)) {
+          return;
+        }
         const agreements = Array.isArray(session.agreements) ? session.agreements : [];
-        agreements.forEach((item) => {
-          if (!item || !String(item.text || "").trim()) return;
-          if (item.done) return;
-          const dueLabel = item.due ? formatDate(item.due) : "-";
+        agreements.forEach((rawItem) => {
+          if (!rawItem || !String(rawItem.text || "").trim()) return;
+          const agreementId = rawItem.id ?? Date.now() + Math.random();
           const assignedLabel =
-            item.assignee ||
-            item.asignado ||
-            item.responsable ||
+            rawItem.assignee ||
+            rawItem.asignado ||
+            rawItem.responsable ||
             session.persona_nombre ||
             fullName ||
             "-";
-          const dueDate = item.due ? parseDateOnly(item.due) : null;
-          let statusLabel = "Pendiente";
-          let statusClass = "status-warn";
-          if (dueDate && dueDate < todayValue) {
-            statusLabel = "Vencido";
-            statusClass = "status-danger";
-            overdueCount += 1;
-          } else {
-            pendingCount += 1;
-          }
-          entries.push({
-            text: item.text,
-            dueLabel,
+          pushAgreement({
+            source: "session",
+            sessionId: session.id,
+            personaId: session.persona_id,
+            agreementId,
+            text: String(rawItem.text || "").trim(),
+            due: rawItem.due || "",
+            estado: normalizeEstado(rawItem.estado, rawItem.done),
+            done: Boolean(rawItem.done),
             assignedLabel,
-            statusLabel,
-            statusClass,
             sessionDate: formatSessionDate(session.fecha),
-            rank: statusLabel === "Vencido" ? 0 : 1,
-            dueSort: dueDate ? dueDate.getTime() : Number.POSITIVE_INFINITY,
           });
         });
       });
+
       if (!entries.length) {
         commitmentsTable.innerHTML = '<p class="helper">Sin compromisos.</p>';
         if (commitmentsSummary) commitmentsSummary.textContent = "";
         return;
       }
+
+      const pendingCount = entries.filter((e) => e.estado === "pendiente").length;
+      const progressCount = entries.filter((e) => e.estado === "en_progreso").length;
+      const closedCount = entries.filter((e) => e.estado === "cerrado").length;
+      const overdueCount = entries.filter((e) => e.isOverdue).length;
       if (commitmentsSummary) {
-        commitmentsSummary.textContent = `Pendientes: ${pendingCount} · Vencidos: ${overdueCount}`;
+        commitmentsSummary.textContent = `Pendiente: ${pendingCount} · En progreso: ${progressCount} · Cerrados: ${closedCount} · Vencidos: ${overdueCount}`;
       }
-      const rows = entries
+
+      const sorted = entries
+        .slice()
         .sort((a, b) => {
           if (a.rank !== b.rank) return a.rank - b.rank;
           if (a.dueSort !== b.dueSort) return a.dueSort - b.dueSort;
           return String(a.text).localeCompare(String(b.text), "es");
-        })
-        .map(
-          (entry) => `
-            <tr>
-              <td>${entry.text}</td>
-              <td>${entry.dueLabel}</td>
-              <td>${entry.assignedLabel}</td>
-              <td><span class="status-pill ${entry.statusClass}">${entry.statusLabel}</span></td>
-              <td>${entry.sessionDate}</td>
-            </tr>
-          `
-        )
-        .join("");
-      commitmentsTable.innerHTML = `
-        <table>
-          <thead>
-            <tr>
-              <th>Compromiso</th>
-              <th>Vence</th>
-              <th>Asignado</th>
-              <th>Estado</th>
-              <th>1:1</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows}
-          </tbody>
-        </table>
+        });
+
+      commitmentsTable.innerHTML = "";
+      const table = document.createElement("table");
+      const thead = document.createElement("thead");
+      thead.innerHTML = `
+        <tr>
+          <th>Compromiso</th>
+          <th>Vence</th>
+          <th>Asignado</th>
+          <th>Estado</th>
+          <th>1:1</th>
+        </tr>
       `;
+      const tbody = document.createElement("tbody");
+
+      const setEstadoClass = (select, estado) => {
+        select.classList.remove("status-ok", "status-warn", "status-danger", "status-muted");
+        select.classList.add("status-pill", "session-status-select");
+        select.classList.add(estadoToClass[estado] || "status-muted");
+      };
+
+      const updateNoteAgreement = (agreementId, patch) => {
+        const idx = (notes.agreements || []).findIndex((a) => String(a.id) === String(agreementId));
+        if (idx < 0) return;
+        notes.agreements[idx] = { ...notes.agreements[idx], ...patch };
+        persistNotes();
+        renderNotesSection();
+      };
+
+      const updateSessionAgreement = async (sessionId, agreementId, patch) => {
+        const session = commitmentSessions.find((s) => String(s.id) === String(sessionId));
+        if (!session) return;
+        const rawAgreements = Array.isArray(session.agreements) ? session.agreements : [];
+        const normalized = rawAgreements.map((a) => ({
+          id: a?.id ?? Date.now() + Math.random(),
+          text: a?.text ?? "",
+          due: a?.due ?? "",
+          estado: normalizeEstado(a?.estado, a?.done),
+          done: Boolean(a?.done),
+        }));
+        const nextAgreements = normalized.map((a) => {
+          if (String(a.id) !== String(agreementId)) return a;
+          const next = { ...a, ...patch };
+          const estado = normalizeEstado(next.estado, next.done);
+          next.estado = estado;
+          next.done = estado === "cerrado";
+          return next;
+        });
+
+        const payload = {
+          fecha: session.fecha,
+          checklist: session.checklist || [],
+          agreements: nextAgreements,
+          mood: session.mood || "",
+          feedback_pos: session.feedback_pos || "",
+          feedback_neg: session.feedback_neg || "",
+          growth: session.growth || "",
+        };
+        const saved = await putJson(`/oneonone-sessions/${sessionId}`, payload);
+        upsertSessionCaches(saved, session.persona_nombre || "");
+
+        if (String(saved.persona_id) === String(selected.id)) {
+          renderSessions();
+        } else {
+          renderCommitments();
+        }
+      };
+
+      sorted.forEach((entry) => {
+        const tr = document.createElement("tr");
+        if (entry.isOverdue) tr.classList.add("is-overdue");
+
+        const tdText = document.createElement("td");
+        const textSpan = document.createElement("span");
+        textSpan.className = "commitment-text";
+        textSpan.textContent = entry.text;
+        tdText.appendChild(textSpan);
+
+        const tdDue = document.createElement("td");
+        const dueInput = document.createElement("input");
+        dueInput.type = "date";
+        dueInput.value = entry.due || "";
+        tdDue.appendChild(dueInput);
+        if (!entry.due) {
+          tdDue.classList.add("due-none");
+        } else if (entry.estado === "cerrado") {
+          tdDue.classList.add("due-closed");
+        } else if (entry.isOverdue) {
+          tdDue.classList.add("due-overdue");
+        } else if (entry.isToday) {
+          tdDue.classList.add("due-today");
+        } else {
+          tdDue.classList.add("due-future");
+        }
+
+        const tdAssigned = document.createElement("td");
+        tdAssigned.textContent = entry.assignedLabel || "-";
+
+        const tdEstado = document.createElement("td");
+        const estadoSelect = document.createElement("select");
+        estadoOptions.forEach((opt) => {
+          const option = document.createElement("option");
+          option.value = opt.value;
+          option.textContent = opt.label;
+          estadoSelect.appendChild(option);
+        });
+        estadoSelect.value = entry.estado || "pendiente";
+        setEstadoClass(estadoSelect, estadoSelect.value);
+        tdEstado.appendChild(estadoSelect);
+
+        const tdSession = document.createElement("td");
+        tdSession.textContent = entry.sessionDate || "";
+
+        const setBusy = (busy) => {
+          dueInput.disabled = busy;
+          estadoSelect.disabled = busy;
+        };
+
+        dueInput.addEventListener("change", async () => {
+          const nextDue = dueInput.value || "";
+          setBusy(true);
+          try {
+            if (entry.source === "note") {
+              updateNoteAgreement(entry.agreementId, { due: nextDue });
+              return;
+            }
+            await updateSessionAgreement(entry.sessionId, entry.agreementId, { due: nextDue });
+          } catch {
+            // ignore
+          } finally {
+            setBusy(false);
+          }
+        });
+
+        estadoSelect.addEventListener("change", async () => {
+          const nextEstado = estadoSelect.value;
+          setEstadoClass(estadoSelect, nextEstado);
+          setBusy(true);
+          try {
+            if (entry.source === "note") {
+              updateNoteAgreement(entry.agreementId, {
+                estado: nextEstado,
+                done: nextEstado === "cerrado",
+              });
+              return;
+            }
+            await updateSessionAgreement(entry.sessionId, entry.agreementId, { estado: nextEstado });
+          } catch {
+            // ignore
+          } finally {
+            setBusy(false);
+          }
+        });
+
+        tr.append(tdText, tdDue, tdAssigned, tdEstado, tdSession);
+        tbody.appendChild(tr);
+      });
+
+      table.appendChild(thead);
+      table.appendChild(tbody);
+      commitmentsTable.appendChild(table);
     };
 
     const renderSessions = () => {
       if (!historyTable) return;
       if (!sessions.length) {
         historyTable.innerHTML = '<p class="helper">Sin registros historicos.</p>';
-        if (commitmentsTable) commitmentsTable.innerHTML = '<p class="helper">Sin compromisos.</p>';
-        if (commitmentsSummary) commitmentsSummary.textContent = "";
+        renderCommitments();
         return;
       }
       const todayValue = getToday();
@@ -4480,6 +4978,7 @@
         const updatedAgreements = agreements.map((item) => ({
           ...item,
           done: doneValue ? true : false,
+          estado: doneValue ? "cerrado" : item.estado || "pendiente",
         }));
         const payload = {
           fecha: session.fecha,
@@ -4491,6 +4990,7 @@
           growth: session.growth || "",
         };
         const saved = await putJson(`/oneonone-sessions/${sessionId}`, payload);
+        upsertSessionCaches(saved, session.persona_nombre || fullName || "");
         sessions = sessions.map((item) =>
           String(item.id) === String(saved.id) ? saved : item
         );
@@ -4536,24 +5036,7 @@
           const sessionId = btn.dataset.id;
           const session = sessions.find((item) => String(item.id) === String(sessionId));
           if (!session) return;
-          state.oneononeEditingSessionId = String(session.id);
-          notes.checklist = (session.checklist || []).map((item) => ({
-            id: item.id ?? Date.now() + Math.random(),
-            text: item.text ?? "",
-            done: Boolean(item.done),
-          }));
-          notes.agreements = (session.agreements || []).map((item) => ({
-            id: item.id ?? Date.now() + Math.random(),
-            text: item.text ?? "",
-            due: item.due ?? "",
-            done: Boolean(item.done),
-          }));
-          notes.mood = session.mood || "";
-          notes.feedback_pos = session.feedback_pos || "";
-          notes.feedback_neg = session.feedback_neg || "";
-          notes.growth = session.growth || "";
-          renderNotesSection();
-          if (sessionSaveBtn) sessionSaveBtn.textContent = "Actualizar 1:1";
+          openOneOnOneEditModal(session);
         });
       });
 
@@ -4589,12 +5072,15 @@
       }
       const sessionDate = formatISO(getToday());
       const checklist = notes.checklist.map((item) => ({
+        id: item.id ?? Date.now() + Math.random(),
         text: (item.text || "").trim(),
         done: Boolean(item.done),
       }));
       const agreements = notes.agreements.map((item) => ({
+        id: item.id ?? Date.now() + Math.random(),
         text: (item.text || "").trim(),
         due: item.due || "",
+        estado: item.estado || (Boolean(item.done) ? "cerrado" : "pendiente"),
         done: Boolean(item.done),
       }));
       const payload = {
@@ -4611,9 +5097,6 @@
       const missing = [];
       if (!agreements.some((item) => item.text)) missing.push("Acuerdos");
       if (!payload.mood) missing.push("Estado de animo");
-      if (!payload.feedback_pos) missing.push("Feedback positivo");
-      if (!payload.feedback_neg) missing.push("Feedback negativo");
-      if (!payload.growth) missing.push("Foco de crecimiento");
       if (missing.length) {
         alert(`Campos obligatorios: ${missing.join(", ")}`);
         return;
@@ -4631,11 +5114,13 @@
             growth: payload.growth,
           };
           saved = await putJson(`/oneonone-sessions/${state.oneononeEditingSessionId}`, updatePayload);
+          upsertSessionCaches(saved, fullName || "");
           sessions = sessions.map((item) =>
             String(item.id) === String(saved.id) ? saved : item
           );
         } else {
           saved = await postJson("/oneonone-sessions", payload);
+          upsertSessionCaches(saved, fullName || "");
           sessions.unshift(saved);
         }
         state.oneononeSessionsCache[sessionsKey] = sessions;
@@ -4658,6 +5143,9 @@
     const renderNoteList = (container, items, opts = {}) => {
       if (!container) return;
       container.innerHTML = "";
+      const notify = () => {
+        if (typeof opts.onChange === "function") opts.onChange();
+      };
       items.forEach((item) => {
         const row = document.createElement("div");
         row.className = "note-row";
@@ -4668,6 +5156,7 @@
         checkbox.addEventListener("change", () => {
           item.done = checkbox.checked;
           persistNotes();
+          notify();
         });
 
         const textInput = document.createElement("input");
@@ -4677,6 +5166,7 @@
         textInput.addEventListener("input", () => {
           item.text = textInput.value;
           persistNotes();
+          notify();
         });
 
         row.appendChild(checkbox);
@@ -4689,6 +5179,7 @@
           dateInput.addEventListener("input", () => {
             item.due = dateInput.value;
             persistNotes();
+            notify();
           });
           row.appendChild(dateInput);
         }
@@ -4703,6 +5194,7 @@
             items.splice(index, 1);
             persistNotes();
             renderNotesSection();
+            notify();
           }
         });
         row.appendChild(removeBtn);
@@ -4712,7 +5204,11 @@
 
     const renderNotesSection = () => {
       renderNoteList(checklistEl, notes.checklist, { placeholder: "Item" });
-      renderNoteList(agreementsEl, notes.agreements, { placeholder: "Acuerdo", withDate: true });
+      renderNoteList(agreementsEl, notes.agreements, {
+        placeholder: "Acuerdo",
+        withDate: true,
+        onChange: () => renderCommitments(),
+      });
       if (moodSelect) {
         moodSelect.value = notes.mood || "";
       }
@@ -4724,7 +5220,113 @@
       if (growthEl) growthEl.value = notes.growth || "";
     };
 
+    const getOneOnOneCommitmentsStatusOptions = () => [
+      { value: "pendiente", label: "Pendiente" },
+      { value: "en_progreso", label: "En progreso" },
+      { value: "cerrado", label: "Cerrado" },
+    ];
+
+    const renderCommitmentsControls = () => {
+      const opts = getOneOnOneCommitmentsStatusOptions();
+
+      if (!state.oneononeCommitmentsScope) {
+        state.oneononeCommitmentsScope = "persona";
+      }
+      if (!Array.isArray(state.oneononeCommitmentStatusFilters) || !state.oneononeCommitmentStatusFilters.length) {
+        state.oneononeCommitmentStatusFilters = opts.map((o) => o.value);
+        state.oneononeCommitmentStatusTouched = false;
+      }
+
+      if (commitmentsScopePersonBtn) {
+        commitmentsScopePersonBtn.classList.toggle("is-active", state.oneononeCommitmentsScope === "persona");
+        if (!commitmentsScopePersonBtn.dataset.bound) {
+          commitmentsScopePersonBtn.dataset.bound = "true";
+          commitmentsScopePersonBtn.addEventListener("click", () => {
+            state.oneononeCommitmentsScope = "persona";
+            renderCommitmentsControls();
+            renderCommitments();
+          });
+        }
+      }
+      if (commitmentsScopeCellBtn) {
+        commitmentsScopeCellBtn.classList.toggle("is-active", state.oneononeCommitmentsScope === "celula");
+        if (!commitmentsScopeCellBtn.dataset.bound) {
+          commitmentsScopeCellBtn.dataset.bound = "true";
+          commitmentsScopeCellBtn.addEventListener("click", () => {
+            state.oneononeCommitmentsScope = "celula";
+            renderCommitmentsControls();
+            renderCommitments();
+          });
+        }
+      }
+
+      if (commitmentsStatusFilter) {
+        commitmentsStatusFilter.innerHTML = "";
+        const wrapper = document.createElement("div");
+        wrapper.className = "status-filter";
+        if (state.oneononeCommitmentStatusOpen) {
+          wrapper.classList.add("open");
+        }
+        const trigger = document.createElement("button");
+        trigger.type = "button";
+        trigger.className = "status-filter-trigger";
+        const selectedValues = (state.oneononeCommitmentStatusFilters || []).filter(Boolean);
+        const labelMap = Object.fromEntries(opts.map((o) => [o.value, o.label]));
+        const triggerText = selectedValues.length
+          ? selectedValues.map((v) => labelMap[v] || v).join(", ")
+          : "Todos";
+        trigger.innerHTML = `<span>${triggerText}</span><span class="status-filter-caret">▾</span>`;
+        trigger.addEventListener("click", (event) => {
+          event.stopPropagation();
+          state.oneononeCommitmentStatusOpen = !state.oneononeCommitmentStatusOpen;
+          renderCommitmentsControls();
+        });
+        const panel = document.createElement("div");
+        panel.className = "status-filter-panel";
+        panel.addEventListener("click", (event) => event.stopPropagation());
+        opts.forEach((opt) => {
+          const label = document.createElement("label");
+          label.className = "status-filter-option";
+          const input = document.createElement("input");
+          input.type = "checkbox";
+          input.value = opt.value;
+          input.checked = (state.oneononeCommitmentStatusFilters || []).includes(opt.value);
+          input.addEventListener("change", () => {
+            const selectedSet = new Set(state.oneononeCommitmentStatusFilters || []);
+            if (input.checked) {
+              selectedSet.add(opt.value);
+            } else {
+              selectedSet.delete(opt.value);
+            }
+            state.oneononeCommitmentStatusFilters = Array.from(selectedSet);
+            state.oneononeCommitmentStatusOpen = true;
+            state.oneononeCommitmentStatusTouched = true;
+            renderCommitmentsControls();
+            renderCommitments();
+          });
+          const text = document.createElement("span");
+          text.textContent = opt.label;
+          label.appendChild(input);
+          label.appendChild(text);
+          panel.appendChild(label);
+        });
+        wrapper.appendChild(trigger);
+        wrapper.appendChild(panel);
+        commitmentsStatusFilter.appendChild(wrapper);
+      }
+
+      if (!state.oneononeCommitmentsOutsideBound) {
+        state.oneononeCommitmentsOutsideBound = true;
+        document.addEventListener("click", () => {
+          if (!state.oneononeCommitmentStatusOpen) return;
+          state.oneononeCommitmentStatusOpen = false;
+          renderCommitmentsControls();
+        });
+      }
+    };
+
     renderNotesSection();
+    renderCommitmentsControls();
     renderSessions();
 
     if (checklistAddBtn) {
@@ -4737,7 +5339,13 @@
 
     if (agreementsAddBtn) {
       agreementsAddBtn.onclick = () => {
-        notes.agreements.push({ id: Date.now() + Math.random(), text: "", due: "", done: false });
+        notes.agreements.push({
+          id: Date.now() + Math.random(),
+          text: "",
+          due: "",
+          estado: "pendiente",
+          done: false,
+        });
         persistNotes();
         renderNotesSection();
       };

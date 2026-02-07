@@ -957,91 +957,112 @@
                     <div class="oneonone-calendar" id="oneonone-calendar"></div>
                   </div>
                 </div>
-                <div class="oneonone-row oneonone-row--full">
-                  <div class="oneonone-panel" id="oneonone-detail">
-                    <div class="oneonone-kpis" id="oneonone-kpis"></div>
-                    <div class="oneonone-events">
-                      <h4>Eventos del mes</h4>
-                      <ul id="oneonone-events"></ul>
-                      <h4 class="mt-3">Eventos anual</h4>
-                      <ul id="oneonone-events-annual"></ul>
-                      <p class="helper" id="oneonone-empty"></p>
-                    </div>
-                    <div class="oneonone-notes">
-                      <div class="note-card">
-                        <h4>Formulario 1:1</h4>
-                        <div class="oneonone-form-grid">
-                          <div class="form-col">
-                            <label class="form-label">Checklist corto</label>
-                            <div class="note-list" id="oneonone-checklist"></div>
-                            <div class="note-actions">
-                              <button class="btn small ghost" type="button" id="oneonone-checklist-add">Agregar item</button>
-                            </div>
-                            <label class="form-label">Acuerdos y tareas</label>
-                            <div class="note-list" id="oneonone-agreements"></div>
-                            <div class="note-actions">
-                              <button class="btn small ghost" type="button" id="oneonone-agreements-add">
-                                Agregar acuerdo
-                              </button>
-                            </div>
-                          </div>
-                          <div class="form-col">
-                            <label class="form-label">Estado de animo</label>
-                            <div class="mood-row">
-                              <select id="oneonone-mood">
-                                <option value="">Seleccionar</option>
-                                <option value="1">1 · Muy bajo</option>
-                                <option value="2">2 · Bajo</option>
-                                <option value="3">3 · Medio</option>
-                                <option value="4">4 · Alto</option>
-                                <option value="5">5 · Muy alto</option>
-                              </select>
-                              <span class="mood-label" id="oneonone-mood-label"></span>
-                            </div>
-                            <label class="form-label">
-                              Feedback positivo
-                              <textarea id="oneonone-feedback-pos" rows="3"></textarea>
-                            </label>
-                            <label class="form-label">
-                              Feedback negativo
-                              <textarea id="oneonone-feedback-neg" rows="3"></textarea>
-                            </label>
-                          </div>
-                          <div class="form-col">
-                            <label class="form-label">
-                              Habilidades/Competencias a mejorar.
-                              <textarea id="oneonone-growth" rows="3"></textarea>
-                            </label>
-                            <div class="note-actions form-actions">
-                              <button class="btn small" type="button" id="oneonone-session-save">Registrar 1:1</button>
-                              <button class="btn small ghost" type="button" id="oneonone-session-cancel">Cancelar</button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div class="oneonone-commitments">
-                      <div class="section-head">
-                        <div>
-                          <h4>Compromisos</h4>
-                          <p class="helper" id="oneonone-commitments-summary"></p>
-                        </div>
-                      </div>
-                      <div class="oneonone-commitments-table" id="oneonone-commitments-table"></div>
-                    </div>
-                    <div class="oneonone-history">
-                      <div class="section-head">
-                        <div>
-                          <h4>Historial de 1:1</h4>
-                          <p class="helper">Registro historico de acuerdos, feedback y seguimiento.</p>
-                        </div>
-                      </div>
-                      <div class="oneonone-history-table" id="oneonone-history-table"></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
+	                <div class="oneonone-row oneonone-row--full">
+	                  <div class="oneonone-panel" id="oneonone-detail">
+		                    <div class="oneonone-notes">
+		                      <div class="note-card oneonone-commitments">
+		                        <div class="section-head">
+		                          <div>
+		                            <h4>Compromisos</h4>
+		                            <p class="helper" id="oneonone-commitments-summary"></p>
+		                          </div>
+		                        </div>
+		                        <div class="oneonone-commitments-controls">
+		                          <div class="scope-toggle" role="group" aria-label="Alcance de compromisos">
+		                            <button class="btn small ghost" type="button" id="oneonone-commitments-scope-person">
+		                              Solo persona
+		                            </button>
+		                            <button class="btn small ghost" type="button" id="oneonone-commitments-scope-cell">
+		                              Toda la celula
+		                            </button>
+		                          </div>
+		                          <div class="commitments-filter" id="oneonone-commitments-status-filter"></div>
+		                        </div>
+		                        <div class="oneonone-commitments-table" id="oneonone-commitments-table"></div>
+		                      </div>
+		                      <div class="note-card oneonone-history">
+		                        <div class="section-head">
+		                          <div>
+		                            <h4>Historial de 1:1</h4>
+		                            <p class="helper">Registro historico de acuerdos, feedback y seguimiento.</p>
+		                          </div>
+		                        </div>
+		                        <div class="oneonone-history-table" id="oneonone-history-table"></div>
+		                      </div>
+		                      <div class="note-card oneonone-kpis-card">
+		                        <h4>KPIs</h4>
+		                        <div class="oneonone-kpis" id="oneonone-kpis"></div>
+		                      </div>
+		                      <div class="note-card oneonone-events oneonone-events-month">
+		                        <h4>Eventos del mes</h4>
+		                        <ul id="oneonone-events"></ul>
+		                        <p class="helper" id="oneonone-empty"></p>
+		                      </div>
+		                      <div class="note-card oneonone-events oneonone-events-annual">
+		                        <h4>Eventos anual</h4>
+		                        <ul id="oneonone-events-annual"></ul>
+		                      </div>
+		                      <div class="note-card oneonone-agreements-card">
+		                        <h4>Acuerdos y tareas</h4>
+		                        <p class="helper">
+		                          Se muestran inmediatamente en <strong>Compromisos</strong>. Quedan como borrador hasta registrar el 1:1.
+		                        </p>
+		                        <div class="note-list" id="oneonone-agreements"></div>
+		                        <div class="note-actions">
+		                          <button class="btn small ghost" type="button" id="oneonone-agreements-add">
+		                            Agregar acuerdo
+		                          </button>
+		                        </div>
+		                      </div>
+		                      <div class="note-card">
+		                        <h4>Formulario 1:1</h4>
+		                        <div class="oneonone-form-grid">
+		                          <div class="form-col">
+		                            <label class="form-label">Checklist corto</label>
+		                            <div class="note-list" id="oneonone-checklist"></div>
+		                            <div class="note-actions">
+		                              <button class="btn small ghost" type="button" id="oneonone-checklist-add">Agregar item</button>
+		                            </div>
+		                          </div>
+		                          <div class="form-col">
+		                            <label class="form-label">Estado de animo</label>
+		                            <div class="mood-row">
+		                              <select id="oneonone-mood">
+		                                <option value="">Seleccionar</option>
+		                                <option value="1">1 · Muy bajo</option>
+		                                <option value="2">2 · Bajo</option>
+		                                <option value="3">3 · Medio</option>
+		                                <option value="4">4 · Alto</option>
+		                                <option value="5">5 · Muy alto</option>
+		                              </select>
+		                              <span class="mood-label" id="oneonone-mood-label"></span>
+		                            </div>
+		                            <label class="form-label">
+		                              Feedback positivo
+		                              <textarea id="oneonone-feedback-pos" rows="3"></textarea>
+		                            </label>
+		                            <label class="form-label">
+		                              Feedback negativo
+		                              <textarea id="oneonone-feedback-neg" rows="3"></textarea>
+		                            </label>
+		                          </div>
+		                          <div class="form-col">
+		                            <label class="form-label">
+		                              Habilidades/Competencias a mejorar.
+		                              <textarea id="oneonone-growth" rows="3"></textarea>
+		                            </label>
+		                            <div class="note-actions form-actions">
+		                              <button class="btn small" type="button" id="oneonone-session-save">Registrar 1:1</button>
+		                              <button class="btn small ghost" type="button" id="oneonone-session-cancel">Cancelar</button>
+		                            </div>
+		                          </div>
+		                        </div>
+		                      </div>
+		                    </div>
+	                  </div>
+	                </div>
+	              </div>
+	            </section>
           </div>
         </div>
         <!--end::App Content-->
@@ -1124,6 +1145,70 @@
         </div>
         <div class="modal-body">
           <ul id="oneonone-day-modal-list"></ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="oneonone-edit-modal" aria-hidden="true">
+      <div class="modal-content modal-lg">
+        <div class="modal-head">
+          <div>
+            <h3 id="oneonone-edit-modal-title">Editar 1:1</h3>
+            <p class="modal-date" id="oneonone-edit-modal-date"></p>
+          </div>
+          <button class="modal-close" type="button" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="oneonone-form-grid">
+            <div class="form-col">
+              <label class="form-label">Checklist</label>
+              <div class="note-list" id="oneonone-edit-checklist"></div>
+              <div class="note-actions">
+                <button class="btn small ghost" type="button" id="oneonone-edit-checklist-add">
+                  Agregar item
+                </button>
+              </div>
+            </div>
+            <div class="form-col">
+              <label class="form-label">Acuerdos y tareas</label>
+              <div class="note-list" id="oneonone-edit-agreements"></div>
+              <div class="note-actions">
+                <button class="btn small ghost" type="button" id="oneonone-edit-agreements-add">
+                  Agregar acuerdo
+                </button>
+              </div>
+            </div>
+            <div class="form-col">
+              <label class="form-label">Estado de animo</label>
+              <div class="mood-row">
+                <select id="oneonone-edit-mood">
+                  <option value="">Seleccionar</option>
+                  <option value="1">1 · Muy bajo</option>
+                  <option value="2">2 · Bajo</option>
+                  <option value="3">3 · Medio</option>
+                  <option value="4">4 · Alto</option>
+                  <option value="5">5 · Muy alto</option>
+                </select>
+                <span class="mood-label" id="oneonone-edit-mood-label"></span>
+              </div>
+              <label class="form-label">
+                Feedback positivo
+                <textarea id="oneonone-edit-feedback-pos" rows="3"></textarea>
+              </label>
+              <label class="form-label">
+                Feedback negativo
+                <textarea id="oneonone-edit-feedback-neg" rows="3"></textarea>
+              </label>
+              <label class="form-label">
+                Habilidades/Competencias a mejorar.
+                <textarea id="oneonone-edit-growth" rows="3"></textarea>
+              </label>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button class="btn small ghost" type="button" id="oneonone-edit-cancel">Cancelar</button>
+            <button class="btn small" type="button" id="oneonone-edit-save">Guardar cambios</button>
+          </div>
         </div>
       </div>
     </div>
