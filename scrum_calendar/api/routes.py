@@ -3,7 +3,6 @@ import io
 import json
 import re
 import unicodedata
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 import time
 from typing import Dict, List, Optional
@@ -630,7 +629,7 @@ class RetroWSManager:
         self.active: Dict[str, List[WebSocket]] = {}
         self.presence: Dict[str, Dict[WebSocket, dict]] = {}
         # If we don't receive a ping/join for this many seconds, consider the user offline.
-        self.stale_after_seconds = 35.0
+        self.stale_after_seconds = 12.0
 
     async def connect(self, token: str, websocket: WebSocket) -> None:
         await websocket.accept()
@@ -786,7 +785,7 @@ class PokerWSManager:
     def __init__(self) -> None:
         self.active: Dict[str, List[WebSocket]] = {}
         self.presence: Dict[str, Dict[WebSocket, dict]] = {}
-        self.stale_after_seconds = 35.0
+        self.stale_after_seconds = 12.0
 
     def prune(self, token: str) -> None:
         sockets = list(self.active.get(token, []) or [])
@@ -948,37 +947,23 @@ class PokerWSManager:
 
 poker_ws_manager = PokerWSManager()
 
-_NOTIFY_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="scrum-notify")
-
 
 def notify_retro(token: str, payload: dict) -> None:
-    # Fire-and-forget: websocket broadcasts should not hold the HTTP response open.
-    def _run() -> None:
-        try:
-            anyio.from_thread.run(retro_ws_manager.broadcast, token, payload)
-        except RuntimeError:
-            pass
-        except Exception:
-            # Never fail the HTTP request because a websocket broadcast failed.
-            pass
-
+    # Broadcast is bounded (timeouts + parallel sends); safe to run inline.
     try:
-        _NOTIFY_EXECUTOR.submit(_run)
+        anyio.from_thread.run(retro_ws_manager.broadcast, token, payload)
+    except RuntimeError:
+        pass
     except Exception:
+        # Never fail the HTTP request because a websocket broadcast failed.
         pass
 
 
 def notify_poker(token: str, payload: dict) -> None:
-    def _run() -> None:
-        try:
-            anyio.from_thread.run(poker_ws_manager.broadcast, token, payload)
-        except RuntimeError:
-            pass
-        except Exception:
-            pass
-
     try:
-        _NOTIFY_EXECUTOR.submit(_run)
+        anyio.from_thread.run(poker_ws_manager.broadcast, token, payload)
+    except RuntimeError:
+        pass
     except Exception:
         pass
 

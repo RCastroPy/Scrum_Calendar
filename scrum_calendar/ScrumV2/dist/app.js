@@ -422,7 +422,7 @@
       if (socket.readyState === 1) {
         socket.send("ping");
       }
-    }, 15000);
+    }, 5000);
     socket.addEventListener("message", (event) => {
       if (typeof onMessage === "function") {
         let payload = null;
@@ -501,7 +501,7 @@
       if (socket.readyState === 1) {
         socket.send("ping");
       }
-    }, 15000);
+    }, 5000);
     socket.addEventListener("open", () => {
       const pending = window[`__pokerPresencePending_${key}`];
       if (pending) {
