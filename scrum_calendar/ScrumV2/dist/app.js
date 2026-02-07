@@ -10211,6 +10211,29 @@
         items = [];
       }
     }
+    // Presence needs its own polling so "online/offline" reflects mobile lock/unlock quickly,
+    // even when no one is actively joining/leaving (stale heartbeat is computed server-side).
+    if (detailRetro?.id) {
+      const pollKey = "__retroPresencePollId";
+      const timerKey = "__retroPresencePoll";
+      const retroIdStr = String(detailRetro.id);
+      if (window[pollKey] !== retroIdStr) {
+        if (window[timerKey]) {
+          window.clearInterval(window[timerKey]);
+          window[timerKey] = null;
+        }
+        window[pollKey] = retroIdStr;
+        window[timerKey] = window.setInterval(async () => {
+          if (document.hidden) return;
+          try {
+            state.retroPresence = await fetchJson(`/retros/${detailRetro.id}/presence`);
+            renderPresence(state.retroPresence);
+          } catch {
+            // ignore
+          }
+        }, 3000);
+      }
+    }
     if (shareRetro && shareRetro.estado !== "abierta") {
       state.retroPresence = { total: 0, personas: [] };
       renderPresence(state.retroPresence);
