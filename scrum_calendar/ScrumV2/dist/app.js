@@ -12840,9 +12840,21 @@
       filtered.forEach((persona) => {
         const li = document.createElement("li");
         li.className = "poker-user";
-        li.textContent = persona.nombre || "";
+        const name = persona.nombre || "";
+        const label = document.createElement("span");
+        label.textContent = name;
+        const dot = document.createElement("span");
+        const online = persona.online !== false;
+        dot.className = `presence-dot ${online ? "online" : "offline"}`;
+        dot.title = online ? "Conectado" : "Desconectado";
+        li.appendChild(dot);
+        li.appendChild(label);
         if (persona.persona_id && votedIds.has(String(persona.persona_id))) {
-          li.classList.add("is-voted");
+          const badge = document.createElement("span");
+          badge.className = "retro-submitted";
+          badge.textContent = "✅";
+          badge.title = "Voto enviado";
+          li.appendChild(badge);
         }
         connectedList.appendChild(li);
       });
@@ -12978,6 +12990,7 @@
       }
       const origin = window.location.origin;
       const basePath = window.location.pathname.replace(/[^/]+$/, "poker-public.html");
+      // Share a stable link by celula (no token in URL). The public page resolves token internally.
       const shareLink = `${origin}${basePath}?celula_id=${currentSession.celula_id}`;
       shareUrl.value = shareLink;
       shareUrl.readOnly = true;
@@ -13213,8 +13226,8 @@
     };
     const setConnectionStatus = (connected) => {
       if (!connectionStatus) return;
-      connectionStatus.textContent = connected ? "Conectado" : "Desconectado";
-      connectionStatus.dataset.type = connected ? "ok" : "error";
+      connectionStatus.textContent = connected ? "Conectado" : "Conectando...";
+      connectionStatus.dataset.type = connected ? "ok" : "warn";
     };
 
     const params = new URLSearchParams(window.location.search);
@@ -13247,6 +13260,45 @@
         });
         cardsWrap.appendChild(btn);
       });
+    };
+
+    const showClosedUI = () => {
+      if (container && !container.dataset.closedShown) {
+        container.dataset.closedShown = "true";
+      }
+      if (form) {
+        form.classList.add("retro-public-closed");
+        form.querySelectorAll("input, select, textarea, button").forEach((el) => {
+          el.disabled = true;
+        });
+      }
+      if (phaseLabel) {
+        phaseLabel.textContent = "Sesion cerrada";
+        phaseLabel.classList.add("section-alert");
+        phaseLabel.classList.remove("success", "warning", "info");
+        phaseLabel.classList.add("danger");
+      }
+      setConnectionStatus(false);
+      setStatusText("La sesion ha sido cerrada por el SM.", "warn");
+      if (cardsWrap) cardsWrap.classList.add("hidden");
+      renderCards(false);
+      if (authorSelect) {
+        authorSelect.value = "";
+        delete authorSelect.dataset.userChosen;
+        authorSelect.disabled = true;
+      }
+      // Replace content like retro-public so mobile users understand what happened.
+      if (container && !container.dataset.closedBody) {
+        container.dataset.closedBody = "true";
+        container.innerHTML = `
+          <div class="card daily-card">
+            <div class="card-body">
+              <h3>Sesion cerrada</h3>
+              <p>La sesion fue cerrada por el Scrum Master. Puedes cerrar esta ventana.</p>
+            </div>
+          </div>
+        `;
+      }
     };
 
     const updateAuthorAvailability = () => {
@@ -13288,6 +13340,30 @@
           authorSelect.value = "";
         }
         updateAuthorAvailability();
+        // Auto-restore author (phone lock/unlock / refresh) like retro-public.
+        if (celulaParam && !authorSelect.dataset.userChosen && !container.dataset.authorRestored) {
+          container.dataset.authorRestored = "true";
+          try {
+            const restored =
+              window.localStorage.getItem(`poker_public_author_celula_${celulaParam}`) || "";
+            if (restored && Array.from(authorSelect.options).some((opt) => opt.value === restored)) {
+              authorSelect.value = restored;
+              window.setTimeout(() => {
+                try {
+                  authorSelect.dispatchEvent(new Event("change", { bubbles: true }));
+                } catch {
+                  // ignore
+                }
+              }, 0);
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
+      if (info.estado === "cerrada") {
+        showClosedUI();
+        return;
       }
       if (info.estado !== "abierta") {
         if (phaseLabel) phaseLabel.textContent = "Esperando inicio del SM.";
@@ -13318,7 +13394,11 @@
         setStatusText("", "info");
       }
       if (info.fase === "revelado") {
-        if (phaseLabel) phaseLabel.textContent = "Resultados visibles.";
+        if (phaseLabel) {
+          phaseLabel.textContent = "Resultados visibles";
+          phaseLabel.classList.add("section-alert", "info");
+          phaseLabel.classList.remove("success", "warning", "danger");
+        }
         if (cardsWrap) cardsWrap.classList.add("hidden");
         renderCards(false);
         if (form) {
@@ -13331,7 +13411,11 @@
           authorSelect.removeAttribute("disabled");
         }
       } else {
-        if (phaseLabel) phaseLabel.textContent = "Votacion activa.";
+        if (phaseLabel) {
+          phaseLabel.textContent = "Votacion activa";
+          phaseLabel.classList.add("section-alert", "success");
+          phaseLabel.classList.remove("info", "warning", "danger");
+        }
         const hasAuthor = Boolean(authorSelect?.value);
         if (cardsWrap) cardsWrap.classList.toggle("hidden", !hasAuthor);
         renderCards(hasAuthor);
@@ -13355,23 +13439,110 @@
         resolvedToken = info.token;
         applyInfo(info);
         return info;
-      } catch {
+      } catch (err) {
+        if (container?.dataset?.closedShown) {
+          // Do not override closed UI.
+          return null;
+        }
+        // If there's no open session yet, keep the page in "waiting" mode and retry.
+        if (err && typeof err.message === "string" && err.message.includes("{")) {
+          try {
+            const parsed = JSON.parse(err.message);
+            const detail = parsed?.detail;
+            if (
+              typeof detail === "string" &&
+              detail.toLowerCase().includes("sesion") &&
+              detail.toLowerCase().includes("no encontrada")
+            ) {
+              if (phaseLabel) phaseLabel.textContent = "Esperando inicio del SM.";
+              setStatusText("Esperando inicio del SM.", "warn");
+              return null;
+            }
+          } catch {
+            // ignore
+          }
+        }
+        const isTransient = (() => {
+          const name = (err && err.name ? String(err.name) : "").toLowerCase();
+          const msg = (err && err.message ? String(err.message) : "").toLowerCase();
+          return (
+            name.includes("abort") ||
+            msg.includes("abort") ||
+            msg.includes("timeout") ||
+            msg.includes("failed to fetch") ||
+            msg.includes("networkerror") ||
+            msg.includes("xhr error") ||
+            msg.includes("xhr timeout")
+          );
+        })();
+        if (isTransient) {
+          setStatusText("Conectando...", "warn");
+          return null;
+        }
         setStatusText("No se pudo cargar Poker Planning.", "error");
         return null;
       }
     };
 
+    const scheduleRetry = () => {
+      if (window.__pokerPublicRetry) return;
+      window.__pokerPublicRetry = window.setTimeout(() => {
+        window.__pokerPublicRetry = null;
+        initPokerPublic({ skipPolling: true });
+      }, 1200);
+    };
+
     const info = await loadInfo();
-    if (!info) return;
+    if (!info) {
+      if (cardsWrap) cardsWrap.classList.add("hidden");
+      renderCards(false);
+      if (authorSelect) authorSelect.disabled = true;
+      scheduleRetry();
+      return;
+    }
+
+    const submitVoteViaWs = (votePayload) =>
+      new Promise((resolve, reject) => {
+        if (!resolvedToken) return reject(new Error("Link invalido. Falta token."));
+        const socket = window.__pokerSocket_public;
+        if (!socket || socket.readyState !== 1) return reject(new Error("WS no conectado"));
+        const timer = window.setTimeout(() => {
+          if (window.__pokerPublicVotePending?.token === resolvedToken) {
+            window.__pokerPublicVotePending = null;
+          }
+          reject(new Error("WS timeout"));
+        }, 4500);
+        window.__pokerPublicVotePending = { token: resolvedToken, resolve, reject, timer };
+        try {
+          socket.send(JSON.stringify({ type: "submit_vote", vote: votePayload }));
+        } catch (err) {
+          window.clearTimeout(timer);
+          window.__pokerPublicVotePending = null;
+          reject(err);
+        }
+      });
 
     const socket = resolvedToken
       ? ensurePokerSocket(resolvedToken, "public", (payload) => {
-          if (payload?.type === "poker_closed") {
-            if (lastInfo) {
-              lastInfo = { ...lastInfo, estado: "cerrada", fase: "espera" };
-              applyInfo(lastInfo);
+          if (payload?.type === "submit_ack" || payload?.type === "submit_error") {
+            const pending = window.__pokerPublicVotePending;
+            if (pending && pending.token === resolvedToken) {
+              window.__pokerPublicVotePending = null;
+              try {
+                if (pending.timer) window.clearTimeout(pending.timer);
+              } catch {
+                // ignore
+              }
+              if (payload.type === "submit_ack") {
+                pending.resolve(payload.vote || null);
+              } else {
+                pending.reject(new Error(payload.detail || "No se pudo enviar el voto."));
+              }
+              return;
             }
-            setStatusText("Sesion cerrada por el SM.", "warn");
+          }
+          if (payload?.type === "poker_closed") {
+            showClosedUI();
             return;
           }
           if (payload?.type === "claims_updated") {
@@ -13407,13 +13578,7 @@
           loadInfo();
         })
       : null;
-    const handleDisconnect = () => {
-      if (lastInfo?.estado === "cerrada") {
-        setConnectionStatus(false);
-      } else {
-        setConnectionStatus(true);
-      }
-    };
+    const handleDisconnect = () => setConnectionStatus(false);
     if (socket) {
       setConnectionStatus(socket.readyState === 1 || lastInfo?.estado !== "cerrada");
       if (!socket.__boundStatus) {
@@ -13429,6 +13594,7 @@
     if (!skipPolling && !window.__pokerPublicPoll) {
       window.__pokerPublicPoll = window.setInterval(() => {
         if (document.hidden) return;
+        if (container?.dataset?.closedShown) return;
         loadInfo();
       }, 8000);
     }
@@ -13442,6 +13608,13 @@
           if (cardsWrap) cardsWrap.classList.add("hidden");
           renderCards(false);
           delete authorSelect.dataset.userChosen;
+          try {
+            if (celulaParam) {
+              window.localStorage.removeItem(`poker_public_author_celula_${celulaParam}`);
+            }
+          } catch {
+            // ignore
+          }
           if (selectedPersonaId) {
             presenceIds.delete(String(selectedPersonaId));
             if (authorSelect.selectedOptions?.[0]) {
@@ -13488,6 +13661,13 @@
           presenceIds = new Set(claims.map((pid) => String(pid)));
         }
         authorSelect.dataset.userChosen = "true";
+        try {
+          if (celulaParam) {
+            window.localStorage.setItem(`poker_public_author_celula_${celulaParam}`, String(id));
+          }
+        } catch {
+          // ignore
+        }
         if (selectedPersonaId && selectedPersonaId !== id) {
           presenceIds.delete(String(selectedPersonaId));
           if (authorSelect.selectedOptions?.[0]) {
@@ -13532,10 +13712,13 @@
                 setStatusText("Link invalido. Falta token.", "error");
                 return;
               }
-              await postJson(`/poker/public/${resolvedToken}/vote`, {
-                persona_id: personaId,
-                valor: selectedValue,
-              });
+              // Websocket-first: realtime + avoids mobile HTTP stalls.
+              const votePayload = { persona_id: personaId, valor: selectedValue };
+              try {
+                await submitVoteViaWs(votePayload);
+              } catch (wsErr) {
+                await postJson(`/poker/public/${resolvedToken}/vote`, votePayload);
+              }
               const sentValue = selectedValue;
               selectedValue = null;
               const canVote = lastInfo?.estado === "abierta" && lastInfo?.fase !== "revelado";

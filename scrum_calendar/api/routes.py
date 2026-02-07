@@ -1419,6 +1419,102 @@ async def poker_ws(websocket: WebSocket, token: str) -> None:
             elif payload.get("type") == "leave":
                 poker_ws_manager.clear_presence(token, websocket)
                 poker_ws_manager.enqueue(token, poker_ws_manager.build_presence_payload(token))
+            elif payload.get("type") == "submit_vote":
+                # Websocket-first flow for mobile reliability: persist and broadcast in realtime.
+                try:
+                    vote_payload = payload.get("vote") if isinstance(payload.get("vote"), dict) else {}
+
+                    def persist_vote() -> dict:
+                        db = SessionLocal()
+                        try:
+                            sesion = (
+                                db.query(PokerSession)
+                                .filter(PokerSession.token == token)
+                                .first()
+                            )
+                            if not sesion:
+                                raise HTTPException(status_code=404, detail="Sesion no encontrada")
+                            if sesion.estado != "abierta":
+                                raise HTTPException(status_code=403, detail="Sesion cerrada")
+                            if sesion.fase not in {"votacion", "espera"}:
+                                raise HTTPException(status_code=403, detail="Votacion no habilitada")
+
+                            raw_valor = vote_payload.get("valor")
+                            try:
+                                valor = int(raw_valor)
+                            except Exception:
+                                raise HTTPException(status_code=400, detail="Valor invalido")
+                            if valor not in {1, 2, 3, 5, 8, 13, 21}:
+                                raise HTTPException(status_code=400, detail="Valor invalido")
+
+                            raw_persona_id = vote_payload.get("persona_id")
+                            try:
+                                persona_id = int(raw_persona_id)
+                            except Exception:
+                                raise HTTPException(status_code=400, detail="Persona requerida")
+
+                            persona = (
+                                db.query(Persona)
+                                .join(persona_celulas, persona_celulas.c.persona_id == Persona.id)
+                                .filter(
+                                    Persona.id == persona_id,
+                                    persona_celulas.c.celula_id == sesion.celula_id,
+                                    Persona.activo.is_(True),
+                                )
+                                .first()
+                            )
+                            if not persona:
+                                raise HTTPException(status_code=404, detail="Persona no encontrada")
+
+                            vote = (
+                                db.query(PokerVote)
+                                .filter(
+                                    PokerVote.sesion_id == sesion.id,
+                                    PokerVote.persona_id == persona.id,
+                                )
+                                .first()
+                            )
+                            if not vote:
+                                vote = PokerVote(
+                                    sesion_id=sesion.id,
+                                    persona_id=persona.id,
+                                    valor=valor,
+                                )
+                                db.add(vote)
+                            else:
+                                vote.valor = valor
+                            vote.actualizado_en = now_py()
+                            db.commit()
+                            db.refresh(vote)
+                            return {
+                                "session_id": int(sesion.id),
+                                "persona_id": int(vote.persona_id),
+                                "valor": int(vote.valor),
+                            }
+                        finally:
+                            db.close()
+
+                    vote_schema = await asyncio.to_thread(persist_vote)
+                    await poker_ws_manager.send_one(
+                        token,
+                        websocket,
+                        {"type": "submit_ack", "vote": vote_schema},
+                    )
+                    poker_ws_manager.enqueue(
+                        token,
+                        {
+                            "type": "vote_cast",
+                            "session_id": vote_schema["session_id"],
+                            "persona_id": vote_schema["persona_id"],
+                            "valor": vote_schema["valor"],
+                        },
+                    )
+                except HTTPException as err:
+                    await poker_ws_manager.send_one(
+                        token,
+                        websocket,
+                        {"type": "submit_error", "detail": err.detail},
+                    )
     except WebSocketDisconnect:
         poker_ws_manager.disconnect(token, websocket)
         poker_ws_manager.enqueue(token, poker_ws_manager.build_presence_payload(token))
