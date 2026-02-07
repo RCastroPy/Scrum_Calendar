@@ -373,6 +373,20 @@
     const socketKey = `__retroSocket_${key}`;
     const tokenKey = `__retroSocket_${key}_token`;
     const retryKey = `__retroSocketRetry_${key}`;
+    const onMsgKey = `__retroSocketOnMessage_${key}`;
+    const visKey = `__retroSocketVis_${key}`;
+    window[onMsgKey] = onMessage;
+    if (!window[visKey]) {
+      window[visKey] = true;
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) return;
+        const t = window[tokenKey];
+        const cb = window[onMsgKey];
+        if (t && typeof cb === "function") {
+          ensureRetroSocket(t, key, cb);
+        }
+      });
+    }
     const current = window[socketKey];
     const currentToken = window[tokenKey];
     if (current && current.readyState <= 1 && currentToken === token) return;
@@ -418,7 +432,8 @@
       if (document.hidden) return;
       if (window[retryKey]) window.clearTimeout(window[retryKey]);
       window[retryKey] = window.setTimeout(() => {
-        ensureRetroSocket(token, key, onMessage);
+        const cb = window[onMsgKey] || onMessage;
+        ensureRetroSocket(token, key, cb);
       }, 2000);
     });
     socket.addEventListener("error", () => {
@@ -447,6 +462,20 @@
     const socketKey = `__pokerSocket_${key}`;
     const tokenKey = `__pokerSocket_${key}_token`;
     const retryKey = `__pokerSocketRetry_${key}`;
+    const onMsgKey = `__pokerSocketOnMessage_${key}`;
+    const visKey = `__pokerSocketVis_${key}`;
+    window[onMsgKey] = onMessage;
+    if (!window[visKey]) {
+      window[visKey] = true;
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) return;
+        const t = window[tokenKey];
+        const cb = window[onMsgKey];
+        if (t && typeof cb === "function") {
+          ensurePokerSocket(t, key, cb);
+        }
+      });
+    }
     const current = window[socketKey];
     const currentToken = window[tokenKey];
     if (current && current.readyState <= 1 && currentToken === token) return current;
@@ -492,7 +521,8 @@
       if (document.hidden) return;
       if (window[retryKey]) window.clearTimeout(window[retryKey]);
       window[retryKey] = window.setTimeout(() => {
-        ensurePokerSocket(token, key, onMessage);
+        const cb = window[onMsgKey] || onMessage;
+        ensurePokerSocket(token, key, cb);
       }, 2000);
     });
     socket.addEventListener("error", () => {
@@ -10960,7 +10990,28 @@
         });
         fillPersona(authorSelect, "Tu nombre", personas);
         fillPersona(assigneeSelect, "Asignado", personas);
-        if (authorSelect) authorSelect.value = "";
+        if (authorSelect) {
+          let restored = "";
+          try {
+            const k = resolvedToken ? `retro_public_author_${resolvedToken}` : "";
+            restored = k ? window.localStorage.getItem(k) || "" : "";
+          } catch {
+            restored = "";
+          }
+          if (restored && Array.from(authorSelect.options).some((opt) => opt.value === restored)) {
+            authorSelect.value = restored;
+            // Trigger claim + presence (same flow as user interaction).
+            window.setTimeout(() => {
+              try {
+                authorSelect.dispatchEvent(new Event("change", { bubbles: true }));
+              } catch {
+                // ignore
+              }
+            }, 0);
+          } else {
+            authorSelect.value = "";
+          }
+        }
         if (assigneeSelect) assigneeSelect.value = "";
         personasLoaded = true;
       }
@@ -11111,10 +11162,19 @@
       window.__retroPublicPoll = window.setInterval(() => {
         if (document.hidden) return;
         loadRetroInfo();
-      }, 4000);
+      }, 2000);
+    }
+    if (!window.__retroPublicVis) {
+      window.__retroPublicVis = true;
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) {
+          loadRetroInfo();
+        }
+      });
     }
 
-    if (authorSelect) {
+    if (authorSelect && !authorSelect.dataset.boundClaim) {
+      authorSelect.dataset.boundClaim = "true";
       authorSelect.addEventListener("change", () => {
         if (retroInfo) {
           applyRetroInfo(retroInfo);
@@ -11124,12 +11184,18 @@
           setStatusText("Link invalido. Falta token.", "error");
           return;
         }
-        if (!nextId) {
-          if (claimedPersonaId) {
-            fetchWithFallback(`/retros/public/${resolvedToken}/claim/${claimedPersonaId}`, {
-              method: "DELETE",
-            }).catch(() => {});
+        try {
+          const k = `retro_public_author_${resolvedToken}`;
+          if (nextId) {
+            window.localStorage.setItem(k, String(nextId));
+          } else {
+            window.localStorage.removeItem(k);
           }
+        } catch {
+          // ignore storage errors
+        }
+        if (!nextId) {
+          // Keep the claim reserved unless user explicitly changes to another name.
           claimedPersonaId = null;
           updateClaimedOptions();
           emitPresence();
