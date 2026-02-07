@@ -63,7 +63,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.8/css/dataTables.bootstrap5.min.css" crossorigin="anonymous" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-buttons-bs5@2.4.2/css/buttons.bootstrap5.min.css" crossorigin="anonymous" />
     <!--end::Required Plugin(AdminLTE)-->
-    <link rel="stylesheet" href="./styles.css?v=20260207e" />
+    <link rel="stylesheet" href="./styles.css?v=20260207f" />
 
     <!-- apexcharts -->
     <link
@@ -987,13 +987,10 @@
                   <div class="card daily-card">
                     <div class="card-body">
                       <div class="card-head">
-                        <h3>Resumen por sprint</h3>
-                        <p class="daily-subtitle">Conteo de aportes por tipo.</p>
-                        <button class="btn small ghost" type="button" id="retro-close-summary">
-                          Cerrar retros
-                        </button>
+                        <h3>Aportes del sprint</h3>
+                        <p class="daily-subtitle">Bien · Mal · Compromisos</p>
                       </div>
-                      <div class="admin-table" id="retro-summary-table"></div>
+                      <div class="admin-table" id="retro-items-table"></div>
                     </div>
                   </div>
                 </div>
@@ -1002,10 +999,13 @@
                   <div class="card daily-card">
                     <div class="card-body">
                       <div class="card-head">
-                        <h3>Aportes del sprint</h3>
-                        <p class="daily-subtitle">Bien · Mal · Compromisos</p>
+                        <h3>Resumen por sprint</h3>
+                        <p class="daily-subtitle">Conteo de aportes por tipo.</p>
+                        <button class="btn small ghost" type="button" id="retro-close-summary">
+                          Cerrar retros
+                        </button>
                       </div>
-                      <div class="admin-table" id="retro-items-table"></div>
+                      <div class="admin-table" id="retro-summary-table"></div>
                     </div>
                   </div>
                 </div>
@@ -1162,7 +1162,7 @@
     <script src="https://cdn.jsdelivr.net/npm/pdfmake@0.2.7/build/vfs_fonts.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/datatables.net-buttons@2.4.2/js/buttons.html5.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/datatables.net-buttons@2.4.2/js/buttons.print.min.js"></script>
-<script src="./app.js?v=20260207e"></script>
+<script src="./app.js?v=20260207f"></script>
     <!--end::Script-->
   </body>
   <!--end::Body-->

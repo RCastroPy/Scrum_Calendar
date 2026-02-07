@@ -10259,13 +10259,21 @@
       state.retroPresence = { total: 0, personas: [] };
       renderPresence(state.retroPresence);
     }
-    const currentPhase = shareRetro?.fase || currentRetro?.fase || "";
-    const submittedIds = new Set(
-      items
-        .filter((item) => item?.persona_id && item.tipo === currentPhase)
-        .map((item) => String(item.persona_id))
-    );
-    state.retroSubmittedIds = submittedIds;
+    const getActivePhase = () => shareRetro?.fase || currentRetro?.fase || "";
+    const computeSubmittedIds = (phase) =>
+      new Set(
+        items
+          .filter((item) => item?.persona_id && item.tipo === phase)
+          .map((item) => String(item.persona_id))
+      );
+    const syncSubmittedIds = (phase = getActivePhase()) => {
+      if (!phase || phase === "espera" || phase === "compromiso") {
+        state.retroSubmittedIds = new Set();
+        return;
+      }
+      state.retroSubmittedIds = computeSubmittedIds(phase);
+    };
+    syncSubmittedIds();
 
     const updateShareSection = () => {
       if (!shareUrl) return;
@@ -10373,12 +10381,7 @@
               initRetrospective({ skipPolling: true });
               return;
             }
-            const activePhase = shareRetro?.fase || currentRetro?.fase || "";
-            state.retroSubmittedIds = new Set(
-              items
-                .filter((entry) => entry?.persona_id && entry.tipo === activePhase)
-                .map((entry) => String(entry.persona_id))
-            );
+            syncSubmittedIds();
             renderItems();
             renderCommitments();
             renderPresence(state.retroPresence);
@@ -10386,6 +10389,7 @@
           }
         }
         if (payload?.type === "retro_updated" && shareRetro && payload.retro_id === shareRetro.id) {
+          const prevPhase = shareRetro.fase;
           shareRetro = {
             ...shareRetro,
             fase: payload.fase || shareRetro.fase,
@@ -10397,7 +10401,13 @@
           if (shareRetro.estado !== "abierta") {
             state.retroPresence = { total: 0, personas: [] };
             state.retroClaimedIds = new Set();
+            state.retroSubmittedIds = new Set();
             renderPresence(state.retroPresence);
+          }
+          if (prevPhase !== shareRetro.fase) {
+            syncSubmittedIds(shareRetro.fase);
+            renderPresence(state.retroPresence);
+            renderItems();
           }
           updateShareSection();
           updatePhaseControls();
@@ -10497,6 +10507,9 @@
               shareRetro = { ...shareRetro, fase: "bien", estado: "abierta" };
               updateShareSection();
               updatePhaseControls();
+              syncSubmittedIds("bien");
+              renderPresence(state.retroPresence);
+              renderItems();
             }
             await putJson(`/retros/${shareRetro.id}`, { fase: "bien", estado: "abierta" });
             initRetrospective();
@@ -10520,6 +10533,9 @@
               shareRetro = { ...shareRetro, fase: "mal", estado: "abierta" };
               updateShareSection();
               updatePhaseControls();
+              syncSubmittedIds("mal");
+              renderPresence(state.retroPresence);
+              renderItems();
             }
             await putJson(`/retros/${shareRetro.id}`, { fase: "mal", estado: "abierta" });
             initRetrospective();
@@ -10584,55 +10600,142 @@
 
     const renderItems = () => {
       if (!itemsTable) return;
+      const activePhase = getActivePhase();
       const grouped = {
         bien: [],
         mal: [],
         compromiso: [],
       };
       items.forEach((item) => {
-        if (grouped[item.tipo]) {
-          if (item.tipo === "compromiso") {
-            const assigned = item.asignado_id ? personaMap[item.asignado_id] || "" : "";
-            const dateLabel = item.fecha_compromiso ? formatDate(item.fecha_compromiso) : "";
-            const parts = [item.detalle];
-            if (assigned) parts.push(assigned);
-            if (dateLabel) parts.push(dateLabel);
-            grouped[item.tipo].push(parts.join(" · "));
-          } else {
-            grouped[item.tipo].push(item.detalle);
-          }
-        }
+        if (!item || !grouped[item.tipo]) return;
+        grouped[item.tipo].push(item);
       });
-      const cardSpecs = [
-        { key: "bien", title: "Que hicimos bien?", className: "retro-card--good" },
-        { key: "mal", title: "Que pudimos hacer mejor?", className: "retro-card--bad" },
-        { key: "compromiso", title: "Que nos comprometemos?", className: "retro-card--commit" },
-      ];
-      const wrapper = document.createElement("div");
-      wrapper.className = "retro-cards";
-      cardSpecs.forEach((spec) => {
+      ["bien", "mal", "compromiso"].forEach((key) => {
+        grouped[key] = grouped[key].slice().sort((a, b) => (a.id || 0) - (b.id || 0));
+      });
+
+      const makeCard = ({ title, className, bodyNode }) => {
         const card = document.createElement("div");
-        card.className = `retro-card ${spec.className}`;
-        const title = document.createElement("h4");
-        title.textContent = spec.title;
-        const list = document.createElement("ul");
-        const entries = grouped[spec.key];
+        card.className = `retro-card ${className}`;
+        const h = document.createElement("h4");
+        h.textContent = title;
+        card.appendChild(h);
+        card.appendChild(bodyNode);
+        return card;
+      };
+
+      const buildMiniList = (entries) => {
+        const list = document.createElement("ol");
+        list.className = "retro-mini-list";
         if (!entries.length) {
           const empty = document.createElement("li");
           empty.className = "empty";
           empty.textContent = "Sin aportes.";
           list.appendChild(empty);
-        } else {
-          entries.forEach((text) => {
-            const li = document.createElement("li");
-            li.textContent = text;
-            list.appendChild(li);
-          });
+          return list;
         }
-        card.appendChild(title);
-        card.appendChild(list);
-        wrapper.appendChild(card);
-      });
+        entries.forEach((entry) => {
+          const li = document.createElement("li");
+          const author = entry.persona_id ? personaMap[entry.persona_id] || "" : "";
+          li.textContent = author ? `${author}: ${entry.detalle}` : entry.detalle;
+          list.appendChild(li);
+        });
+        return list;
+      };
+
+      const buildCardGrid = (entries) => {
+        const grid = document.createElement("div");
+        grid.className = "retro-item-grid";
+        if (!entries.length) {
+          const empty = document.createElement("p");
+          empty.className = "empty";
+          empty.textContent = "Sin aportes.";
+          grid.appendChild(empty);
+          return grid;
+        }
+        entries.forEach((entry) => {
+          const card = document.createElement("div");
+          card.className = "retro-item-card";
+          const meta = document.createElement("div");
+          meta.className = "retro-item-meta";
+          const author = document.createElement("strong");
+          author.textContent = entry.persona_id ? personaMap[entry.persona_id] || "Usuario" : "Usuario";
+          const seq = document.createElement("span");
+          seq.textContent = entry.id ? `#${entry.id}` : "";
+          meta.appendChild(author);
+          meta.appendChild(seq);
+          const body = document.createElement("div");
+          body.className = "retro-item-body";
+          body.textContent = entry.detalle || "";
+          card.appendChild(meta);
+          card.appendChild(body);
+          grid.appendChild(card);
+        });
+        return grid;
+      };
+
+      const wrapper = document.createElement("div");
+      if (activePhase === "mal") {
+        wrapper.className = "retro-focus is-mal";
+        const main = document.createElement("div");
+        main.className = "retro-focus-main";
+        main.appendChild(
+          makeCard({
+            title: "Que pudimos hacer mejor?",
+            className: "retro-card--bad",
+            bodyNode: buildCardGrid(grouped.mal),
+          })
+        );
+        const side = document.createElement("div");
+        side.className = "retro-focus-side";
+        side.appendChild(
+          makeCard({
+            title: "Que hicimos bien? (resumen)",
+            className: "retro-card--good",
+            bodyNode: buildMiniList(grouped.bien),
+          })
+        );
+        wrapper.appendChild(main);
+        wrapper.appendChild(side);
+      } else if (activePhase === "bien") {
+        wrapper.className = "retro-focus is-bien";
+        const main = document.createElement("div");
+        main.className = "retro-focus-main";
+        main.appendChild(
+          makeCard({
+            title: "Que hicimos bien?",
+            className: "retro-card--good",
+            bodyNode: buildCardGrid(grouped.bien),
+          })
+        );
+        const side = document.createElement("div");
+        side.className = "retro-focus-side";
+        side.appendChild(
+          makeCard({
+            title: "Que pudimos hacer mejor? (pendiente)",
+            className: "retro-card--bad",
+            bodyNode: buildMiniList(grouped.mal),
+          })
+        );
+        wrapper.appendChild(main);
+        wrapper.appendChild(side);
+      } else {
+        wrapper.className = "retro-cards";
+        wrapper.appendChild(
+          makeCard({
+            title: "Que hicimos bien? (lista)",
+            className: "retro-card--good",
+            bodyNode: buildMiniList(grouped.bien),
+          })
+        );
+        wrapper.appendChild(
+          makeCard({
+            title: "Que pudimos hacer mejor? (lista)",
+            className: "retro-card--bad",
+            bodyNode: buildMiniList(grouped.mal),
+          })
+        );
+      }
       itemsTable.innerHTML = "";
       itemsTable.appendChild(wrapper);
     };

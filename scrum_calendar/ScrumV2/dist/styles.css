@@ -1791,6 +1791,89 @@ body.qr-zoomed::before {
   color: var(--ink);
 }
 
+.retro-focus {
+  display: grid;
+  gap: 16px;
+}
+
+.retro-focus.is-bien {
+  grid-template-columns: minmax(0, 4fr) minmax(220px, 1fr);
+  align-items: start;
+}
+
+.retro-focus.is-mal {
+  grid-template-columns: minmax(0, 4fr) minmax(220px, 1fr);
+  align-items: start;
+}
+
+@media (max-width: 992px) {
+  .retro-focus.is-bien {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .retro-focus.is-mal {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.retro-focus-main {
+  min-width: 0;
+}
+
+.retro-focus-side {
+  min-width: 0;
+  opacity: 0.95;
+}
+
+.retro-item-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.retro-item-card {
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(10, 14, 18, 0.5);
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.retro-item-meta {
+  font-size: 0.8rem;
+  color: var(--muted);
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.retro-item-meta strong {
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 0.82rem;
+}
+
+.retro-item-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.retro-mini-list {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: var(--ink);
+  display: grid;
+  gap: 6px;
+}
+
+.retro-mini-list li {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
 .retro-card--good {
   border-color: rgba(57, 255, 20, 0.4);
   background: rgba(57, 255, 20, 0.08);
