@@ -103,7 +103,7 @@ from core.calendar_engine import dias_habiles
 from core.metrics import porcentaje_capacidad
 from core.sprint_capacity import clasificar_estado
 from core.security import hash_password, new_session_token, verify_password
-from data.db import get_db
+from data.db import SessionLocal, get_db
 from data.models import (
     Celula,
     Evento,
@@ -1104,6 +1104,7 @@ def obtener_retro_presencia(
 
 @router.websocket("/ws/retros/{token}")
 async def retro_ws(websocket: WebSocket, token: str) -> None:
+    db = SessionLocal()
     await retro_ws_manager.connect(token, websocket)
     await retro_ws_manager.broadcast_presence(token)
     try:
@@ -1132,6 +1133,94 @@ async def retro_ws(websocket: WebSocket, token: str) -> None:
                     },
                 )
                 await retro_ws_manager.broadcast_presence(token)
+            elif payload.get("type") == "submit_item":
+                # Websocket-first flow for mobile reliability: persist and broadcast in realtime.
+                try:
+                    retro = db.query(Retrospective).filter(Retrospective.token == token).first()
+                    if not retro:
+                        await websocket.send_json(
+                            {"type": "submit_error", "detail": "Retrospectiva no encontrada"}
+                        )
+                        continue
+                    if retro.estado != "abierta":
+                        await websocket.send_json(
+                            {"type": "submit_error", "detail": "Retrospectiva cerrada"}
+                        )
+                        continue
+                    if retro.fase not in {"bien", "mal"}:
+                        await websocket.send_json(
+                            {"type": "submit_error", "detail": "Esperando inicio del SM"}
+                        )
+                        continue
+                    item_payload = payload.get("item") if isinstance(payload.get("item"), dict) else {}
+                    tipo = normalize_retro_tipo(item_payload.get("tipo"))
+                    if tipo == "compromiso":
+                        await websocket.send_json(
+                            {"type": "submit_error", "detail": "Compromisos solo SM"}
+                        )
+                        continue
+                    if retro.fase != tipo:
+                        await websocket.send_json(
+                            {"type": "submit_error", "detail": "Fase actual distinta"}
+                        )
+                        continue
+                    detalle = (item_payload.get("detalle") or "").strip()
+                    if not detalle:
+                        await websocket.send_json(
+                            {"type": "submit_error", "detail": "Detalle requerido"}
+                        )
+                        continue
+                    persona_id = item_payload.get("persona_id")
+                    if persona_id is None:
+                        await websocket.send_json(
+                            {"type": "submit_error", "detail": "Persona requerida"}
+                        )
+                        continue
+                    persona = (
+                        db.query(Persona)
+                        .join(persona_celulas, persona_celulas.c.persona_id == Persona.id)
+                        .filter(
+                            Persona.id == int(persona_id),
+                            persona_celulas.c.celula_id == retro.celula_id,
+                            Persona.activo.is_(True),
+                        )
+                        .first()
+                    )
+                    if not persona:
+                        await websocket.send_json(
+                            {"type": "submit_error", "detail": "Persona no encontrada"}
+                        )
+                        continue
+                    item = RetrospectiveItem(
+                        retro_id=retro.id,
+                        tipo=tipo,
+                        detalle=detalle,
+                        persona_id=persona.id,
+                        estado="pendiente",
+                    )
+                    db.add(item)
+                    try:
+                        db.commit()
+                    except IntegrityError:
+                        db.rollback()
+                        await websocket.send_json(
+                            {"type": "submit_error", "detail": "No se pudo guardar"}
+                        )
+                        continue
+                    db.refresh(item)
+                    item_schema = retro_item_to_schema(item)
+                    # Ack the sender quickly, then broadcast to everyone.
+                    await websocket.send_json({"type": "submit_ack", "item": item_schema})
+                    notify_retro(
+                        retro.token,
+                        {
+                            "type": "item_added",
+                            "retro_id": retro.id,
+                            "item": item_schema,
+                        },
+                    )
+                except HTTPException as err:
+                    await websocket.send_json({"type": "submit_error", "detail": err.detail})
             elif payload.get("type") == "leave":
                 retro_ws_manager.clear_presence(token, websocket)
                 await retro_ws_manager.broadcast_presence(token)
@@ -1141,6 +1230,8 @@ async def retro_ws(websocket: WebSocket, token: str) -> None:
     except Exception:
         retro_ws_manager.disconnect(token, websocket)
         await retro_ws_manager.broadcast_presence(token)
+    finally:
+        db.close()
 
 
 @router.websocket("/ws/poker/{token}")
@@ -1703,7 +1794,6 @@ def obtener_retro_publico_por_sprint(
         .filter(
             Retrospective.celula_id == celula_id,
             Retrospective.sprint_id == sprint_id,
-            Retrospective.estado == "abierta",
         )
         .order_by(Retrospective.actualizado_en.desc())
         .first()

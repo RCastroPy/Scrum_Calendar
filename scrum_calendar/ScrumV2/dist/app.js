@@ -10289,7 +10289,11 @@
       }
       const origin = window.location.origin;
       const basePath = window.location.pathname.replace(/[^/]+$/, "retro-public.html");
-      const shareLink = `${origin}${basePath}?celula_id=${shareRetro.celula_id}&sprint_id=${shareRetro.sprint_id}`;
+      // Include token so the public page can always resolve the session even if it's closed
+      // (celula+sprint endpoint only returns abierta).
+      const shareLink = `${origin}${basePath}?token=${encodeURIComponent(
+        shareRetro.token
+      )}&celula_id=${shareRetro.celula_id}&sprint_id=${shareRetro.sprint_id}`;
       shareUrl.value = shareLink;
       shareUrl.readOnly = true;
       if (shareQr) {
@@ -11162,6 +11166,23 @@
 
     const handleRealtimeEvent = (payload) => {
       if (!payload) return;
+      if (payload.type === "submit_ack" || payload.type === "submit_error") {
+        const pending = window.__retroPublicSubmitPending;
+        if (pending && pending.token === resolvedToken) {
+          window.__retroPublicSubmitPending = null;
+          try {
+            if (pending.timer) window.clearTimeout(pending.timer);
+          } catch {
+            // ignore
+          }
+          if (payload.type === "submit_ack") {
+            pending.resolve(payload.item || null);
+          } else {
+            pending.reject(new Error(payload.detail || "No se pudo guardar."));
+          }
+          return;
+        }
+      }
       if (payload.type === "retro_closed") {
         if (form) form.classList.add("retro-public-closed");
         if (form) {
@@ -11205,6 +11226,27 @@
       }
       loadRetroInfo();
     };
+
+    const submitItemViaWs = (itemPayload) =>
+      new Promise((resolve, reject) => {
+        if (!resolvedToken) return reject(new Error("Link invalido. Falta token."));
+        const socket = window.__retroSocket_public;
+        if (!socket || socket.readyState !== 1) return reject(new Error("WS no conectado"));
+        const timer = window.setTimeout(() => {
+          if (window.__retroPublicSubmitPending?.token === resolvedToken) {
+            window.__retroPublicSubmitPending = null;
+          }
+          reject(new Error("WS timeout"));
+        }, 4500);
+        window.__retroPublicSubmitPending = { token: resolvedToken, resolve, reject, timer };
+        try {
+          socket.send(JSON.stringify({ type: "submit_item", item: itemPayload }));
+        } catch (err) {
+          window.clearTimeout(timer);
+          window.__retroPublicSubmitPending = null;
+          reject(err);
+        }
+      });
 
     const loadRetroInfo = async () => {
       try {
@@ -11370,7 +11412,13 @@
                 return;
               }
               window.__retroPublicSubmitting = true;
-              await postJson(`/retros/public/${resolvedToken}/items`, payload);
+              // Websocket-first: it's the only way to make this truly realtime and avoid mobile HTTP stalls.
+              // Fallback to HTTP if WS isn't available.
+              try {
+                await submitItemViaWs(payload);
+              } catch (wsErr) {
+                await postJson(`/retros/public/${resolvedToken}/items`, payload);
+              }
               if (detailInput) detailInput.value = "";
               if (assigneeSelect) assigneeSelect.value = "";
               if (dueInput) dueInput.value = "";
