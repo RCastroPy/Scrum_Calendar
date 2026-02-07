@@ -11041,8 +11041,19 @@
             el.disabled = true;
           });
         }
-        setPhaseLabel("closed", "Retro cerrada");
-        setStatusText("Retro cerrada por el SM.", "warn");
+        setPhaseLabel("closed", "Sesion cerrada");
+        setStatusText("La sesion ha sido cerrada por el SM.", "warn");
+        if (container && !container.dataset.closedShown) {
+          container.dataset.closedShown = "true";
+          container.innerHTML = `
+            <div class="card daily-card">
+              <div class="card-body">
+                <h3>Sesion cerrada</h3>
+                <p>La sesion fue cerrada por el Scrum Master. Puedes cerrar esta ventana.</p>
+              </div>
+            </div>
+          `;
+        }
         return;
       }
 
