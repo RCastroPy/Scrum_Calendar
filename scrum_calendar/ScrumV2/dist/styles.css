@@ -1806,11 +1806,19 @@ body.qr-zoomed::before {
   align-items: start;
 }
 
+.retro-focus.is-closed {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+}
+
 @media (max-width: 992px) {
   .retro-focus.is-bien {
     grid-template-columns: minmax(0, 1fr);
   }
   .retro-focus.is-mal {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .retro-focus.is-closed {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -4675,6 +4683,10 @@ body.theme-dark .tasks-report-list li {
 }
 
 /* Notion-ish: compact toolbar + filter panel + table look */
+.section.tasks {
+  position: relative;
+}
+
 .tasks-toolbar label.form-label {
   font-size: 0.75rem;
   color: rgba(0, 0, 0, 0.55);
@@ -4689,6 +4701,20 @@ body.theme-dark .tasks-toolbar label.form-label {
 }
 body.theme-dark .tasks-filter-panel .card {
   border-color: rgba(255, 255, 255, 0.14);
+}
+
+.tasks-columns-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: min(420px, 96vw);
+  z-index: 40;
+}
+.tasks-columns-panel .card {
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.18);
+}
+body.theme-dark .tasks-columns-panel .card {
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
 }
 
 .tasks-filter-chips {
@@ -4742,7 +4768,7 @@ body.theme-dark .tasks-notion-wrap {
 
 .tasks-notion-table {
   width: max-content;
-  min-width: 100%;
+  min-width: max-content;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 13px;

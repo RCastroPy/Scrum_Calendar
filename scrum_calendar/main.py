@@ -109,6 +109,9 @@ def healthcheck():
 @app.on_event("startup")
 def startup():
     Base.metadata.create_all(bind=engine)
+    # Test suite uses SQLite; these lightweight "migrations" are Postgres-specific.
+    if getattr(engine.dialect, "name", "") != "postgresql":
+        return
     with engine.begin() as conn:
         columns = conn.execute(
             text(

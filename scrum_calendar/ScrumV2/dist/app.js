@@ -8678,6 +8678,28 @@
         if (!columnsPanel) return;
         const next = open ?? columnsPanel.classList.contains("hidden");
         columnsPanel.classList.toggle("hidden", !next);
+        if (!next) return;
+        // Position as a Notion-style popover anchored to the "Columnas" button.
+        if (!columnsBtn) return;
+        window.requestAnimationFrame(() => {
+          try {
+            const rootRect = root.getBoundingClientRect();
+            const btnRect = columnsBtn.getBoundingClientRect();
+            const panelRect = columnsPanel.getBoundingClientRect();
+            const gap = 8;
+            const desiredTop = btnRect.bottom - rootRect.top + gap;
+            const desiredLeft = btnRect.left - rootRect.left;
+            const maxLeft = Math.max(gap, rootRect.width - panelRect.width - gap);
+            const maxTop = Math.max(gap, rootRect.height - panelRect.height - gap);
+            const left = Math.max(gap, Math.min(desiredLeft, maxLeft));
+            const top = Math.max(gap, Math.min(desiredTop, maxTop));
+            columnsPanel.style.left = `${Math.round(left)}px`;
+            columnsPanel.style.top = `${Math.round(top)}px`;
+            columnsPanel.style.right = "auto";
+          } catch {
+            // ignore positioning errors
+          }
+        });
       };
 
       if (filtersBtn && !filtersBtn.dataset.bound) {
@@ -8820,6 +8842,20 @@
           state.tasksColumnsConfig = { ...cfg, hidden };
           saveColumnsConfig();
           renderAll();
+        });
+      }
+
+      if (!state.tasksColumnsOutsideBound) {
+        state.tasksColumnsOutsideBound = true;
+        document.addEventListener("click", (event) => {
+          if (!columnsPanel || columnsPanel.classList.contains("hidden")) return;
+          if (columnsPanel.contains(event.target)) return;
+          if (columnsBtn && columnsBtn.contains(event.target)) return;
+          toggleColumnsPanel(false);
+        });
+        window.addEventListener("resize", () => {
+          if (!columnsPanel || columnsPanel.classList.contains("hidden")) return;
+          toggleColumnsPanel(true);
         });
       }
 
@@ -10122,6 +10158,21 @@
         commitmentFields.classList.toggle("hidden", pendingValues.tipo !== "compromiso");
       }
     }
+    if (!pendingValues && tipoSelect) {
+      const lastTipo = state.retroLastTipo;
+      if (
+        lastTipo &&
+        Array.from(tipoSelect.options || []).some((opt) => opt && String(opt.value) === String(lastTipo))
+      ) {
+        tipoSelect.value = lastTipo;
+        if (commitmentFields) {
+          commitmentFields.classList.toggle("hidden", lastTipo !== "compromiso");
+        }
+      } else if (tipoSelect.value) {
+        // Seed once so resetForm can restore it consistently.
+        state.retroLastTipo = tipoSelect.value;
+      }
+    }
 
     const sprintId = Number(sprintSelect?.value || state.selectedSprintId || 0);
     if (!skipPolling && !window.__retroAdminPoll) {
@@ -10260,6 +10311,7 @@
       renderPresence(state.retroPresence);
     }
     const getActivePhase = () => shareRetro?.fase || currentRetro?.fase || "";
+    const getActiveEstado = () => shareRetro?.estado || currentRetro?.estado || "";
     const computeSubmittedIds = (phase) =>
       new Set(
         items
@@ -10267,6 +10319,10 @@
           .map((item) => String(item.persona_id))
       );
     const syncSubmittedIds = (phase = getActivePhase()) => {
+      if (getActiveEstado() === "cerrada") {
+        state.retroSubmittedIds = new Set();
+        return;
+      }
       if (!phase || phase === "espera" || phase === "compromiso") {
         state.retroSubmittedIds = new Set();
         return;
@@ -10405,6 +10461,11 @@
             renderPresence(state.retroPresence);
           }
           if (prevPhase !== shareRetro.fase) {
+            if (shareRetro.fase === "bien" || shareRetro.fase === "mal") {
+              state.retroLastTipo = shareRetro.fase;
+              if (tipoSelect) tipoSelect.value = shareRetro.fase;
+              if (commitmentFields) commitmentFields.classList.add("hidden");
+            }
             syncSubmittedIds(shareRetro.fase);
             renderPresence(state.retroPresence);
             renderItems();
@@ -10505,6 +10566,9 @@
           async () => {
             if (shareRetro) {
               shareRetro = { ...shareRetro, fase: "bien", estado: "abierta" };
+              state.retroLastTipo = "bien";
+              if (tipoSelect) tipoSelect.value = "bien";
+              if (commitmentFields) commitmentFields.classList.add("hidden");
               updateShareSection();
               updatePhaseControls();
               syncSubmittedIds("bien");
@@ -10531,6 +10595,9 @@
           async () => {
             if (shareRetro) {
               shareRetro = { ...shareRetro, fase: "mal", estado: "abierta" };
+              state.retroLastTipo = "mal";
+              if (tipoSelect) tipoSelect.value = "mal";
+              if (commitmentFields) commitmentFields.classList.add("hidden");
               updateShareSection();
               updatePhaseControls();
               syncSubmittedIds("mal");
@@ -10624,7 +10691,8 @@
         return card;
       };
 
-      const buildMiniList = (entries) => {
+      const buildMiniList = (entries, opts = {}) => {
+        const showAuthor = opts.showAuthor !== false;
         const list = document.createElement("ol");
         list.className = "retro-mini-list";
         if (!entries.length) {
@@ -10636,8 +10704,12 @@
         }
         entries.forEach((entry) => {
           const li = document.createElement("li");
-          const author = entry.persona_id ? personaMap[entry.persona_id] || "" : "";
-          li.textContent = author ? `${author}: ${entry.detalle}` : entry.detalle;
+          if (showAuthor) {
+            const author = entry.persona_id ? personaMap[entry.persona_id] || "" : "";
+            li.textContent = author ? `${author}: ${entry.detalle}` : entry.detalle;
+          } else {
+            li.textContent = entry.detalle || "";
+          }
           list.appendChild(li);
         });
         return list;
@@ -10675,7 +10747,29 @@
       };
 
       const wrapper = document.createElement("div");
-      if (activePhase === "mal") {
+      if (getActiveEstado() === "cerrada") {
+        wrapper.className = "retro-focus is-closed";
+        const left = document.createElement("div");
+        left.className = "retro-focus-half";
+        left.appendChild(
+          makeCard({
+            title: "Que hicimos bien? (lista)",
+            className: "retro-card--good",
+            bodyNode: buildMiniList(grouped.bien, { showAuthor: false }),
+          })
+        );
+        const right = document.createElement("div");
+        right.className = "retro-focus-half";
+        right.appendChild(
+          makeCard({
+            title: "Que pudimos hacer mejor? (lista)",
+            className: "retro-card--bad",
+            bodyNode: buildMiniList(grouped.mal, { showAuthor: false }),
+          })
+        );
+        wrapper.appendChild(left);
+        wrapper.appendChild(right);
+      } else if (activePhase === "mal") {
         wrapper.className = "retro-focus is-mal";
         const main = document.createElement("div");
         main.className = "retro-focus-main";
@@ -10692,7 +10786,7 @@
           makeCard({
             title: "Que hicimos bien? (resumen)",
             className: "retro-card--good",
-            bodyNode: buildMiniList(grouped.bien),
+            bodyNode: buildMiniList(grouped.bien, { showAuthor: false }),
           })
         );
         wrapper.appendChild(main);
@@ -10714,7 +10808,7 @@
           makeCard({
             title: "Que pudimos hacer mejor? (pendiente)",
             className: "retro-card--bad",
-            bodyNode: buildMiniList(grouped.mal),
+            bodyNode: buildMiniList(grouped.mal, { showAuthor: false }),
           })
         );
         wrapper.appendChild(main);
@@ -10745,8 +10839,9 @@
       if (authorSelect) authorSelect.value = "";
       if (assigneeSelect) assigneeSelect.value = "";
       if (dueInput) dueInput.value = "";
-      if (tipoSelect) tipoSelect.value = "bien";
-      if (commitmentFields) commitmentFields.classList.add("hidden");
+      const lastTipo = state.retroLastTipo || tipoSelect?.value || "bien";
+      if (tipoSelect) tipoSelect.value = lastTipo;
+      if (commitmentFields) commitmentFields.classList.toggle("hidden", lastTipo !== "compromiso");
       if (form) {
         form.dataset.editId = "";
         form.dataset.retroId = "";
@@ -10932,6 +11027,7 @@
       tipoSelect.dataset.bound = "true";
       tipoSelect.addEventListener("change", () => {
         const isCommitment = tipoSelect.value === "compromiso";
+        state.retroLastTipo = tipoSelect.value || state.retroLastTipo || "bien";
         if (commitmentFields) {
           commitmentFields.classList.toggle("hidden", !isCommitment);
         }
@@ -11014,6 +11110,8 @@
                 await postJson(`/retros/${retroId}/items`, payload);
                 setRetroStatus("Item agregado.", "ok");
               }
+              // Keep the last selected type after saving (Notion-like: keep user context).
+              state.retroLastTipo = tipo;
               resetForm();
               initRetrospective();
             } catch (err) {
