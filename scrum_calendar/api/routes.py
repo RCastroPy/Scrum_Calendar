@@ -2559,7 +2559,16 @@ def listar_sprint_items(
     sprint_id: Optional[int] = None,
     db: Session = Depends(get_db),
 ):
-    query = db.query(ReleaseItem).order_by(ReleaseItem.creado_en.desc())
+    # Sprint items are stored in ReleaseItem with release_tipo="tarea".
+    # Filter out non-sprint records (e.g. releases) to keep the response shape consistent.
+    query = (
+        db.query(ReleaseItem)
+        .filter(
+            ReleaseItem.release_tipo == "tarea",
+            ReleaseItem.sprint_id.isnot(None),
+        )
+        .order_by(ReleaseItem.creado_en.desc())
+    )
     if celula_id is not None:
         query = query.filter(ReleaseItem.celula_id == celula_id)
     if sprint_id is not None:
@@ -2572,7 +2581,14 @@ def listar_import_sprint_items(
     celula_id: Optional[int] = None,
     db: Session = Depends(get_db),
 ):
-    query = db.query(ReleaseImportItem).order_by(ReleaseImportItem.creado_en.desc())
+    query = (
+        db.query(ReleaseImportItem)
+        .filter(
+            ReleaseImportItem.release_tipo == "tarea",
+            ReleaseImportItem.sprint_id.isnot(None),
+        )
+        .order_by(ReleaseImportItem.creado_en.desc())
+    )
     if celula_id is not None:
         query = query.filter(ReleaseImportItem.celula_id == celula_id)
     return query.all()
@@ -3179,13 +3195,22 @@ def eliminar_sprint_items(
 ):
     total = (
         db.query(ReleaseItem)
-        .filter(ReleaseItem.celula_id == celula_id)
+        .filter(
+            ReleaseItem.celula_id == celula_id,
+            ReleaseItem.release_tipo == "tarea",
+        )
         .count()
     )
-    db.query(ReleaseItem).filter(ReleaseItem.celula_id == celula_id).delete(
+    db.query(ReleaseItem).filter(
+        ReleaseItem.celula_id == celula_id,
+        ReleaseItem.release_tipo == "tarea",
+    ).delete(
         synchronize_session=False
     )
-    db.query(ReleaseImportItem).filter(ReleaseImportItem.celula_id == celula_id).delete(
+    db.query(ReleaseImportItem).filter(
+        ReleaseImportItem.celula_id == celula_id,
+        ReleaseImportItem.release_tipo == "tarea",
+    ).delete(
         synchronize_session=False
     )
     db.commit()
