@@ -13088,7 +13088,7 @@
     );
 
     renderAdminTable(
-      qs("#admin-eventos-tipo"),
+      qs("#admin-eventos-tipo") || qs("#admin-tipos"),
       tiposBuscados,
       [
         { key: "_index", label: "#" },
