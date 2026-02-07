@@ -12,12 +12,15 @@
   );
   let API_BASE = `http://${API_HOSTS[0]}:8000`;
   const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+  const DEFAULT_HTTP_TIMEOUT_MS = 4500;
+  const DEFAULT_HTTP_RETRIES = 2;
 
   const xhrRequest = (url, options = {}) =>
     new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open(options.method || "GET", url, true);
       xhr.withCredentials = true;
+      xhr.timeout = options.timeoutMs || DEFAULT_HTTP_TIMEOUT_MS;
       const headers = options.headers || {};
       Object.entries(headers).forEach(([key, value]) => {
         if (value !== undefined) {
@@ -34,23 +37,41 @@
         resolve(response);
       };
       xhr.onerror = () => reject(new Error("XHR error"));
+      xhr.ontimeout = () => reject(new Error("XHR timeout"));
       xhr.send(options.body || null);
     });
+
+  const fetchRequest = async (url, options = {}) => {
+    const timeoutMs = options.timeoutMs || DEFAULT_HTTP_TIMEOUT_MS;
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timer = controller
+      ? window.setTimeout(() => controller.abort(), timeoutMs)
+      : null;
+    try {
+      const { timeoutMs: _timeoutMs, ...rest } = options || {};
+      return await fetch(url, controller ? { ...rest, signal: controller.signal } : rest);
+    } finally {
+      if (timer) window.clearTimeout(timer);
+    }
+  };
 
   const fetchWithFallback = async (path, options) => {
     let lastError;
     for (const host of API_HOSTS) {
       const base = `http://${host}:8000`;
-      try {
-        const mergedOptions = { credentials: "include", ...options };
-        const useFetch = !isSafari || (window.location.port === "8000" && host === window.location.hostname);
-        const res = useFetch
-          ? await fetch(`${base}${path}`, mergedOptions)
-          : await xhrRequest(`${base}${path}`, mergedOptions);
-        API_BASE = base;
-        return res;
-      } catch (err) {
-        lastError = err;
+      for (let attempt = 0; attempt < DEFAULT_HTTP_RETRIES; attempt += 1) {
+        try {
+          const mergedOptions = { credentials: "include", cache: "no-store", ...options };
+          const useFetch =
+            !isSafari || (window.location.port === "8000" && host === window.location.hostname);
+          const res = useFetch
+            ? await fetchRequest(`${base}${path}`, mergedOptions)
+            : await xhrRequest(`${base}${path}`, mergedOptions);
+          API_BASE = base;
+          return res;
+        } catch (err) {
+          lastError = err;
+        }
       }
     }
     throw lastError;
