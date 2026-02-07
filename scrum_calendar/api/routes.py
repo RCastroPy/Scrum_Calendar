@@ -8,6 +8,7 @@ import time
 from typing import Dict, List, Optional
 from zoneinfo import ZoneInfo
 
+import asyncio
 import anyio
 from fastapi.encoders import jsonable_encoder
 from fastapi import (
@@ -630,11 +631,17 @@ class RetroWSManager:
         self.presence: Dict[str, Dict[WebSocket, dict]] = {}
         # If we don't receive a ping/join for this many seconds, consider the user offline.
         self.stale_after_seconds = 12.0
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._queues: Dict[str, "asyncio.Queue[dict]"] = {}
+        self._workers: Dict[str, asyncio.Task] = {}
 
     async def connect(self, token: str, websocket: WebSocket) -> None:
+        if self._loop is None:
+            self._loop = asyncio.get_running_loop()
         await websocket.accept()
         self.active.setdefault(token, []).append(websocket)
         self.presence.setdefault(token, {})
+        self._ensure_worker(token)
 
     def disconnect(self, token: str, websocket: WebSocket) -> None:
         sockets = self.active.get(token, [])
@@ -650,6 +657,64 @@ class RetroWSManager:
             now = time.time()
             meta["last_seen_ts"] = now
             meta["last_seen"] = datetime.utcfromtimestamp(now).isoformat()
+
+    def enqueue(self, token: str, payload: dict) -> None:
+        """
+        Enqueue a broadcast from sync HTTP handlers without blocking them on WS writes.
+        """
+        if not token or not isinstance(payload, dict):
+            return
+        if self._loop is None:
+            # Allow calling from both sync handlers (threadpool) and async WS handlers.
+            try:
+                self._loop = asyncio.get_running_loop()
+            except RuntimeError:
+                return
+        self._ensure_worker(token)
+        queue = self._queues.get(token)
+        if not queue:
+            return
+        try:
+            self._loop.call_soon_threadsafe(queue.put_nowait, payload)
+        except Exception:
+            pass
+
+    def _ensure_worker(self, token: str) -> None:
+        if not token or self._loop is None:
+            return
+        if token in self._workers and not self._workers[token].done():
+            return
+        queue = self._queues.get(token)
+        if queue is None:
+            queue = asyncio.Queue(maxsize=200)
+            self._queues[token] = queue
+        self._workers[token] = self._loop.create_task(self._worker(token))
+
+    async def _worker(self, token: str) -> None:
+        queue = self._queues.get(token)
+        if queue is None:
+            return
+        try:
+            while True:
+                payload = await queue.get()
+                sockets = list(self.active.get(token, []) or [])
+                if not sockets:
+                    continue
+                await self._broadcast_now(token, sockets, payload)
+        except Exception:
+            # Never crash the app because the WS worker failed.
+            return
+
+    async def _broadcast_now(self, token: str, sockets: List[WebSocket], payload: dict) -> None:
+        async def safe_send(ws: WebSocket) -> None:
+            try:
+                await asyncio.wait_for(ws.send_json(payload), timeout=2.0)
+            except Exception:
+                self.disconnect(token, ws)
+
+        tasks = [asyncio.create_task(safe_send(ws)) for ws in sockets]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     def set_presence(self, token: str, websocket: WebSocket, meta: dict) -> bool:
         presence = self.presence.setdefault(token, {})
@@ -759,6 +824,19 @@ class RetroWSManager:
         self.active.pop(token, None)
         self.presence.pop(token, None)
 
+    def schedule_close_all(self, token: str) -> None:
+        """
+        Close all sockets in the background (do not block sync HTTP handlers).
+        """
+        if not token:
+            return
+        if self._loop is None:
+            return
+        try:
+            self._loop.call_soon_threadsafe(lambda: asyncio.create_task(self.close_all(token)))
+        except Exception:
+            pass
+
     async def _safe_send(self, token: str, websocket: WebSocket, payload: dict) -> None:
         # Never let a slow / half-open websocket stall an HTTP request.
         try:
@@ -773,9 +851,7 @@ class RetroWSManager:
         sockets = list(self.active.get(token, []))
         if not sockets:
             return
-        async with anyio.create_task_group() as tg:
-            for websocket in sockets:
-                tg.start_soon(self._safe_send, token, websocket, payload)
+        await self._broadcast_now(token, sockets, payload)
 
 
 retro_ws_manager = RetroWSManager()
@@ -786,6 +862,9 @@ class PokerWSManager:
         self.active: Dict[str, List[WebSocket]] = {}
         self.presence: Dict[str, Dict[WebSocket, dict]] = {}
         self.stale_after_seconds = 12.0
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._queues: Dict[str, "asyncio.Queue[dict]"] = {}
+        self._workers: Dict[str, asyncio.Task] = {}
 
     def prune(self, token: str) -> None:
         sockets = list(self.active.get(token, []) or [])
@@ -813,9 +892,12 @@ class PokerWSManager:
             self.presence.pop(token, None)
 
     async def connect(self, token: str, websocket: WebSocket) -> None:
+        if self._loop is None:
+            self._loop = asyncio.get_running_loop()
         await websocket.accept()
         self.active.setdefault(token, []).append(websocket)
         self.presence.setdefault(token, {})
+        self._ensure_worker(token)
 
     def disconnect(self, token: str, websocket: WebSocket) -> None:
         sockets = self.active.get(token, [])
@@ -906,6 +988,59 @@ class PokerWSManager:
         entries.sort(key=lambda item: (item.get("nombre") or "").lower())
         return {"type": "presence", "total": len(entries), "personas": entries}
 
+    def enqueue(self, token: str, payload: dict) -> None:
+        if not token or not isinstance(payload, dict):
+            return
+        if self._loop is None:
+            try:
+                self._loop = asyncio.get_running_loop()
+            except RuntimeError:
+                return
+        self._ensure_worker(token)
+        queue = self._queues.get(token)
+        if not queue:
+            return
+        try:
+            self._loop.call_soon_threadsafe(queue.put_nowait, payload)
+        except Exception:
+            pass
+
+    def _ensure_worker(self, token: str) -> None:
+        if not token or self._loop is None:
+            return
+        if token in self._workers and not self._workers[token].done():
+            return
+        queue = self._queues.get(token)
+        if queue is None:
+            queue = asyncio.Queue(maxsize=200)
+            self._queues[token] = queue
+        self._workers[token] = self._loop.create_task(self._worker(token))
+
+    async def _worker(self, token: str) -> None:
+        queue = self._queues.get(token)
+        if queue is None:
+            return
+        try:
+            while True:
+                payload = await queue.get()
+                sockets = list(self.active.get(token, []) or [])
+                if not sockets:
+                    continue
+                await self._broadcast_now(token, sockets, payload)
+        except Exception:
+            return
+
+    async def _broadcast_now(self, token: str, sockets: List[WebSocket], payload: dict) -> None:
+        async def safe_send(ws: WebSocket) -> None:
+            try:
+                await asyncio.wait_for(ws.send_json(payload), timeout=2.0)
+            except Exception:
+                self.disconnect(token, ws)
+
+        tasks = [asyncio.create_task(safe_send(ws)) for ws in sockets]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
     async def _safe_send(self, token: str, websocket: WebSocket, payload: dict) -> None:
         try:
             with anyio.move_on_after(2) as scope:
@@ -919,9 +1054,7 @@ class PokerWSManager:
         sockets = list(self.active.get(token, []))
         if not sockets:
             return
-        async with anyio.create_task_group() as tg:
-            for websocket in sockets:
-                tg.start_soon(self._safe_send, token, websocket, payload)
+        await self._broadcast_now(token, sockets, payload)
 
     async def broadcast_presence(self, token: str) -> None:
         await self.broadcast(token, self.build_presence_payload(token))
@@ -944,28 +1077,27 @@ class PokerWSManager:
         self.active.pop(token, None)
         self.presence.pop(token, None)
 
+    def schedule_close_all(self, token: str) -> None:
+        if not token:
+            return
+        if self._loop is None:
+            return
+        try:
+            self._loop.call_soon_threadsafe(lambda: asyncio.create_task(self.close_all(token)))
+        except Exception:
+            pass
+
 
 poker_ws_manager = PokerWSManager()
 
 
 def notify_retro(token: str, payload: dict) -> None:
-    # Broadcast is bounded (timeouts + parallel sends); safe to run inline.
-    try:
-        anyio.from_thread.run(retro_ws_manager.broadcast, token, payload)
-    except RuntimeError:
-        pass
-    except Exception:
-        # Never fail the HTTP request because a websocket broadcast failed.
-        pass
+    # Never block HTTP handlers on WS writes; enqueue if possible.
+    retro_ws_manager.enqueue(token, payload)
 
 
 def notify_poker(token: str, payload: dict) -> None:
-    try:
-        anyio.from_thread.run(poker_ws_manager.broadcast, token, payload)
-    except RuntimeError:
-        pass
-    except Exception:
-        pass
+    poker_ws_manager.enqueue(token, payload)
 
 
 def normalize_retro_tipo(value: Optional[str]) -> str:
@@ -1211,13 +1343,9 @@ async def retro_ws(websocket: WebSocket, token: str) -> None:
                     item_schema = retro_item_to_schema(item)
                     # Ack the sender quickly, then broadcast to everyone.
                     await websocket.send_json({"type": "submit_ack", "item": item_schema})
-                    notify_retro(
+                    retro_ws_manager.enqueue(
                         retro.token,
-                        {
-                            "type": "item_added",
-                            "retro_id": retro.id,
-                            "item": item_schema,
-                        },
+                        {"type": "item_added", "retro_id": retro.id, "item": item_schema},
                     )
                 except HTTPException as err:
                     await websocket.send_json({"type": "submit_error", "detail": err.detail})
@@ -2015,12 +2143,8 @@ def crear_poker_sesion(
         poker_ws_manager.presence.pop(existente.token, None)
         db.query(PokerClaim).filter(PokerClaim.sesion_id == existente.id).delete()
         db.commit()
-        try:
-            anyio.from_thread.run(
-                poker_ws_manager.broadcast_presence, existente.token
-            )
-        except RuntimeError:
-            pass
+        # Non-blocking presence update (if there are WS clients connected).
+        poker_ws_manager.enqueue(existente.token, poker_ws_manager.build_presence_payload(existente.token))
         try:
             notify_poker(
                 existente.token,
@@ -2108,8 +2232,8 @@ def actualizar_poker_sesion(
         except Exception:
             pass
         try:
-            anyio.from_thread.run(poker_ws_manager.close_all, sesion.token)
-        except RuntimeError:
+            poker_ws_manager.schedule_close_all(sesion.token)
+        except Exception:
             pass
     return poker_to_schema(sesion)
 
@@ -2363,8 +2487,8 @@ def actualizar_retro(
         except Exception:
             pass
         try:
-            anyio.from_thread.run(retro_ws_manager.close_all, retro.token)
-        except RuntimeError:
+            retro_ws_manager.schedule_close_all(retro.token)
+        except Exception:
             pass
     elapsed_ms = (time.perf_counter() - started) * 1000.0
     data = retro_to_schema(retro)

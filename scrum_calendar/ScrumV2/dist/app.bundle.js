@@ -6824,12 +6824,32 @@
         applyRetroInfo(info);
         return info;
       } catch (err) {
+        const name = (err && err.name ? String(err.name) : "").toLowerCase();
+        const msg = (err && err.message ? String(err.message) : "").toLowerCase();
+        const isTransient =
+          name.includes("abort") ||
+          msg.includes("abort") ||
+          msg.includes("timeout") ||
+          msg.includes("failed to fetch") ||
+          msg.includes("networkerror") ||
+          msg.includes("xhr error") ||
+          msg.includes("xhr timeout");
+        if (isTransient) {
+          setStatusText("Conectando...", "warn");
+          return null;
+        }
         setStatusText("No se pudo cargar la retro.", "error");
         return null;
       }
     };
 
-    const initialInfo = await loadRetroInfo();
+    let initialInfo = null;
+    for (let attempt = 0; attempt < 3 && !initialInfo; attempt += 1) {
+      initialInfo = await loadRetroInfo();
+      if (!initialInfo) {
+        await new Promise((resolve) => window.setTimeout(resolve, 600 * (attempt + 1)));
+      }
+    }
     if (!initialInfo) return;
     if (!skipPolling && !window.__retroPublicPoll) {
       window.__retroPublicPoll = window.setInterval(() => {
