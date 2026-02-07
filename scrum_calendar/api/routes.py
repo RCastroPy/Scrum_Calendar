@@ -3,6 +3,7 @@ import io
 import json
 import re
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional
 from zoneinfo import ZoneInfo
@@ -701,24 +702,37 @@ class RetroWSManager:
         sockets = list(self.active.get(token, []))
         for websocket in sockets:
             try:
-                await websocket.send_json({"type": "presence", "total": 0, "personas": []})
-                await websocket.send_json({"type": "retro_closed"})
+                with anyio.move_on_after(2):
+                    await websocket.send_json({"type": "presence", "total": 0, "personas": []})
+                with anyio.move_on_after(2):
+                    await websocket.send_json({"type": "retro_closed"})
             except Exception:
                 pass
             try:
-                await websocket.close()
+                with anyio.move_on_after(2):
+                    await websocket.close()
             except Exception:
                 pass
         self.active.pop(token, None)
         self.presence.pop(token, None)
 
+    async def _safe_send(self, token: str, websocket: WebSocket, payload: dict) -> None:
+        # Never let a slow / half-open websocket stall an HTTP request.
+        try:
+            with anyio.move_on_after(2) as scope:
+                await websocket.send_json(payload)
+            if scope.cancel_called:
+                self.disconnect(token, websocket)
+        except Exception:
+            self.disconnect(token, websocket)
+
     async def broadcast(self, token: str, payload: dict) -> None:
         sockets = list(self.active.get(token, []))
-        for websocket in sockets:
-            try:
-                await websocket.send_json(payload)
-            except Exception:
-                self.disconnect(token, websocket)
+        if not sockets:
+            return
+        async with anyio.create_task_group() as tg:
+            for websocket in sockets:
+                tg.start_soon(self._safe_send, token, websocket, payload)
 
 
 retro_ws_manager = RetroWSManager()
@@ -810,13 +824,22 @@ class PokerWSManager:
         entries.sort(key=lambda item: (item.get("nombre") or "").lower())
         return {"type": "presence", "total": len(entries), "personas": entries}
 
+    async def _safe_send(self, token: str, websocket: WebSocket, payload: dict) -> None:
+        try:
+            with anyio.move_on_after(2) as scope:
+                await websocket.send_json(payload)
+            if scope.cancel_called:
+                self.disconnect(token, websocket)
+        except Exception:
+            self.disconnect(token, websocket)
+
     async def broadcast(self, token: str, payload: dict) -> None:
         sockets = list(self.active.get(token, []))
-        for websocket in sockets:
-            try:
-                await websocket.send_json(payload)
-            except Exception:
-                self.disconnect(token, websocket)
+        if not sockets:
+            return
+        async with anyio.create_task_group() as tg:
+            for websocket in sockets:
+                tg.start_soon(self._safe_send, token, websocket, payload)
 
     async def broadcast_presence(self, token: str) -> None:
         await self.broadcast(token, self.build_presence_payload(token))
@@ -825,12 +848,15 @@ class PokerWSManager:
         sockets = list(self.active.get(token, []))
         for websocket in sockets:
             try:
-                await websocket.send_json({"type": "presence", "total": 0, "personas": []})
-                await websocket.send_json({"type": "poker_closed"})
+                with anyio.move_on_after(2):
+                    await websocket.send_json({"type": "presence", "total": 0, "personas": []})
+                with anyio.move_on_after(2):
+                    await websocket.send_json({"type": "poker_closed"})
             except Exception:
                 pass
             try:
-                await websocket.close()
+                with anyio.move_on_after(2):
+                    await websocket.close()
             except Exception:
                 pass
         self.active.pop(token, None)
@@ -839,18 +865,38 @@ class PokerWSManager:
 
 poker_ws_manager = PokerWSManager()
 
+_NOTIFY_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="scrum-notify")
+
 
 def notify_retro(token: str, payload: dict) -> None:
+    # Fire-and-forget: websocket broadcasts should not hold the HTTP response open.
+    def _run() -> None:
+        try:
+            anyio.from_thread.run(retro_ws_manager.broadcast, token, payload)
+        except RuntimeError:
+            pass
+        except Exception:
+            # Never fail the HTTP request because a websocket broadcast failed.
+            pass
+
     try:
-        anyio.from_thread.run(retro_ws_manager.broadcast, token, payload)
-    except RuntimeError:
+        _NOTIFY_EXECUTOR.submit(_run)
+    except Exception:
         pass
 
 
 def notify_poker(token: str, payload: dict) -> None:
+    def _run() -> None:
+        try:
+            anyio.from_thread.run(poker_ws_manager.broadcast, token, payload)
+        except RuntimeError:
+            pass
+        except Exception:
+            pass
+
     try:
-        anyio.from_thread.run(poker_ws_manager.broadcast, token, payload)
-    except RuntimeError:
+        _NOTIFY_EXECUTOR.submit(_run)
+    except Exception:
         pass
 
 
