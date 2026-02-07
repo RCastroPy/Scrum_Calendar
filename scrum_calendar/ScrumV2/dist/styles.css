@@ -1891,6 +1891,38 @@ body.qr-zoomed::before {
   margin: 0 0 12px;
 }
 
+.retro-phase.section-alert {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font-weight: 700;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.25);
+}
+
+.retro-phase.section-alert.success {
+  background: #d1e7dd;
+  border-color: #badbcc;
+  color: #0f5132;
+}
+
+.retro-phase.section-alert.warning {
+  background: #fff3cd;
+  border-color: #ffecb5;
+  color: #664d03;
+}
+
+.retro-phase.section-alert.info {
+  background: #cff4fc;
+  border-color: #b6effb;
+  color: #055160;
+}
+
+.retro-phase.section-alert.danger {
+  background: #f8d7da;
+  border-color: #f5c2c7;
+  color: #842029;
+}
+
 .status-select {
   display: inline-flex;
   align-items: center;

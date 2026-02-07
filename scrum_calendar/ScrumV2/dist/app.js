@@ -10997,8 +10997,8 @@
     let personasLoaded = false;
     const phaseMap = {
       espera: "Esperando inicio del SM.",
-      bien: "Ahora: Que hicimos bien",
-      mal: "Ahora: Que pudimos hacer mejor",
+      bien: "Que hicimos bien",
+      mal: "Que pudimos hacer mejor",
       compromiso: "Compromisos (solo SM)",
     };
     const fillPersona = (select, placeholder, personas) => {
@@ -11035,9 +11035,12 @@
       if (title) {
         title.textContent = `Retro · ${retroInfo.celula_nombre} · ${retroInfo.sprint_nombre}`;
       }
-      const setPhaseLabel = (state, text) => {
+      const setPhaseLabel = (state, text, variant = "info") => {
         if (!phaseLabel) return;
         phaseLabel.textContent = text;
+        phaseLabel.classList.add("section-alert");
+        phaseLabel.classList.remove("success", "warning", "danger", "info");
+        if (variant) phaseLabel.classList.add(variant);
         phaseLabel.classList.remove("is-waiting", "is-active", "is-closed");
         if (state === "waiting") phaseLabel.classList.add("is-waiting");
         if (state === "active") phaseLabel.classList.add("is-active");
@@ -11089,7 +11092,7 @@
             el.disabled = true;
           });
         }
-        setPhaseLabel("closed", "Sesion cerrada");
+        setPhaseLabel("closed", "Sesion cerrada", "danger");
         setStatusText("La sesion ha sido cerrada por el SM.", "warn");
         if (container && !container.dataset.closedShown) {
           container.dataset.closedShown = "true";
@@ -11137,7 +11140,8 @@
           });
         }
         if (authorSelect) authorSelect.disabled = false;
-        setPhaseLabel("active", `Activo: ${phaseMap[retroInfo.fase] || ""}`);
+        const variant = retroInfo.fase === "bien" ? "success" : "warning";
+        setPhaseLabel("active", `${phaseMap[retroInfo.fase] || ""}`, variant);
         if (!hasAuthor) {
           setStatusText("Selecciona tu nombre para continuar.", "warn");
         } else {
@@ -11159,7 +11163,7 @@
         if (formActions) formActions.classList.add("hidden");
         if (commitmentFields) commitmentFields.classList.add("hidden");
         if (authorLabel) authorLabel.classList.remove("hidden");
-        setPhaseLabel("waiting", "En espera de inicio");
+        setPhaseLabel("waiting", "En espera de inicio", "info");
         setStatusText("Esperando inicio del SM.", "warn");
       }
     };
@@ -11192,6 +11196,9 @@
         }
         if (phaseLabel) {
           phaseLabel.textContent = "Sesion cerrada";
+          phaseLabel.classList.add("section-alert");
+          phaseLabel.classList.remove("success", "warning", "danger", "info");
+          phaseLabel.classList.add("danger");
           phaseLabel.classList.remove("is-waiting", "is-active");
           phaseLabel.classList.add("is-closed");
         }
