@@ -631,6 +631,8 @@ class RetroWSManager:
         self.presence: Dict[str, Dict[WebSocket, dict]] = {}
         # If we don't receive a ping/join for this many seconds, consider the user offline.
         self.stale_after_seconds = 12.0
+        # Starlette WebSocket isn't safe for concurrent sends. Serialize sends per-socket.
+        self._send_locks: Dict[WebSocket, asyncio.Lock] = {}
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._queues: Dict[str, "asyncio.Queue[dict]"] = {}
         self._workers: Dict[str, asyncio.Task] = {}
@@ -641,6 +643,7 @@ class RetroWSManager:
         await websocket.accept()
         self.active.setdefault(token, []).append(websocket)
         self.presence.setdefault(token, {})
+        self._send_locks.setdefault(websocket, asyncio.Lock())
         self._ensure_worker(token)
 
     def disconnect(self, token: str, websocket: WebSocket) -> None:
@@ -657,6 +660,16 @@ class RetroWSManager:
             now = time.time()
             meta["last_seen_ts"] = now
             meta["last_seen"] = datetime.utcfromtimestamp(now).isoformat()
+        self._send_locks.pop(websocket, None)
+
+    async def send_one(self, token: str, websocket: WebSocket, payload: dict) -> None:
+        lock = self._send_locks.setdefault(websocket, asyncio.Lock())
+        try:
+            encoded = jsonable_encoder(payload)
+            async with lock:
+                await asyncio.wait_for(websocket.send_json(encoded), timeout=2.0)
+        except Exception:
+            self.disconnect(token, websocket)
 
     def enqueue(self, token: str, payload: dict) -> None:
         """
@@ -706,9 +719,13 @@ class RetroWSManager:
             return
 
     async def _broadcast_now(self, token: str, sockets: List[WebSocket], payload: dict) -> None:
+        encoded = jsonable_encoder(payload)
+
         async def safe_send(ws: WebSocket) -> None:
             try:
-                await asyncio.wait_for(ws.send_json(payload), timeout=2.0)
+                lock = self._send_locks.setdefault(ws, asyncio.Lock())
+                async with lock:
+                    await asyncio.wait_for(ws.send_json(encoded), timeout=2.0)
             except Exception:
                 self.disconnect(token, ws)
 
@@ -862,6 +879,7 @@ class PokerWSManager:
         self.active: Dict[str, List[WebSocket]] = {}
         self.presence: Dict[str, Dict[WebSocket, dict]] = {}
         self.stale_after_seconds = 12.0
+        self._send_locks: Dict[WebSocket, asyncio.Lock] = {}
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._queues: Dict[str, "asyncio.Queue[dict]"] = {}
         self._workers: Dict[str, asyncio.Task] = {}
@@ -897,6 +915,7 @@ class PokerWSManager:
         await websocket.accept()
         self.active.setdefault(token, []).append(websocket)
         self.presence.setdefault(token, {})
+        self._send_locks.setdefault(websocket, asyncio.Lock())
         self._ensure_worker(token)
 
     def disconnect(self, token: str, websocket: WebSocket) -> None:
@@ -913,6 +932,16 @@ class PokerWSManager:
             now = time.time()
             meta["last_seen_ts"] = now
             meta["last_seen"] = datetime.utcfromtimestamp(now).isoformat()
+        self._send_locks.pop(websocket, None)
+
+    async def send_one(self, token: str, websocket: WebSocket, payload: dict) -> None:
+        lock = self._send_locks.setdefault(websocket, asyncio.Lock())
+        try:
+            encoded = jsonable_encoder(payload)
+            async with lock:
+                await asyncio.wait_for(websocket.send_json(encoded), timeout=2.0)
+        except Exception:
+            self.disconnect(token, websocket)
 
     def set_presence(self, token: str, websocket: WebSocket, meta: dict) -> bool:
         presence = self.presence.setdefault(token, {})
@@ -1031,9 +1060,13 @@ class PokerWSManager:
             return
 
     async def _broadcast_now(self, token: str, sockets: List[WebSocket], payload: dict) -> None:
+        encoded = jsonable_encoder(payload)
+
         async def safe_send(ws: WebSocket) -> None:
             try:
-                await asyncio.wait_for(ws.send_json(payload), timeout=2.0)
+                lock = self._send_locks.setdefault(ws, asyncio.Lock())
+                async with lock:
+                    await asyncio.wait_for(ws.send_json(encoded), timeout=2.0)
             except Exception:
                 self.disconnect(token, ws)
 
@@ -1236,9 +1269,8 @@ def obtener_retro_presencia(
 
 @router.websocket("/ws/retros/{token}")
 async def retro_ws(websocket: WebSocket, token: str) -> None:
-    db = SessionLocal()
     await retro_ws_manager.connect(token, websocket)
-    await retro_ws_manager.broadcast_presence(token)
+    retro_ws_manager.enqueue(token, retro_ws_manager.build_presence_payload(token))
     try:
         while True:
             message = await websocket.receive_text()
@@ -1264,108 +1296,103 @@ async def retro_ws(websocket: WebSocket, token: str) -> None:
                         "nombre": nombre,
                     },
                 )
-                await retro_ws_manager.broadcast_presence(token)
+                retro_ws_manager.enqueue(token, retro_ws_manager.build_presence_payload(token))
             elif payload.get("type") == "submit_item":
                 # Websocket-first flow for mobile reliability: persist and broadcast in realtime.
                 try:
-                    retro = db.query(Retrospective).filter(Retrospective.token == token).first()
-                    if not retro:
-                        await websocket.send_json(
-                            {"type": "submit_error", "detail": "Retrospectiva no encontrada"}
-                        )
-                        continue
-                    if retro.estado != "abierta":
-                        await websocket.send_json(
-                            {"type": "submit_error", "detail": "Retrospectiva cerrada"}
-                        )
-                        continue
-                    if retro.fase not in {"bien", "mal"}:
-                        await websocket.send_json(
-                            {"type": "submit_error", "detail": "Esperando inicio del SM"}
-                        )
-                        continue
                     item_payload = payload.get("item") if isinstance(payload.get("item"), dict) else {}
-                    tipo = normalize_retro_tipo(item_payload.get("tipo"))
-                    if tipo == "compromiso":
-                        await websocket.send_json(
-                            {"type": "submit_error", "detail": "Compromisos solo SM"}
-                        )
-                        continue
-                    if retro.fase != tipo:
-                        await websocket.send_json(
-                            {"type": "submit_error", "detail": "Fase actual distinta"}
-                        )
-                        continue
-                    detalle = (item_payload.get("detalle") or "").strip()
-                    if not detalle:
-                        await websocket.send_json(
-                            {"type": "submit_error", "detail": "Detalle requerido"}
-                        )
-                        continue
-                    persona_id = item_payload.get("persona_id")
-                    if persona_id is None:
-                        await websocket.send_json(
-                            {"type": "submit_error", "detail": "Persona requerida"}
-                        )
-                        continue
-                    persona = (
-                        db.query(Persona)
-                        .join(persona_celulas, persona_celulas.c.persona_id == Persona.id)
-                        .filter(
-                            Persona.id == int(persona_id),
-                            persona_celulas.c.celula_id == retro.celula_id,
-                            Persona.activo.is_(True),
-                        )
-                        .first()
-                    )
-                    if not persona:
-                        await websocket.send_json(
-                            {"type": "submit_error", "detail": "Persona no encontrada"}
-                        )
-                        continue
-                    item = RetrospectiveItem(
-                        retro_id=retro.id,
-                        tipo=tipo,
-                        detalle=detalle,
-                        persona_id=persona.id,
-                        estado="pendiente",
-                    )
-                    db.add(item)
-                    try:
-                        db.commit()
-                    except IntegrityError:
-                        db.rollback()
-                        await websocket.send_json(
-                            {"type": "submit_error", "detail": "No se pudo guardar"}
-                        )
-                        continue
-                    db.refresh(item)
-                    item_schema = retro_item_to_schema(item)
+                    # IMPORTANT: SQLAlchemy is sync. Never run DB queries inside the WS event loop,
+                    # otherwise 20 concurrent users will stall BOTH WS and HTTP endpoints.
+                    def persist_item() -> tuple[Retrospective, dict]:
+                        db = SessionLocal()
+                        try:
+                            retro = (
+                                db.query(Retrospective)
+                                .filter(Retrospective.token == token)
+                                .first()
+                            )
+                            if not retro:
+                                raise HTTPException(
+                                    status_code=404, detail="Retrospectiva no encontrada"
+                                )
+                            if retro.estado != "abierta":
+                                raise HTTPException(status_code=403, detail="Retrospectiva cerrada")
+                            if retro.fase not in {"bien", "mal"}:
+                                raise HTTPException(
+                                    status_code=403, detail="Esperando inicio del SM"
+                                )
+                            tipo = normalize_retro_tipo(item_payload.get("tipo"))
+                            if tipo == "compromiso":
+                                raise HTTPException(status_code=403, detail="Compromisos solo SM")
+                            if retro.fase != tipo:
+                                raise HTTPException(status_code=400, detail="Fase actual distinta")
+                            detalle = (item_payload.get("detalle") or "").strip()
+                            if not detalle:
+                                raise HTTPException(status_code=400, detail="Detalle requerido")
+                            persona_id = item_payload.get("persona_id")
+                            if persona_id is None:
+                                raise HTTPException(status_code=400, detail="Persona requerida")
+                            persona = db.get(Persona, int(persona_id))
+                            if not persona or not persona.activo:
+                                raise HTTPException(status_code=404, detail="Persona no encontrada")
+                            belongs = db.execute(
+                                persona_celulas.select().where(
+                                    persona_celulas.c.persona_id == persona.id,
+                                    persona_celulas.c.celula_id == retro.celula_id,
+                                )
+                            ).first()
+                            if not belongs:
+                                raise HTTPException(status_code=404, detail="Persona no encontrada")
+                            item = RetrospectiveItem(
+                                retro_id=retro.id,
+                                tipo=tipo,
+                                detalle=detalle,
+                                persona_id=persona.id,
+                                estado="pendiente",
+                            )
+                            db.add(item)
+                            try:
+                                db.commit()
+                            except IntegrityError:
+                                db.rollback()
+                                raise HTTPException(status_code=400, detail="No se pudo guardar")
+                            db.refresh(item)
+                            # Detach data from the session for safe cross-thread usage.
+                            retro_schema = {"id": retro.id, "token": retro.token}
+                            return retro_schema, retro_item_to_schema(item)
+                        finally:
+                            db.close()
+
+                    # anyio.to_thread.run_sync may hang in some WS contexts; asyncio.to_thread is
+                    # reliable under uvicorn's asyncio loop.
+                    retro_schema, item_schema = await asyncio.to_thread(persist_item)
                     # Ack the sender quickly, then broadcast to everyone.
-                    await websocket.send_json({"type": "submit_ack", "item": item_schema})
+                    await retro_ws_manager.send_one(
+                        token, websocket, {"type": "submit_ack", "item": item_schema}
+                    )
                     retro_ws_manager.enqueue(
-                        retro.token,
-                        {"type": "item_added", "retro_id": retro.id, "item": item_schema},
+                        retro_schema["token"],
+                        {"type": "item_added", "retro_id": retro_schema["id"], "item": item_schema},
                     )
                 except HTTPException as err:
-                    await websocket.send_json({"type": "submit_error", "detail": err.detail})
+                    await retro_ws_manager.send_one(
+                        token, websocket, {"type": "submit_error", "detail": err.detail}
+                    )
             elif payload.get("type") == "leave":
                 retro_ws_manager.clear_presence(token, websocket)
-                await retro_ws_manager.broadcast_presence(token)
+                retro_ws_manager.enqueue(token, retro_ws_manager.build_presence_payload(token))
     except WebSocketDisconnect:
         retro_ws_manager.disconnect(token, websocket)
-        await retro_ws_manager.broadcast_presence(token)
+        retro_ws_manager.enqueue(token, retro_ws_manager.build_presence_payload(token))
     except Exception:
         retro_ws_manager.disconnect(token, websocket)
-        await retro_ws_manager.broadcast_presence(token)
-    finally:
-        db.close()
+        retro_ws_manager.enqueue(token, retro_ws_manager.build_presence_payload(token))
 
 
 @router.websocket("/ws/poker/{token}")
 async def poker_ws(websocket: WebSocket, token: str) -> None:
     await poker_ws_manager.connect(token, websocket)
-    await poker_ws_manager.broadcast_presence(token)
+    poker_ws_manager.enqueue(token, poker_ws_manager.build_presence_payload(token))
     try:
         while True:
             message = await websocket.receive_text()
@@ -1388,16 +1415,16 @@ async def poker_ws(websocket: WebSocket, token: str) -> None:
                     websocket,
                     {"persona_id": persona_id, "nombre": nombre},
                 )
-                await poker_ws_manager.broadcast_presence(token)
+                poker_ws_manager.enqueue(token, poker_ws_manager.build_presence_payload(token))
             elif payload.get("type") == "leave":
                 poker_ws_manager.clear_presence(token, websocket)
-                await poker_ws_manager.broadcast_presence(token)
+                poker_ws_manager.enqueue(token, poker_ws_manager.build_presence_payload(token))
     except WebSocketDisconnect:
         poker_ws_manager.disconnect(token, websocket)
-        await poker_ws_manager.broadcast_presence(token)
+        poker_ws_manager.enqueue(token, poker_ws_manager.build_presence_payload(token))
     except Exception:
         poker_ws_manager.disconnect(token, websocket)
-        await poker_ws_manager.broadcast_presence(token)
+        poker_ws_manager.enqueue(token, poker_ws_manager.build_presence_payload(token))
 
 
 @router.get("/oneonone-notes", response_model=OneOnOneNoteOut)
