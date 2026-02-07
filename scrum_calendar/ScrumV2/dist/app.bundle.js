@@ -2494,6 +2494,14 @@
     if (!select) return;
     const applyCells = (cells) => {
       const list = Array.isArray(cells) ? cells : [];
+      if (!state.selectedCelulaId && (pageName === "retro" || pageName === "poker") && list.length) {
+        state.selectedCelulaId = String(list[0].id);
+        try {
+          localStorage.setItem("scrum_calendar_celula_id", state.selectedCelulaId);
+        } catch (err) {
+          // ignore storage errors
+        }
+      }
       fillSelect(select, list, { includeEmpty: true });
       if (select.options.length) {
         select.options[0].textContent = "Todas";
@@ -5797,6 +5805,14 @@
 
     if (!state.selectedCelulaId) {
       setRetroStatus("Selecciona una celula para gestionar retros.", "warn");
+      if (createBtn && !createBtn.dataset.boundNoCell) {
+        createBtn.dataset.boundNoCell = "true";
+        createBtn.addEventListener("click", () => {
+          if (!state.selectedCelulaId) {
+            setRetroStatus("Selecciona una celula para gestionar retros.", "warn");
+          }
+        });
+      }
       renderPresence({ personas: [], total: 0 });
       if (summaryTable) summaryTable.innerHTML = '<p class="empty">Sin celula seleccionada.</p>';
       if (itemsTable) itemsTable.innerHTML = "";

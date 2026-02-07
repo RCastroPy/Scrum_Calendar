@@ -2912,6 +2912,16 @@
     if (!select) return;
     const applyCells = (cells) => {
       const list = Array.isArray(cells) ? cells : [];
+      // Some views (retro/poker) require a specific cell to work; if the user has no saved selection,
+      // default to the first available cell so buttons like "Preparar link" don't appear to do nothing.
+      if (!state.selectedCelulaId && (pageName === "retro" || pageName === "poker") && list.length) {
+        state.selectedCelulaId = String(list[0].id);
+        try {
+          localStorage.setItem("scrum_calendar_celula_id", state.selectedCelulaId);
+        } catch (err) {
+          // ignore storage errors
+        }
+      }
       fillSelect(select, list, { includeEmpty: true });
       if (select.options.length) {
         select.options[0].textContent = "Todas";
@@ -9886,6 +9896,15 @@
 
     if (!state.selectedCelulaId) {
       setRetroStatus("Selecciona una celula para gestionar retros.", "warn");
+      if (createBtn && !createBtn.dataset.boundNoCell) {
+        // Avoid "no-op": the create button exists in the UI but retro requires a selected cell.
+        createBtn.dataset.boundNoCell = "true";
+        createBtn.addEventListener("click", () => {
+          if (!state.selectedCelulaId) {
+            setRetroStatus("Selecciona una celula para gestionar retros.", "warn");
+          }
+        });
+      }
       renderPresence({ personas: [], total: 0 });
       if (summaryTable) summaryTable.innerHTML = '<p class="empty">Sin celula seleccionada.</p>';
       if (itemsTable) itemsTable.innerHTML = "";
