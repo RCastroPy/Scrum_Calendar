@@ -133,6 +133,17 @@ def startup():
         column_names = {row[0] for row in columns}
         if "jira_codigo" not in column_names:
             conn.execute(text("alter table celulas add column jira_codigo varchar(20)"))
+
+        # Tasks: add start_date for Kanban/backlog automation (Notion-like).
+        columns = conn.execute(
+            text(
+                "select column_name from information_schema.columns "
+                "where table_name = 'tasks'"
+            )
+        ).fetchall()
+        column_names = {row[0] for row in columns}
+        if "start_date" not in column_names:
+            conn.execute(text("alter table tasks add column start_date date"))
         tables = conn.execute(
             text(
                 "select table_name from information_schema.tables "

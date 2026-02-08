@@ -4290,19 +4290,23 @@ body.qr-zoomed::before {
 }
 
 /* --- Tasks (Notion-like / Kanban) --- */
+.tasks-head {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .tasks-board {
   display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(260px, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 12px;
   align-items: start;
-  overflow-x: auto;
-  padding-bottom: 8px;
+  overflow-x: hidden; /* Solo backlog tiene scroll horizontal */
 }
 
 @media (max-width: 1200px) {
   .tasks-board {
-    grid-auto-columns: 280px;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   }
 }
 
@@ -4311,7 +4315,7 @@ body.qr-zoomed::before {
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.6);
   padding: 10px;
-  min-width: 260px;
+  min-width: 0;
 }
 
 body.theme-dark .tasks-col {
@@ -4541,6 +4545,39 @@ body.theme-dark .tasks-report-list li {
 }
 
 /* Notion-ish: compact toolbar + filter panel + table look */
+.section.tasks {
+  position: relative;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+html.page-tasks,
+body.page-tasks {
+  overflow-x: hidden !important;
+}
+body.page-tasks .app-wrapper,
+body.page-tasks .app-main,
+body.page-tasks .app-content,
+body.page-tasks .container-fluid,
+body.page-tasks #tasks-root {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+body.page-tasks .tasks-notion-scroll {
+  overscroll-behavior-x: contain;
+}
+
+/* Backlog: create button lives under the table (prevents drifting with horizontal scroll) */
+#task-create-btn-backlog {
+  display: none;
+}
+#tasks-root[data-tasks-view="backlog"] #task-create-btn {
+  display: none !important;
+}
+#tasks-root[data-tasks-view="backlog"] #task-create-btn-backlog {
+  display: inline-flex;
+}
+
 .tasks-toolbar label.form-label {
   font-size: 0.75rem;
   color: rgba(0, 0, 0, 0.55);
@@ -4684,6 +4721,13 @@ body.theme-dark .tasks-notion-table thead th {
   gap: 8px;
   min-height: 26px;
 }
+.tasks-notion-name-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
 .tasks-notion-name button {
   padding: 0;
   border: none;
@@ -4715,6 +4759,115 @@ body.theme-dark .tasks-notion-table thead th {
 }
 body.theme-dark .tasks-notion-pill {
   background: rgba(255, 255, 255, 0.08);
+}
+
+.tasks-pill-icon {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.tasks-siren {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Cpath fill='%23b02a37' d='M5 1.5C5 0.67 5.67 0 6.5 0h1C8.33 0 9 0.67 9 1.5V3h.3c1.49 0 2.7 1.21 2.7 2.7V10c0 .55-.45 1-1 1H3c-.55 0-1-.45-1-1V5.7C2 4.21 3.21 3 4.7 3H5V1.5z'/%3E%3Cpath fill='%23ffffff' fill-opacity='.85' d='M4.1 5.2h5.8c.5 0 .9.4.9.9v.2c0 .5-.4.9-.9.9H4.1c-.5 0-.9-.4-.9-.9v-.2c0-.5.4-.9.9-.9z'/%3E%3Cpath fill='%23212529' d='M1 11.2c0-.44.36-.8.8-.8h10.4c.44 0 .8.36.8.8v.6c0 .66-.54 1.2-1.2 1.2H2.2C1.54 13 1 12.46 1 11.8v-.6z'/%3E%3C/svg%3E");
+}
+
+.badge .tasks-siren {
+  vertical-align: -2px;
+}
+
+/* Estado colors (Backlog grey, ToDo light blue, In Progress orange, Done green, Archived dark) */
+.tasks-notion-pill.pill-estado select {
+  font-weight: 800;
+  color: inherit;
+}
+.tasks-notion-pill.pill-estado.is-backlog {
+  background: rgba(108, 117, 125, 0.14);
+  color: #495057;
+}
+.tasks-notion-pill.pill-estado.is-todo {
+  background: rgba(13, 202, 240, 0.18);
+  color: #087990;
+}
+.tasks-notion-pill.pill-estado.is-doing {
+  background: rgba(255, 193, 7, 0.22);
+  color: #b45309;
+}
+.tasks-notion-pill.pill-estado.is-done {
+  background: rgba(25, 135, 84, 0.18);
+  color: #146c43;
+}
+.tasks-notion-pill.pill-estado.is-archived {
+  background: rgba(33, 37, 41, 0.18);
+  color: #212529;
+}
+body.theme-dark .tasks-notion-pill.pill-estado.is-archived {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* Prioridad semaforo */
+.tasks-notion-pill.pill-prioridad select {
+  font-weight: 800;
+  color: inherit;
+}
+.tasks-notion-pill.pill-prioridad.is-baja {
+  background: rgba(25, 135, 84, 0.16);
+  color: #146c43;
+}
+.tasks-notion-pill.pill-prioridad.is-media {
+  background: rgba(255, 193, 7, 0.20);
+  color: #b45309;
+}
+.tasks-notion-pill.pill-prioridad.is-alta {
+  background: rgba(253, 126, 20, 0.20);
+  color: #b54708;
+}
+.tasks-notion-pill.pill-prioridad.is-urgente {
+  background: rgba(220, 53, 69, 0.18);
+  color: #b02a37;
+}
+
+.tasks-col-drop-target {
+  outline: 2px solid rgba(13, 110, 253, 0.55);
+  outline-offset: -2px;
+}
+.tasks-col-dragging {
+  opacity: 0.6;
+}
+
+.tasks-row-actions {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+tr:hover .tasks-row-actions {
+  opacity: 1;
+}
+.tasks-row-actions .btn {
+  padding: 2px 8px;
+}
+
+.tasks-days {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.tasks-days.is-green {
+  color: #146c43;
+}
+.tasks-days.is-yellow {
+  color: #b45309;
+}
+.tasks-days.is-red {
+  color: #b02a37;
 }
 
 .tasks-notion-actions {

@@ -144,6 +144,88 @@ TASK_STATUSES = {"backlog", "todo", "doing", "done", "archived"}
 TASK_PRIORITIES = {"baja", "media", "alta", "urgente"}
 
 
+def _task_tree_by_celula(db: Session, celula_id: Optional[int]):
+    q = db.query(Task)
+    if celula_id is None:
+        q = q.filter(Task.celula_id.is_(None))
+    else:
+        q = q.filter(Task.celula_id == celula_id)
+    items = q.all()
+    by_id = {int(t.id): t for t in items if t and t.id}
+    children = {}
+    for t in items:
+        if not t or not t.parent_id:
+            continue
+        pid = int(t.parent_id)
+        children.setdefault(pid, []).append(int(t.id))
+    return by_id, children
+
+
+def _task_subtree_info(by_id, children, node_id, memo, visiting):
+    # Returns (min_start_date_including_node, any_doing_including_node).
+    if node_id in memo:
+        return memo[node_id]
+    if node_id in visiting:
+        return None, False
+    visiting.add(node_id)
+    node = by_id.get(node_id)
+    if not node:
+        memo[node_id] = (None, False)
+        visiting.remove(node_id)
+        return memo[node_id]
+
+    min_date = getattr(node, "start_date", None)
+    any_doing = (getattr(node, "estado", "") or "") == "doing"
+    for cid in children.get(node_id, []):
+        c_min, c_any = _task_subtree_info(by_id, children, cid, memo, visiting)
+        if c_min is not None and (min_date is None or c_min < min_date):
+            min_date = c_min
+        if c_any:
+            any_doing = True
+
+    memo[node_id] = (min_date, any_doing)
+    visiting.remove(node_id)
+    return memo[node_id]
+
+
+def _cascade_task_parents_for_inprogress(db: Session, task: Task) -> None:
+    """
+    Propagate to ancestors when a descendant is In Progress (doing):
+    - ancestor.estado='doing' if any descendant is doing
+    - ancestor.start_date = earliest start_date among descendants (if any)
+    """
+    if not task or not task.parent_id:
+        return
+    by_id, children = _task_tree_by_celula(db, task.celula_id)
+    memo = {}
+    visiting = set()
+
+    current_id = int(task.parent_id)
+    safety = 0
+    while current_id and safety < 200:
+        safety += 1
+        parent = by_id.get(current_id)
+        if not parent:
+            break
+
+        # Descendants-only aggregation (ignore parent itself).
+        desc_min = None
+        desc_any_doing = False
+        for cid in children.get(current_id, []):
+            c_min, c_any = _task_subtree_info(by_id, children, cid, memo, visiting)
+            if c_min is not None and (desc_min is None or c_min < desc_min):
+                desc_min = c_min
+            if c_any:
+                desc_any_doing = True
+
+        # Parent start_date always mirrors the earliest descendant start_date (can be None).
+        if getattr(parent, "start_date", None) != desc_min:
+            parent.start_date = desc_min
+        if desc_any_doing and (getattr(parent, "estado", "") or "") != "doing":
+            parent.estado = "doing"
+
+        current_id = int(parent.parent_id) if parent.parent_id else 0
+
 def normalize_text(value: str) -> str:
     cleaned = unicodedata.normalize("NFD", value or "")
     cleaned = "".join(ch for ch in cleaned if not unicodedata.combining(ch))
@@ -4432,6 +4514,9 @@ def crear_task(
     if etiquetas and len(etiquetas) > 2000:
         raise HTTPException(status_code=400, detail="Etiquetas demasiado largas")
     orden = payload.orden if payload.orden is not None else now_py().timestamp()
+    start_date = payload.start_date
+    if start_date is None and estado == "doing":
+        start_date = date.today()
     task = Task(
         titulo=titulo,
         descripcion=payload.descripcion,
@@ -4442,6 +4527,7 @@ def crear_task(
         parent_id=payload.parent_id,
         assignee_persona_id=payload.assignee_persona_id,
         creado_por_usuario_id=user.id,
+        start_date=start_date,
         fecha_vencimiento=payload.fecha_vencimiento,
         tipo=tipo,
         etiquetas=etiquetas,
@@ -4467,6 +4553,10 @@ def actualizar_task(
     task = db.get(Task, task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task no encontrada")
+
+    prev_estado = task.estado
+    prev_start_date = getattr(task, "start_date", None)
+    fields_set = getattr(payload, "model_fields_set", set())
 
     if payload.titulo is not None:
         titulo = (payload.titulo or "").strip()
@@ -4513,6 +4603,8 @@ def actualizar_task(
         if payload.assignee_persona_id and not db.get(Persona, payload.assignee_persona_id):
             raise HTTPException(status_code=404, detail="Persona no encontrada")
         task.assignee_persona_id = payload.assignee_persona_id
+    if "start_date" in fields_set:
+        task.start_date = payload.start_date
     if payload.fecha_vencimiento is not None:
         task.fecha_vencimiento = payload.fecha_vencimiento
     if payload.orden is not None:
@@ -4525,6 +4617,14 @@ def actualizar_task(
             if payload.parent_id and not parent:
                 raise HTTPException(status_code=404, detail="Task padre no encontrado")
         task.parent_id = payload.parent_id
+
+    # Auto set start_date when moving to In Progress (doing) unless explicitly provided.
+    if prev_estado != "doing" and (task.estado or "") == "doing" and "start_date" not in fields_set:
+        task.start_date = date.today()
+
+    # Cascade: propagate earliest start_date + in-progress status to all ancestors.
+    if prev_estado != task.estado or prev_start_date != getattr(task, "start_date", None):
+        _cascade_task_parents_for_inprogress(db, task)
 
     db.commit()
     db.refresh(task)

@@ -7768,9 +7768,17 @@
     renderDaily(state.base);
   }
 
-  function initTasks() {
-    const root = qs("#tasks-root");
-    if (!root || !state.base) return;
+	  function initTasks() {
+	    const root = qs("#tasks-root");
+	    if (!root || !state.base) return;
+
+	    // Prevent page-level horizontal scrolling; backlog table scrolls in its own container.
+	    try {
+	      document.documentElement.classList.add("page-tasks");
+	      document.body.classList.add("page-tasks");
+	    } catch {
+	      // ignore
+	    }
 
     const base = state.base;
     const statusEl = qs("#tasks-status");
@@ -7799,12 +7807,13 @@
     const columnsResetBtn = qs("#tasks-columns-reset");
     const searchInput = qs("#tasks-search");
     const createBtn = qs("#task-create-btn");
+    const createBtnBacklog = qs("#task-create-btn-backlog");
 
     const STATUS_ORDER = ["backlog", "todo", "doing", "done", "archived"];
     const STATUS_LABEL = {
       backlog: "Backlog",
       todo: "To Do",
-      doing: "Doing",
+      doing: "In Progress",
       done: "Done",
       archived: "Archivado",
     };
@@ -7832,11 +7841,12 @@
       "etiquetas",
       "assignee_persona_id",
       "sprint_id",
+      "start_date",
       "fecha_vencimiento",
+      "dias_habiles",
       "puntos",
       "horas_estimadas",
       "importante",
-      "actions",
     ];
     const COLUMN_LABEL = {
       titulo: "Tarea",
@@ -7846,34 +7856,36 @@
       etiquetas: "Etiquetas",
       assignee_persona_id: "Responsable",
       sprint_id: "Sprint",
+      start_date: "Inicio",
       fecha_vencimiento: "Vencimiento",
+      dias_habiles: "Dias",
       puntos: "Puntos",
       horas_estimadas: "Horas",
       importante: "Importante",
-      actions: "",
     };
 
     const loadColumnsConfig = () => {
       if (state.tasksColumnsConfig) return state.tasksColumnsConfig;
+      let cfg = null;
       try {
         const raw = localStorage.getItem(TASK_COLUMNS_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (
-            parsed &&
-            Array.isArray(parsed.order) &&
-            parsed.hidden &&
-            typeof parsed.hidden === "object" &&
-            (!parsed.widths || typeof parsed.widths === "object")
-          ) {
-            state.tasksColumnsConfig = parsed;
-            return parsed;
-          }
-        }
+        if (raw) cfg = JSON.parse(raw);
       } catch {
-        // ignore
+        cfg = null;
       }
-      state.tasksColumnsConfig = { order: [...DEFAULT_COLUMNS], hidden: {}, widths: {} };
+      const orderRaw = cfg && Array.isArray(cfg.order) ? cfg.order.slice() : [];
+      const hiddenRaw = cfg && cfg.hidden && typeof cfg.hidden === "object" ? { ...cfg.hidden } : {};
+      const widthsRaw = cfg && cfg.widths && typeof cfg.widths === "object" ? { ...cfg.widths } : {};
+
+      // Normalize: keep only known columns, append new ones so reorder works.
+      const order = orderRaw.filter((k) => DEFAULT_COLUMNS.includes(k));
+      DEFAULT_COLUMNS.forEach((k) => {
+        if (!order.includes(k)) order.push(k);
+      });
+
+      state.tasksColumnsConfig = { order, hidden: hiddenRaw, widths: widthsRaw };
+      // Persist normalization so up/down & drag always work even after schema changes.
+      saveColumnsConfig();
       return state.tasksColumnsConfig;
     };
 
@@ -7943,9 +7955,9 @@
         case "alta":
           return "text-bg-warning";
         case "media":
-          return "text-bg-info";
+          return "text-bg-warning";
         case "baja":
-          return "text-bg-secondary";
+          return "text-bg-success";
         default:
           return "text-bg-secondary";
       }
@@ -7987,13 +7999,25 @@
       statusEl.dataset.type = type;
     };
 
-    const setActiveView = (view) => {
-      state.tasksView = view;
-      if (backlogPanel) backlogPanel.classList.toggle("hidden", view !== "backlog");
-      if (boardPanel) boardPanel.classList.toggle("hidden", view !== "board");
-      if (reportsPanel) reportsPanel.classList.toggle("hidden", view !== "reports");
-      const map = {
-        backlog: qs("#tasks-view-backlog"),
+	    const setActiveView = (view) => {
+	      state.tasksView = view;
+	      try {
+	        root.dataset.tasksView = view;
+	      } catch {
+	        // ignore
+	      }
+	      // Ensure toolbar stays visible even if the user previously scrolled horizontally.
+	      try {
+	        document.documentElement.scrollLeft = 0;
+	        document.body.scrollLeft = 0;
+	      } catch {
+	        // ignore
+	      }
+	      if (backlogPanel) backlogPanel.classList.toggle("hidden", view !== "backlog");
+	      if (boardPanel) boardPanel.classList.toggle("hidden", view !== "board");
+	      if (reportsPanel) reportsPanel.classList.toggle("hidden", view !== "reports");
+	      const map = {
+	        backlog: qs("#tasks-view-backlog"),
         board: qs("#tasks-view-board"),
         reports: qs("#tasks-view-reports"),
       };
@@ -8036,7 +8060,7 @@
                 <select class="form-select" id="task-estado" name="estado" required>
                   <option value="backlog">Backlog</option>
                   <option value="todo">To Do</option>
-                  <option value="doing">Doing</option>
+                  <option value="doing">In Progress</option>
                   <option value="done">Done</option>
                   <option value="archived">Archivado</option>
                 </select>
@@ -8520,6 +8544,12 @@
       const tasks = buildBacklogContext(filtered || [], all || []);
 
       const celulaId = resolveCelulaId();
+      const feriadosSet = new Set(
+        (base.feriados || [])
+          .filter((f) => !celulaId || !f.celula_id || String(f.celula_id) === String(celulaId))
+          .map((f) => f.fecha)
+          .filter(Boolean)
+      );
       const sprintsCelula = [...(base.sprints || [])].filter((s) => String(s.celula_id) === String(celulaId));
       const sprintMap = Object.fromEntries(sprintsCelula.map((s) => [String(s.id), s.nombre]));
       const sprintOptions = sprintsCelula
@@ -8567,13 +8597,33 @@
         etiquetas: 220,
         assignee_persona_id: 240,
         sprint_id: 240,
+        start_date: 150,
         fecha_vencimiento: 150,
+        dias_habiles: 140,
         puntos: 120,
         horas_estimadas: 120,
         importante: 120,
-        actions: 70,
       };
       const resolveWidthPx = (key) => getColumnWidth(key) || widthPxDefaults[key] || 140;
+
+      const applyEstadoPill = (pill, estado) => {
+        const key = STATUS_ORDER.includes(estado) ? estado : "backlog";
+        pill.classList.remove("is-backlog", "is-todo", "is-doing", "is-done", "is-archived");
+        pill.classList.add(`is-${key}`);
+      };
+      const applyPrioridadPill = (pill, prioridad) => {
+        const key = ["baja", "media", "alta", "urgente"].includes(prioridad) ? prioridad : "media";
+        pill.classList.remove("is-baja", "is-media", "is-alta", "is-urgente");
+        pill.classList.add(`is-${key}`);
+        const icon = pill.querySelector(".tasks-pill-icon");
+        if (icon) {
+          if (key === "urgente") {
+            icon.className = "tasks-pill-icon tasks-siren";
+          } else {
+            icon.className = "tasks-pill-icon bi bi-circle-fill";
+          }
+        }
+      };
 
       const buildTh = (key) => {
         const th = document.createElement("th");
@@ -8614,7 +8664,8 @@
 
       const buildStatusSelect = (task) => {
         const pill = document.createElement("span");
-        pill.className = "tasks-notion-pill";
+        pill.className = "tasks-notion-pill pill-estado";
+        pill.innerHTML = `<i class="bi bi-circle-fill tasks-pill-icon"></i>`;
         const select = document.createElement("select");
         select.className = "";
         select.dataset.field = "estado";
@@ -8626,6 +8677,7 @@
         });
         select.value = task.estado || "backlog";
         pill.appendChild(select);
+        applyEstadoPill(pill, select.value);
         const cell = document.createElement("div");
         cell.className = "tasks-notion-cell";
         cell.appendChild(pill);
@@ -8634,7 +8686,8 @@
 
       const buildPrioritySelect = (task) => {
         const pill = document.createElement("span");
-        pill.className = "tasks-notion-pill";
+        pill.className = "tasks-notion-pill pill-prioridad";
+        pill.innerHTML = `<i class="bi bi-circle-fill tasks-pill-icon"></i>`;
         const select = document.createElement("select");
         select.className = "";
         select.dataset.field = "prioridad";
@@ -8646,6 +8699,7 @@
         });
         select.value = task.prioridad || "media";
         pill.appendChild(select);
+        applyPrioridadPill(pill, select.value);
         const cell = document.createElement("div");
         cell.className = "tasks-notion-cell";
         cell.appendChild(pill);
@@ -8781,6 +8835,65 @@
         return cell;
       };
 
+      const buildStartInput = (task) => {
+        const input = document.createElement("input");
+        input.type = "date";
+        input.className = "";
+        input.dataset.field = "start_date";
+        input.value = task.start_date || "";
+        const cell = document.createElement("div");
+        cell.className = "tasks-notion-cell";
+        const pill = document.createElement("span");
+        pill.className = "tasks-notion-pill";
+        pill.appendChild(input);
+        cell.appendChild(pill);
+        return cell;
+      };
+
+      const buildDaysCell = (task) => {
+        const cell = document.createElement("div");
+        cell.className = "tasks-notion-cell";
+        const start = task.start_date || "";
+        const end = task.fecha_vencimiento || "";
+        if (!start || !end) {
+          cell.textContent = "-";
+          return cell;
+        }
+        const total = countWeekdays(start, end, feriadosSet);
+        if (!Number.isFinite(total) || total <= 0) {
+          cell.textContent = "-";
+          return cell;
+        }
+        const todayKey = formatISO(getToday());
+        const overdue = todayKey > end;
+        let className = "is-green";
+        let overdueSiren = false;
+        if (overdue) {
+          className = "is-red";
+          overdueSiren = true;
+        } else {
+          const remaining = countWeekdays(todayKey, end, feriadosSet);
+          if (remaining <= 1) className = "is-red";
+          else if (remaining <= 2) className = "is-yellow";
+          else className = "is-green";
+        }
+        const wrap = document.createElement("span");
+        wrap.className = `tasks-days ${className}`;
+        if (overdueSiren) {
+          const siren = document.createElement("span");
+          siren.className = "tasks-siren";
+          wrap.appendChild(siren);
+        } else {
+          const dot = document.createElement("i");
+          dot.className = "bi bi-circle-fill";
+          wrap.appendChild(dot);
+        }
+        wrap.appendChild(document.createTextNode(`${total} dias`));
+        cell.innerHTML = "";
+        cell.appendChild(wrap);
+        return cell;
+      };
+
       const buildActions = () => {
         const td = document.createElement("td");
         td.innerHTML = `
@@ -8829,17 +8942,32 @@
           titleWrap.appendChild(spacer);
         }
 
+        const main = document.createElement("div");
+        main.className = "tasks-notion-name-main";
         const titleBtn = document.createElement("button");
         titleBtn.type = "button";
         titleBtn.dataset.action = "edit";
         titleBtn.textContent = `${task.parent_id ? "↳ " : ""}${task.titulo || `Task #${task.id}`}`;
-        titleWrap.appendChild(titleBtn);
+        main.appendChild(titleBtn);
         if (task.descripcion) {
           const hint = document.createElement("div");
           hint.className = "text-muted small";
           hint.textContent = String(task.descripcion).slice(0, 120);
-          titleWrap.appendChild(hint);
+          main.appendChild(hint);
         }
+        titleWrap.appendChild(main);
+
+        const actions = document.createElement("div");
+        actions.className = "tasks-row-actions";
+        actions.innerHTML = `
+          <button class="btn btn-outline-primary btn-sm" type="button" title="Subtarea" data-action="subtask">
+            <i class="bi bi-node-plus"></i>
+          </button>
+          <button class="btn btn-outline-danger btn-sm" type="button" title="Eliminar" data-action="delete">
+            <i class="bi bi-trash"></i>
+          </button>
+        `;
+        titleWrap.appendChild(actions);
         titleTd.appendChild(titleWrap);
           return titleTd;
         };
@@ -8871,8 +8999,16 @@
             td.appendChild(buildSprintSelect(task));
             return td;
           }
+          if (key === "start_date") {
+            td.appendChild(buildStartInput(task));
+            return td;
+          }
           if (key === "fecha_vencimiento") {
             td.appendChild(buildDueInput(task));
+            return td;
+          }
+          if (key === "dias_habiles") {
+            td.appendChild(buildDaysCell(task));
             return td;
           }
           if (key === "puntos") {
@@ -8887,7 +9023,6 @@
             td.appendChild(buildCheckboxCell(task));
             return td;
           }
-          if (key === "actions") return buildActions();
           td.textContent = "";
           return td;
         };
@@ -8903,13 +9038,6 @@
       sortTasks(roots).forEach((t) => renderRow(t, 0));
       scroll.appendChild(table);
       wrap.appendChild(scroll);
-
-      const addRowBtn = document.createElement("button");
-      addRowBtn.type = "button";
-      addRowBtn.className = "tasks-notion-add";
-      addRowBtn.dataset.action = "create";
-      addRowBtn.innerHTML = `<i class="bi bi-plus-lg me-2"></i>Nueva tarea`;
-      wrap.appendChild(addRowBtn);
 
       backlogList.appendChild(wrap);
     };
@@ -9033,7 +9161,19 @@
           badges.className = "task-card-badges";
           const pr = document.createElement("span");
           pr.className = `badge ${priorityBadgeClass(task.prioridad)}`;
-          pr.textContent = PRIORITY_LABEL[task.prioridad] || task.prioridad || "-";
+          const prKey = String(task.prioridad || "media").toLowerCase();
+          const prLabel = PRIORITY_LABEL[prKey] || task.prioridad || "-";
+          if (prKey === "urgente") {
+            const siren = document.createElement("span");
+            siren.className = "tasks-siren me-1";
+            pr.appendChild(siren);
+          } else {
+            const prIcon = prKey === "alta" ? "bi-exclamation-triangle-fill" : "bi-circle-fill";
+            const prIconEl = document.createElement("i");
+            prIconEl.className = `bi ${prIcon} me-1`;
+            pr.appendChild(prIconEl);
+          }
+          pr.appendChild(document.createTextNode(prLabel));
           badges.appendChild(pr);
 
           top.appendChild(title);
@@ -9276,6 +9416,13 @@
           root.__tasksApi?.openTaskModal?.({ task: null, sprintId });
         });
       }
+      if (createBtnBacklog && !createBtnBacklog.dataset.bound) {
+        createBtnBacklog.dataset.bound = "true";
+        createBtnBacklog.addEventListener("click", () => {
+          const sprintId = resolveSelectedSprintId() || null;
+          root.__tasksApi?.openTaskModal?.({ task: null, sprintId });
+        });
+      }
 
       const toggleFilterPanel = (open) => {
         if (!filterPanel) return;
@@ -9324,15 +9471,11 @@
         const cfg = loadColumnsConfig();
         const order = Array.isArray(cfg.order) ? cfg.order.slice() : [...DEFAULT_COLUMNS];
         const hidden = cfg.hidden || {};
-        const rows = order.filter((k) => DEFAULT_COLUMNS.includes(k) && k !== "actions");
+        const rows = order.filter((k) => DEFAULT_COLUMNS.includes(k));
         // Add missing columns at the end (so user can "add" them).
         DEFAULT_COLUMNS.forEach((k) => {
-          if (k === "actions") return;
           if (!rows.includes(k)) rows.push(k);
         });
-        if (!rows.includes("actions")) {
-          // keep actions as implicit/always available
-        }
         columnsList.innerHTML = rows
           .map((key, idx) => {
             const label = COLUMN_LABEL[key] ?? key;
@@ -9619,40 +9762,125 @@
         });
       }
 
-      if (backlogList && !backlogList.dataset.bound) {
-        backlogList.dataset.bound = "true";
-        backlogList.addEventListener("pointerdown", (event) => {
-          const handle = event.target.closest("[data-action='resize-col']");
-          if (!handle) return;
-          const th = handle.closest("th[data-col-key]");
-          if (!th) return;
-          const key = th.dataset.colKey;
-          if (!key) return;
+	      if (backlogList && !backlogList.dataset.bound) {
+	        backlogList.dataset.bound = "true";
+	        // Confine horizontal wheel/trackpad scrolling to the backlog table, not the whole page.
+	        backlogList.addEventListener(
+	          "wheel",
+	          (event) => {
+	            const scroller = event.target.closest?.(".tasks-notion-scroll");
+	            if (!scroller) return;
+	            const dx = Number(event.deltaX || 0);
+	            const dy = Number(event.deltaY || 0);
+	            const wantsHorizontal = Math.abs(dx) > Math.abs(dy) || event.shiftKey;
+	            if (!wantsHorizontal) return;
+	            event.preventDefault();
+	            scroller.scrollLeft += dx || dy;
+	          },
+	          { passive: false }
+	        );
+
+	        backlogList.addEventListener("pointerdown", (event) => {
+	          const th = event.target.closest("th[data-col-key]");
+	          if (!th) return;
+	          const key = th.dataset.colKey;
+	          if (!key) return;
           const table = th.closest("table");
           if (!table) return;
-          const col = table.querySelector(`colgroup col[data-col-key="${CSS.escape(key)}"]`);
-          const startX = event.clientX;
-          const startW = th.getBoundingClientRect().width;
-          const startTableW = table.getBoundingClientRect().width;
+
+          // Resize
+          const handle = event.target.closest("[data-action='resize-col']");
+          if (handle) {
+            const col = table.querySelector(`colgroup col[data-col-key="${CSS.escape(key)}"]`);
+            const startX = event.clientX;
+            const startW = th.getBoundingClientRect().width;
+            const startTableW = table.getBoundingClientRect().width;
+            th.setPointerCapture?.(event.pointerId);
+            event.preventDefault();
+
+            const min = 70;
+            const onMove = (e) => {
+              const dx = e.clientX - startX;
+              const next = Math.max(min, Math.round(startW + dx));
+              th.style.width = `${next}px`;
+              th.style.minWidth = `${next}px`;
+              if (col) col.style.width = `${next}px`;
+              const nextTableW = Math.max(320, Math.round(startTableW + dx));
+              table.style.width = `${nextTableW}px`;
+              table.style.minWidth = `${nextTableW}px`;
+            };
+            const onUp = (e) => {
+              document.removeEventListener("pointermove", onMove, true);
+              document.removeEventListener("pointerup", onUp, true);
+              const finalW = th.getBoundingClientRect().width;
+              setColumnWidth(key, finalW);
+            };
+            document.addEventListener("pointermove", onMove, true);
+            document.addEventListener("pointerup", onUp, true);
+            return;
+          }
+
+          // Reorder (pointer-based to work reliably across browsers)
+          if (event.button !== 0) return;
+          const headerRow = th.parentElement;
+          if (!headerRow) return;
+
+          const list = () => Array.from(headerRow.querySelectorAll("th[data-col-key]"));
+          const clearMarks = () =>
+            list().forEach((node) => node.classList.remove("tasks-col-drop-target", "tasks-col-dragging"));
+          const markTarget = (targetKey) =>
+            list().forEach((node) =>
+              node.classList.toggle("tasks-col-drop-target", (node.dataset.colKey || "") === targetKey)
+            );
+
+          const pickClosestKey = (x) => {
+            let bestKey = key;
+            let bestDist = Infinity;
+            list().forEach((node) => {
+              const rect = node.getBoundingClientRect();
+              const center = rect.left + rect.width / 2;
+              const dist = Math.abs(x - center);
+              if (dist < bestDist) {
+                bestDist = dist;
+                bestKey = node.dataset.colKey || bestKey;
+              }
+            });
+            return bestKey;
+          };
+
+          let overKey = key;
+          clearMarks();
+          th.classList.add("tasks-col-dragging");
+          markTarget(overKey);
           th.setPointerCapture?.(event.pointerId);
           event.preventDefault();
 
-          const min = 70;
           const onMove = (e) => {
-            const dx = e.clientX - startX;
-            const next = Math.max(min, Math.round(startW + dx));
-            th.style.width = `${next}px`;
-            th.style.minWidth = `${next}px`;
-            if (col) col.style.width = `${next}px`;
-            const nextTableW = Math.max(320, Math.round(startTableW + dx));
-            table.style.width = `${nextTableW}px`;
-            table.style.minWidth = `${nextTableW}px`;
+            const next = pickClosestKey(e.clientX);
+            if (next && next !== overKey) {
+              overKey = next;
+              markTarget(overKey);
+            }
           };
           const onUp = (e) => {
             document.removeEventListener("pointermove", onMove, true);
             document.removeEventListener("pointerup", onUp, true);
-            const finalW = th.getBoundingClientRect().width;
-            setColumnWidth(key, finalW);
+            clearMarks();
+            if (!overKey || overKey === key) return;
+            const cfg = loadColumnsConfig();
+            const order = Array.isArray(cfg.order) ? cfg.order.slice() : [...DEFAULT_COLUMNS];
+            const fromIdx = order.indexOf(key);
+            const toIdx = order.indexOf(overKey);
+            if (fromIdx < 0 || toIdx < 0) return;
+            order.splice(fromIdx, 1);
+            order.splice(toIdx, 0, key);
+            state.tasksColumnsConfig = { ...cfg, order };
+            saveColumnsConfig();
+            renderAll();
+            if (columnsList && !columnsPanel?.classList?.contains("hidden")) {
+              const ev = new Event("tasks:columns-updated");
+              window.dispatchEvent(ev);
+            }
           };
           document.addEventListener("pointermove", onMove, true);
           document.addEventListener("pointerup", onUp, true);
@@ -9711,6 +9939,8 @@
           try {
             if (field === "estado") {
               await updateTaskLocal(taskId, { estado: String(el.value || "").trim().toLowerCase() }, "Actualizado.");
+              // Estado/start_date puede afectar a padres (subtareas). Recargar para reflejar cascade.
+              await root.__tasksApi?.loadAndRender?.();
               return;
             }
             if (field === "prioridad") {
@@ -9737,6 +9967,12 @@
             if (field === "sprint_id") {
               const v = String(el.value || "");
               await updateTaskLocal(taskId, { sprint_id: v ? Number(v) : null }, "Actualizado.");
+              return;
+            }
+            if (field === "start_date") {
+              const v = String(el.value || "");
+              await updateTaskLocal(taskId, { start_date: v || null }, "Actualizado.");
+              await root.__tasksApi?.loadAndRender?.();
               return;
             }
             if (field === "fecha_vencimiento") {

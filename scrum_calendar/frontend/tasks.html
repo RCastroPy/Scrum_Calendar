@@ -926,17 +926,17 @@
         <div class="app-content">
           <div class="container-fluid">
             <section class="section tasks" id="tasks-root">
-              <div class="tasks-head d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
-                <div>
+              <div class="tasks-head mb-3">
+                <div class="tasks-title">
                   <h2 class="mb-1">Tareas</h2>
                   <p class="text-muted mb-0">Backlog y tablero Kanban (estilo Notion) para la celula/sprint.</p>
                 </div>
-	                <div class="d-flex flex-wrap gap-2 align-items-end tasks-toolbar">
-	                  <div>
-	                    <label class="form-label mb-1">Vista</label>
-	                    <div class="btn-group btn-group-sm" role="group" aria-label="Vistas de tareas">
-	                      <button class="btn btn-outline-primary" type="button" id="tasks-view-backlog" data-view="backlog">
-	                        Backlog
+                <div class="d-flex flex-wrap gap-2 align-items-end tasks-toolbar">
+                  <div>
+                    <label class="form-label mb-1">Vista</label>
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Vistas de tareas">
+                      <button class="btn btn-outline-primary" type="button" id="tasks-view-backlog" data-view="backlog">
+                        Backlog
 	                      </button>
 	                      <button class="btn btn-outline-primary" type="button" id="tasks-view-board" data-view="board">
 	                        Kanban
@@ -968,7 +968,7 @@
 	                      <option value="">Todos</option>
 	                      <option value="backlog">Backlog</option>
 	                      <option value="todo">To Do</option>
-	                      <option value="doing">Doing</option>
+	                      <option value="doing">In Progress</option>
 	                      <option value="done">Done</option>
 	                      <option value="archived">Archivado</option>
 	                    </select>
@@ -983,13 +983,13 @@
                       autocomplete="off"
                     />
                   </div>
-	                  <div class="d-flex align-items-end">
-	                    <button class="btn btn-primary btn-sm" id="task-create-btn" type="button">
-	                      <i class="bi bi-plus-lg me-1"></i>Nueva tarea
-	                    </button>
-	                  </div>
-	                </div>
-	              </div>
+                  <div class="d-flex align-items-end">
+                    <button class="btn btn-primary btn-sm" id="task-create-btn" type="button">
+                      <i class="bi bi-plus-lg me-1"></i>Nueva tarea
+                    </button>
+                  </div>
+                </div>
+              </div>
 
 	              <div id="tasks-status" class="small text-muted mb-2"></div>
 	              <div id="tasks-filter-chips" class="tasks-filter-chips mb-2"></div>
@@ -1027,7 +1027,7 @@
 	                          </div>
 	                          <div class="form-check">
 	                            <input class="form-check-input" type="checkbox" value="doing" id="tasks-st-doing" checked />
-	                            <label class="form-check-label" for="tasks-st-doing">Doing</label>
+	                            <label class="form-check-label" for="tasks-st-doing">In Progress</label>
 	                          </div>
 	                          <div class="form-check">
 	                            <input class="form-check-input" type="checkbox" value="done" id="tasks-st-done" checked />
@@ -1092,16 +1092,21 @@
 	                </div>
 	              </div>
 
-              <div id="tasks-view-backlog-panel">
-                <div class="card">
-                  <div class="card-header border-0">
-                    <h3 class="card-title mb-0">Backlog</h3>
-                  </div>
-                  <div class="card-body">
-                    <div id="tasks-backlog-list" class="tasks-backlog"></div>
-                  </div>
-                </div>
-              </div>
+	              <div id="tasks-view-backlog-panel">
+	                <div class="card">
+	                  <div class="card-header border-0">
+	                    <h3 class="card-title mb-0">Backlog</h3>
+	                  </div>
+	                  <div class="card-body">
+	                    <div id="tasks-backlog-list" class="tasks-backlog"></div>
+	                    <div class="mt-3 d-flex justify-content-end">
+	                      <button class="btn btn-primary btn-sm" id="task-create-btn-backlog" type="button">
+	                        <i class="bi bi-plus-lg me-1"></i>Nueva tarea
+	                      </button>
+	                    </div>
+	                  </div>
+	                </div>
+	              </div>
 
               <div id="tasks-view-board-panel" class="hidden">
                 <div class="card">
