@@ -5604,9 +5604,7 @@
     const endIndex = pageSize ? startIndex + pageSize : orderedRows.length;
     const pagedRows = pageSize ? orderedRows.slice(startIndex, endIndex) : orderedRows;
     const table = document.createElement("table");
-    if (useDataTables) {
-      table.className = "table table-bordered table-striped";
-    }
+    table.className = "table table-bordered table-striped table-hover align-middle";
     const selection = getAdminSelection(tableKey);
     const selectableIds = sortedRows.map((row) => row?.id).filter(Boolean);
     if (selection.size) {
@@ -5724,7 +5722,7 @@
         }
         const input = document.createElement("input");
         input.type = "search";
-        input.className = "column-filter";
+        input.className = "column-filter form-control form-control-sm";
         input.placeholder = "Buscar";
         input.value = filters[col.key] || "";
         input.addEventListener("input", () => {
@@ -5749,7 +5747,7 @@
           const th = document.createElement("th");
           const input = document.createElement("input");
           input.type = "search";
-          input.className = "column-filter";
+          input.className = "column-filter form-control form-control-sm";
           input.placeholder = "Buscar";
           input.value = filters[col.key] || "";
           input.addEventListener("input", () => {
@@ -7362,7 +7360,7 @@
     };
     const buildStatusSelect = (row) => {
       const select = document.createElement("select");
-      select.className = "table-input";
+      select.className = "table-input form-select form-select-sm";
       const current = getStatusLabel(row.status) || row.status || "";
       const options = current && !statusOptions.includes(current)
         ? [current, ...statusOptions]
@@ -10387,6 +10385,10 @@
   function initReleaseTable() {
     const panel = qs("#release-table-page");
     if (!panel || !state.base) return;
+    const releaseTableContainer = qs("#release-table", panel);
+    if (releaseTableContainer) {
+      releaseTableContainer.classList.add("admin-table");
+    }
     const base = state.base;
     const statusOptions = ["Backlog", "To Do", "In Progress", "Finalizada", "Cancelada"];
     const typeOptions = ["ETEC", "Func", "MTEC", "New", "Prob"];
@@ -10538,7 +10540,7 @@
     };
     const buildTypeSelect = (row) => {
       const select = document.createElement("select");
-      select.className = "table-input";
+      select.className = "table-input form-select form-select-sm";
       const blank = document.createElement("option");
       blank.value = "";
       blank.textContent = "Sin tipo";
@@ -10558,7 +10560,7 @@
     const buildDateInput = (row, field, options = {}) => {
       const input = document.createElement("input");
       input.type = "date";
-      input.className = "table-input";
+      input.className = "table-input form-control form-control-sm";
       const value = row[field] || "";
       const showToday = field === "end_date" && !value;
       const displayValue = showToday ? formatISO(getToday()) : value;
@@ -10638,7 +10640,7 @@
     const quarterOptions = manualQuarters.length ? buildQuarterOptions([], manualQuarters) : buildQuarterOptions(releasesFiltrados);
     const buildQuarterSelect = (row) => {
       const select = document.createElement("select");
-      select.className = "table-input";
+      select.className = "table-input form-select form-select-sm";
       const blank = document.createElement("option");
       blank.value = "";
       blank.textContent = "Sin quarter";

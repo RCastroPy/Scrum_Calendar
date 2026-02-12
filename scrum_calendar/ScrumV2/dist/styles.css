@@ -3121,6 +3121,23 @@ body.qr-zoomed::before {
   overflow-x: auto;
 }
 
+.release-toolbar {
+  display: grid;
+  gap: 10px;
+}
+
+.release-columns-panel {
+  max-width: 420px;
+}
+
+.release-columns-panel .card {
+  box-shadow: 0 12px 38px rgba(0, 0, 0, 0.16);
+}
+
+#release-table table {
+  margin-bottom: 0;
+}
+
 .admin-table .table-input {
   width: 100%;
   min-height: 34px;
