@@ -152,14 +152,16 @@
     pokerSessionId: "",
     pokerPresence: { total: 0, personas: [] },
     pokerVotes: [],
-    tableSort: {},
-    tableFilters: {},
-    tableDataPage: {},
-    releaseStatusFilter: "",
-    serverNow: null,
-    serverToday: null,
-    serverTimezone: "America/Asuncion",
-  };
+	    tableSort: {},
+	    tableFilters: {},
+	    tableDataPage: {},
+	    releaseStatusFilter: "",
+	    releaseQuarterFilter: "",
+	    releaseColumnsConfig: null,
+	    serverNow: null,
+	    serverToday: null,
+	    serverTimezone: "America/Asuncion",
+	  };
 
   const getAdminSelection = (tableKey) => {
     state.adminSelections = state.adminSelections || {};
@@ -5450,7 +5452,7 @@
       container.innerHTML = '<p class="empty">Sin registros</p>';
       return;
     }
-    const disableDataTables = container.id === "daily-dev-table";
+    const disableDataTables = container.id === "daily-dev-table" || container.id === "release-table";
     const disableFilters = container.id === "daily-dev-table";
     const useDataTables =
       !disableDataTables && Boolean(window.jQuery && window.jQuery.fn && window.jQuery.fn.DataTable);
@@ -7789,6 +7791,10 @@
     const board = qs("#tasks-board");
     const reportStatus = qs("#tasks-report-status");
     const reportAssignee = qs("#tasks-report-assignee");
+    const reportPriority = qs("#tasks-report-priority");
+    const reportVelocity = qs("#tasks-report-velocity");
+    const reportAging = qs("#tasks-report-aging");
+    const reportKpis = qs("#tasks-report-kpis");
     const sprintSelect = qs("#tasks-filter-sprint");
     const statusSelect = qs("#tasks-filter-status");
     const filtersBtn = qs("#tasks-filters-btn");
@@ -7842,6 +7848,7 @@
       "assignee_persona_id",
       "sprint_id",
       "start_date",
+      "end_date",
       "fecha_vencimiento",
       "dias_habiles",
       "puntos",
@@ -7857,6 +7864,7 @@
       assignee_persona_id: "Responsable",
       sprint_id: "Sprint",
       start_date: "Inicio",
+      end_date: "End Date",
       fecha_vencimiento: "Vencimiento",
       dias_habiles: "Dias",
       puntos: "Puntos",
@@ -8169,9 +8177,10 @@
 	      const commentSubmit = form.querySelector("#task-comment-submit");
 	      const commentsRefresh = form.querySelector("#task-comments-refresh");
 
-      const resolvedCelulaId = celulaId || resolveCelulaId() || 0;
+      const resolvedCelulaId = Number(task?.celula_id || celulaId || resolveCelulaId() || 0);
+      form.dataset.celulaId = resolvedCelulaId ? String(resolvedCelulaId) : "";
       const personasFiltradas = personasActivas
-        .filter((p) => personaBelongsToCelula(p, resolvedCelulaId))
+        .filter((p) => !resolvedCelulaId || personaBelongsToCelula(p, resolvedCelulaId))
         .map((p) => ({ id: p.id, nombre: `${p.nombre} ${p.apellido}`.trim() }))
         .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
       const sprintsFiltrados = [...(base.sprints || [])]
@@ -8445,7 +8454,7 @@
             descripcion: form.descripcion.value || null,
             estado: (form.estado.value || "backlog").trim().toLowerCase(),
             prioridad: (form.prioridad.value || "media").trim().toLowerCase(),
-            celula_id: resolveCelulaId() || null,
+            celula_id: Number(form.dataset.celulaId || 0) || null,
             sprint_id: form.sprint_id.value ? Number(form.sprint_id.value) : null,
             parent_id: form.dataset.parentId ? Number(form.dataset.parentId) : null,
             assignee_persona_id: form.assignee_persona_id.value ? Number(form.assignee_persona_id.value) : null,
@@ -8543,21 +8552,32 @@
 
       const tasks = buildBacklogContext(filtered || [], all || []);
 
-      const celulaId = resolveCelulaId();
+      const taskCelulaIds = new Set(
+        tasks
+          .map((t) => (t?.celula_id ? String(t.celula_id) : ""))
+          .filter(Boolean)
+      );
+      const hasTaskCelulas = taskCelulaIds.size > 0;
       const feriadosSet = new Set(
         (base.feriados || [])
-          .filter((f) => !celulaId || !f.celula_id || String(f.celula_id) === String(celulaId))
+          .filter((f) => !f.celula_id || !hasTaskCelulas || taskCelulaIds.has(String(f.celula_id)))
           .map((f) => f.fecha)
           .filter(Boolean)
       );
-      const sprintsCelula = [...(base.sprints || [])].filter((s) => String(s.celula_id) === String(celulaId));
-      const sprintMap = Object.fromEntries(sprintsCelula.map((s) => [String(s.id), s.nombre]));
-      const sprintOptions = sprintsCelula
+      const sprintPool = hasTaskCelulas
+        ? [...(base.sprints || [])].filter((s) => taskCelulaIds.has(String(s.celula_id)))
+        : [...(base.sprints || [])];
+      const sprintMap = Object.fromEntries(sprintPool.map((s) => [String(s.id), s.nombre]));
+      const sprintOptions = sprintPool
         .map((s) => ({ id: s.id, nombre: s.nombre }))
         .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
 
       const personasFiltradas = personasActivas
-        .filter((p) => personaBelongsToCelula(p, celulaId))
+        .filter(
+          (p) =>
+            !hasTaskCelulas ||
+            (p.celulas || []).some((celula) => taskCelulaIds.has(String(celula.id)))
+        )
         .map((p) => ({ id: p.id, nombre: `${p.nombre} ${p.apellido}`.trim() }))
         .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
 
@@ -8598,6 +8618,7 @@
         assignee_persona_id: 240,
         sprint_id: 240,
         start_date: 150,
+        end_date: 150,
         fecha_vencimiento: 150,
         dias_habiles: 140,
         puntos: 120,
@@ -8850,6 +8871,21 @@
         return cell;
       };
 
+      const buildEndInput = (task) => {
+        const input = document.createElement("input");
+        input.type = "date";
+        input.className = "";
+        input.dataset.field = "end_date";
+        input.value = task.end_date || "";
+        const cell = document.createElement("div");
+        cell.className = "tasks-notion-cell";
+        const pill = document.createElement("span");
+        pill.className = "tasks-notion-pill";
+        pill.appendChild(input);
+        cell.appendChild(pill);
+        return cell;
+      };
+
       const buildDaysCell = (task) => {
         const cell = document.createElement("div");
         cell.className = "tasks-notion-cell";
@@ -9001,6 +9037,10 @@
           }
           if (key === "start_date") {
             td.appendChild(buildStartInput(task));
+            return td;
+          }
+          if (key === "end_date") {
+            td.appendChild(buildEndInput(task));
             return td;
           }
           if (key === "fecha_vencimiento") {
@@ -9280,6 +9320,173 @@
             .map((x) => `<li><span>${x.label}</span><strong>${x.count}</strong></li>`)
             .join("")}</ul>`
         : `<p class="empty">Sin datos.</p>`;
+
+      const priorityRows = ["urgente", "alta", "media", "baja"]
+        .map((key) => ({
+          key,
+          label: PRIORITY_LABEL[key] || key,
+          count: tasks.filter((t) => String(t.prioridad || "media").toLowerCase() === key).length,
+        }))
+        .filter((row) => row.count > 0);
+      if (reportPriority) {
+        if (priorityRows.length) {
+          reportPriority.classList.add("hbar-chart", "tasks-report-chart");
+          renderHBar(reportPriority, {
+            labels: priorityRows.map((row) => row.label),
+            values: priorityRows.map((row) => row.count),
+            colors: priorityRows.map((row) => {
+              if (row.key === "urgente") return "#dc3545";
+              if (row.key === "alta") return "#fd7e14";
+              if (row.key === "media") return "#ffc107";
+              return "#198754";
+            }),
+            suffix: "tareas",
+          });
+        } else {
+          reportPriority.classList.remove("hbar-chart", "tasks-report-chart");
+          reportPriority.innerHTML = `<p class="empty">Sin datos.</p>`;
+        }
+      }
+
+      if (reportVelocity) {
+        const sprintVelocity = new Map();
+        tasks.forEach((task) => {
+          const key = task.sprint_id ? String(task.sprint_id) : "__none__";
+          const label =
+            key === "__none__"
+              ? "Sin sprint"
+              : sprintNameById[key] || `Sprint ${key}`;
+          const entry = sprintVelocity.get(key) || {
+            label,
+            total: 0,
+            done: 0,
+            pointsDone: 0,
+          };
+          entry.total += 1;
+          if (String(task.estado || "").toLowerCase() === "done") {
+            entry.done += 1;
+            entry.pointsDone += Number(task.puntos || 0) || 0;
+          }
+          sprintVelocity.set(key, entry);
+        });
+        const rows = Array.from(sprintVelocity.values()).sort((a, b) =>
+          a.label.localeCompare(b.label, "es", { sensitivity: "base", numeric: true })
+        );
+        if (rows.length) {
+          const hasPoints = rows.some((row) => row.pointsDone > 0);
+          reportVelocity.classList.add("hbar-chart", "tasks-report-chart");
+          renderHBar(reportVelocity, {
+            labels: rows.map((row) => row.label),
+            values: rows.map((row) => (hasPoints ? row.pointsDone : row.done)),
+            valueLabels: rows.map((row) =>
+              hasPoints
+                ? `${row.pointsDone.toFixed(1)} pts (${row.done}/${row.total})`
+                : `${row.done}/${row.total}`
+            ),
+            colors: rows.map(() => "#4ba3ff"),
+            suffix: hasPoints ? "pts" : "tareas",
+          });
+        } else {
+          reportVelocity.classList.remove("hbar-chart", "tasks-report-chart");
+          reportVelocity.innerHTML = `<p class="empty">Sin datos.</p>`;
+        }
+      }
+
+      if (reportAging) {
+        const today = formatISO(getToday());
+        const feriadosSet = new Set((base.feriados || []).map((f) => f.fecha).filter(Boolean));
+        let healthy = 0;
+        let risk = 0;
+        let overdue = 0;
+        let noDue = 0;
+        tasks.forEach((task) => {
+          const st = String(task.estado || "").toLowerCase();
+          if (st === "done" || st === "archived") return;
+          const due = task.fecha_vencimiento ? String(task.fecha_vencimiento) : "";
+          if (!due) {
+            noDue += 1;
+            return;
+          }
+          if (today > due) {
+            overdue += 1;
+            return;
+          }
+          const left = countWeekdays(today, due, feriadosSet);
+          if (left <= 2) risk += 1;
+          else healthy += 1;
+        });
+        const buckets = [
+          { label: "Al dia", value: healthy, color: "#198754" },
+          { label: "En riesgo", value: risk, color: "#ffc107" },
+          { label: "Vencidas", value: overdue, color: "#dc3545" },
+          { label: "Sin due date", value: noDue, color: "#6c757d" },
+        ].filter((row) => row.value > 0);
+        if (buckets.length) {
+          reportAging.classList.add("hbar-chart", "tasks-report-chart");
+          renderHBar(reportAging, {
+            labels: buckets.map((row) => row.label),
+            values: buckets.map((row) => row.value),
+            colors: buckets.map((row) => row.color),
+            suffix: "tareas",
+          });
+        } else {
+          reportAging.classList.remove("hbar-chart", "tasks-report-chart");
+          reportAging.innerHTML = `<p class="empty">Sin datos.</p>`;
+        }
+      }
+
+      if (reportKpis) {
+        const total = tasks.length;
+        const done = tasks.filter((t) => String(t.estado || "").toLowerCase() === "done").length;
+        const active = tasks.filter((t) => {
+          const st = String(t.estado || "").toLowerCase();
+          return st !== "done" && st !== "archived";
+        }).length;
+        const today = formatISO(getToday());
+        const overdue = tasks.filter((t) => {
+          const st = String(t.estado || "").toLowerCase();
+          if (st === "done" || st === "archived") return false;
+          const due = t.fecha_vencimiento ? String(t.fecha_vencimiento) : "";
+          return Boolean(due && due < today);
+        }).length;
+        const feriadosSet = new Set((base.feriados || []).map((f) => f.fecha).filter(Boolean));
+        const cycleDays = tasks
+          .map((t) => {
+            if (String(t.estado || "").toLowerCase() !== "done") return null;
+            if (!t.start_date || !t.end_date) return null;
+            const value = countWeekdays(String(t.start_date), String(t.end_date), feriadosSet);
+            return Number.isFinite(value) && value > 0 ? value : null;
+          })
+          .filter((value) => Number.isFinite(value));
+        const avgCycle = cycleDays.length
+          ? Math.round((cycleDays.reduce((sum, value) => sum + value, 0) / cycleDays.length) * 10) / 10
+          : 0;
+        const completion = total ? Math.round((done / total) * 100) : 0;
+        reportKpis.innerHTML = `
+          <div class="tasks-kpi-grid">
+            <article class="tasks-kpi-card">
+              <span>Total</span>
+              <strong>${total}</strong>
+            </article>
+            <article class="tasks-kpi-card">
+              <span>Completadas</span>
+              <strong>${completion}%</strong>
+            </article>
+            <article class="tasks-kpi-card">
+              <span>Activas</span>
+              <strong>${active}</strong>
+            </article>
+            <article class="tasks-kpi-card">
+              <span>Vencidas</span>
+              <strong>${overdue}</strong>
+            </article>
+            <article class="tasks-kpi-card">
+              <span>Ciclo promedio</span>
+              <strong>${avgCycle} dias</strong>
+            </article>
+          </div>
+        `;
+      }
     };
 
     const updateTaskLocal = async (taskId, payload, okMessage) => {
@@ -9311,17 +9518,8 @@
 
     const loadAndRender = async () => {
       const celulaId = resolveCelulaId();
-      if (!celulaId) {
-        setTasksStatus("Selecciona una celula para ver/crear tareas.", "info");
-        if (backlogList) backlogList.innerHTML = `<p class="empty">Selecciona una celula.</p>`;
-        if (board) board.innerHTML = `<p class="empty">Selecciona una celula.</p>`;
-        if (reportStatus) reportStatus.innerHTML = `<p class="empty">Selecciona una celula.</p>`;
-        if (reportAssignee) reportAssignee.innerHTML = `<p class="empty">Selecciona una celula.</p>`;
-        return;
-      }
-
       const celula = (base.cells || []).find((c) => String(c.id) === String(celulaId));
-      const sprints = [...(base.sprints || [])].filter((s) => String(s.celula_id) === String(celulaId));
+      const sprints = [...(base.sprints || [])];
       const sprintNameMap = Object.fromEntries(
         sprints.map((s) => [String(s.id), String(s.nombre || "").trim() || `Sprint ${s.id}`])
       );
@@ -9350,13 +9548,15 @@
 
       try {
         setTasksStatus("Cargando tareas...", "info");
-        const items = await fetchJson(`/tasks?celula_id=${celulaId}`);
+        const items = await fetchJson("/tasks");
         state.tasksCache = Array.isArray(items) ? items : [];
         const sprintLabel = state.tasksSprintFilter
           ? sprintNameMap[String(state.tasksSprintFilter)] || `Sprint ${state.tasksSprintFilter}`
           : "Todos los sprints";
         setTasksStatus(
-          `${celula?.nombre || `Celula ${celulaId}`} · ${sprintLabel} · ${state.tasksCache.length} tarea(s)`,
+          `Todas las celulas · ${sprintLabel} · ${state.tasksCache.length} tarea(s)${
+            celula ? ` · Celula por defecto: ${celula.nombre}` : ""
+          }`,
           "ok"
         );
         renderAll();
@@ -9975,6 +10175,11 @@
               await root.__tasksApi?.loadAndRender?.();
               return;
             }
+            if (field === "end_date") {
+              const v = String(el.value || "");
+              await updateTaskLocal(taskId, { end_date: v || null }, "Actualizado.");
+              return;
+            }
             if (field === "fecha_vencimiento") {
               const v = String(el.value || "");
               await updateTaskLocal(taskId, { fecha_vencimiento: v || null }, "Actualizado.");
@@ -10118,11 +10323,9 @@
     setCheckboxes("#tasks-filter-statuses", state.tasksFilters?.statuses || []);
     setCheckboxes("#tasks-filter-priorities", state.tasksFilters?.priorities || []);
     if (filterAssignee) {
-      const celulaId = resolveCelulaId();
       const opts = [
         { id: "__none__", nombre: "Sin responsable" },
         ...personasActivas
-          .filter((p) => personaBelongsToCelula(p, celulaId))
           .map((p) => ({ id: String(p.id), nombre: `${p.nombre} ${p.apellido}`.trim() })),
       ];
       filterAssignee.innerHTML = "";
@@ -10185,14 +10388,29 @@
     const panel = qs("#release-table-page");
     if (!panel || !state.base) return;
     const base = state.base;
-    const personaMap = Object.fromEntries(
-      (base.personas || []).map((persona) => [
-        persona.id,
-        `${persona.nombre} ${persona.apellido}`.trim(),
-      ])
-    );
     const statusOptions = ["Backlog", "To Do", "In Progress", "Finalizada", "Cancelada"];
     const typeOptions = ["ETEC", "Func", "MTEC", "New", "Prob"];
+    const RELEASE_COLUMNS_KEY = "scrum_calendar_release_columns_v1";
+    const RELEASE_COLUMNS_DEFAULT = [
+      "issue_key",
+      "issue_type",
+      "summary",
+      "quarter",
+      "status",
+      "start_date",
+      "end_date",
+      "due_date",
+    ];
+    const RELEASE_COLUMN_LABELS = {
+      issue_key: "Issue",
+      issue_type: "Tipo",
+      summary: "Resumen",
+      quarter: "Quarter",
+      status: "Estado",
+      start_date: "Start Date",
+      end_date: "End Date",
+      due_date: "Due Date",
+    };
     const buildQuarterOptions = (rows, manual = []) => {
       const set = new Set();
       manual.forEach((value) => {
@@ -10209,6 +10427,69 @@
         }
       });
       return Array.from(set).sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
+    };
+    const loadReleaseColumnsConfig = () => {
+      if (state.releaseColumnsConfig) return state.releaseColumnsConfig;
+      let cfg = null;
+      try {
+        const raw = localStorage.getItem(RELEASE_COLUMNS_KEY);
+        if (raw) cfg = JSON.parse(raw);
+      } catch {
+        cfg = null;
+      }
+      const hidden = cfg && cfg.hidden && typeof cfg.hidden === "object" ? { ...cfg.hidden } : {};
+      state.releaseColumnsConfig = { hidden };
+      return state.releaseColumnsConfig;
+    };
+    const saveReleaseColumnsConfig = () => {
+      try {
+        localStorage.setItem(RELEASE_COLUMNS_KEY, JSON.stringify(state.releaseColumnsConfig || { hidden: {} }));
+      } catch {
+        // ignore storage errors
+      }
+    };
+    const ensureToolbar = () => {
+      let toolbar = qs("#release-toolbar", panel);
+      if (!toolbar) {
+        toolbar = document.createElement("div");
+        toolbar.id = "release-toolbar";
+        toolbar.className = "release-toolbar mb-3";
+        toolbar.innerHTML = `
+          <div class="d-flex flex-wrap gap-2 align-items-end">
+            <div>
+              <label class="form-label mb-1" for="release-quarter-filter">Quarter (Q)</label>
+              <select id="release-quarter-filter" class="form-select form-select-sm"></select>
+            </div>
+            <div>
+              <button class="btn btn-outline-secondary btn-sm" type="button" id="release-columns-btn">
+                <i class="bi bi-layout-three-columns me-1"></i>Columnas
+              </button>
+            </div>
+          </div>
+          <div id="release-columns-panel" class="release-columns-panel hidden" aria-label="Columnas release">
+            <div class="card">
+              <div class="card-body">
+                <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                  <div class="fw-bold">Columnas de tabla</div>
+                  <button class="btn btn-primary btn-sm" type="button" id="release-columns-close">Cerrar</button>
+                </div>
+                <div class="text-muted small mb-2">Activa/desactiva columnas visibles.</div>
+                <div id="release-columns-list"></div>
+                <div class="mt-3">
+                  <button class="btn btn-outline-secondary btn-sm" type="button" id="release-columns-reset">
+                    Restaurar por defecto
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+        const tableCard = qs("#release-table", panel)?.closest(".card");
+        if (tableCard && tableCard.parentNode) {
+          tableCard.parentNode.insertBefore(toolbar, tableCard);
+        }
+      }
+      return toolbar;
     };
     const updateReleaseItem = async (itemId, payload) => {
       try {
@@ -10240,9 +10521,7 @@
       const select = document.createElement("select");
       select.className = "table-input";
       const current = row.status || "";
-      const options = current && !statusOptions.includes(current)
-        ? [current, ...statusOptions]
-        : statusOptions;
+      const options = current && !statusOptions.includes(current) ? [current, ...statusOptions] : statusOptions;
       options.forEach((value) => {
         const opt = document.createElement("option");
         opt.value = value;
@@ -10300,19 +10579,15 @@
         }
       });
       input.addEventListener("change", async () => {
-        if (flag) {
-          flag.classList.add("hidden");
-        }
+        if (flag) flag.classList.add("hidden");
         await updateReleaseItem(row.id, { [field]: input.value || null });
       });
-      if (flag) {
-        const wrap = document.createElement("span");
-        wrap.className = "date-flag";
-        wrap.appendChild(flag);
-        wrap.appendChild(input);
-        return wrap;
-      }
-      return input;
+      if (!flag) return input;
+      const wrap = document.createElement("span");
+      wrap.className = "date-flag";
+      wrap.appendChild(flag);
+      wrap.appendChild(input);
+      return wrap;
     };
     const getQuarterLabel = (row) => {
       if (row.quarter) return row.quarter;
@@ -10339,17 +10614,28 @@
       const tipo = normalizeText(item.release_tipo || "");
       return issueType === "release" || (!!tipo && tipo !== "tarea");
     };
+    const getQuarterFilterValue = (item) => {
+      const label = getQuarterLabel(item);
+      return label && label !== "-" ? label : "__none__";
+    };
+
+    const toolbar = ensureToolbar();
+    const quarterFilterEl = qs("#release-quarter-filter", toolbar);
+    const columnsBtn = qs("#release-columns-btn", toolbar);
+    const columnsPanel = qs("#release-columns-panel", toolbar);
+    const columnsList = qs("#release-columns-list", toolbar);
+    const columnsCloseBtn = qs("#release-columns-close", toolbar);
+    const columnsResetBtn = qs("#release-columns-reset", toolbar);
+    const columnsCfg = loadReleaseColumnsConfig();
+
     const releasesFiltrados = (base.releaseItems || []).filter((item) => {
       if (!isReleaseRow(item)) return false;
-      if (state.selectedCelulaId) {
-        return String(item.celula_id) === String(state.selectedCelulaId);
-      }
+      if (state.selectedCelulaId) return String(item.celula_id) === String(state.selectedCelulaId);
       return true;
     });
+
     const manualQuarters = (base.quarters || []).map((item) => item.label).filter(Boolean);
-    const quarterOptions = manualQuarters.length
-      ? buildQuarterOptions([], manualQuarters)
-      : buildQuarterOptions(releasesFiltrados);
+    const quarterOptions = manualQuarters.length ? buildQuarterOptions([], manualQuarters) : buildQuarterOptions(releasesFiltrados);
     const buildQuarterSelect = (row) => {
       const select = document.createElement("select");
       select.className = "table-input";
@@ -10369,13 +10655,81 @@
       });
       return select;
     };
+    if (quarterFilterEl) {
+      const prev = state.releaseQuarterFilter || "";
+      quarterFilterEl.innerHTML = `
+        <option value="">Todos</option>
+        ${quarterOptions.map((label) => `<option value="${label}">${label}</option>`).join("")}
+        <option value="__none__">Sin quarter</option>
+      `;
+      const exists = Array.from(quarterFilterEl.options).some((opt) => opt.value === prev);
+      state.releaseQuarterFilter = exists ? prev : "";
+      quarterFilterEl.value = state.releaseQuarterFilter || "";
+      if (!quarterFilterEl.dataset.bound) {
+        quarterFilterEl.dataset.bound = "true";
+        quarterFilterEl.addEventListener("change", () => {
+          state.releaseQuarterFilter = quarterFilterEl.value || "";
+          state.adminPage["release-table"] = 1;
+          initReleaseTable();
+        });
+      }
+    }
+
+    const toggleColumnsPanel = (open) => {
+      if (!columnsPanel) return;
+      const next = open ?? columnsPanel.classList.contains("hidden");
+      columnsPanel.classList.toggle("hidden", !next);
+    };
+    if (columnsBtn && !columnsBtn.dataset.bound) {
+      columnsBtn.dataset.bound = "true";
+      columnsBtn.addEventListener("click", () => toggleColumnsPanel());
+    }
+    if (columnsCloseBtn && !columnsCloseBtn.dataset.bound) {
+      columnsCloseBtn.dataset.bound = "true";
+      columnsCloseBtn.addEventListener("click", () => toggleColumnsPanel(false));
+    }
+    if (columnsResetBtn && !columnsResetBtn.dataset.bound) {
+      columnsResetBtn.dataset.bound = "true";
+      columnsResetBtn.addEventListener("click", () => {
+        state.releaseColumnsConfig = { hidden: {} };
+        saveReleaseColumnsConfig();
+        initReleaseTable();
+      });
+    }
+    if (columnsList) {
+      columnsList.innerHTML = RELEASE_COLUMNS_DEFAULT.map((key) => {
+        const label = RELEASE_COLUMN_LABELS[key] || key;
+        const checked = !columnsCfg.hidden?.[key];
+        return `
+          <label class="d-flex align-items-center gap-2 mb-2">
+            <input class="form-check-input" type="checkbox" data-col-key="${key}" ${checked ? "checked" : ""} />
+            <span>${label}</span>
+          </label>
+        `;
+      }).join("");
+      columnsList.querySelectorAll("input[type='checkbox'][data-col-key]").forEach((input) => {
+        input.addEventListener("change", () => {
+          const key = input.dataset.colKey || "";
+          if (!key) return;
+          const cfg = loadReleaseColumnsConfig();
+          cfg.hidden = cfg.hidden || {};
+          cfg.hidden[key] = !input.checked;
+          state.releaseColumnsConfig = cfg;
+          saveReleaseColumnsConfig();
+          initReleaseTable();
+        });
+      });
+    }
+
+    const quarterFiltered = state.releaseQuarterFilter
+      ? releasesFiltrados.filter((item) => getQuarterFilterValue(item) === state.releaseQuarterFilter)
+      : releasesFiltrados;
     const activeFilter = state.releaseStatusFilter || "";
     const releasesVisibles = activeFilter
-      ? releasesFiltrados.filter(
-          (item) => classifyReleaseStatus(item.status) === activeFilter
-        )
-      : releasesFiltrados;
-    const counts = releasesFiltrados.reduce(
+      ? quarterFiltered.filter((item) => classifyReleaseStatus(item.status) === activeFilter)
+      : quarterFiltered;
+
+    const counts = quarterFiltered.reduce(
       (acc, item) => {
         acc.total += 1;
         const bucket = classifyReleaseStatus(item.status);
@@ -10394,21 +10748,17 @@
         card.addEventListener("click", () => {
           let filter = card.dataset.releaseFilter || "";
           if (filter === "all") filter = "";
-          if (state.releaseStatusFilter === filter || !filter) {
-            state.releaseStatusFilter = "";
-          } else {
-            state.releaseStatusFilter = filter;
-          }
+          state.releaseStatusFilter = state.releaseStatusFilter === filter ? "" : filter;
+          state.adminPage["release-table"] = 1;
           initReleaseTable();
         });
       }
       const filter = card.dataset.releaseFilter || "";
       const isAll = !filter || filter === "all";
-      if ((isAll && !state.releaseStatusFilter) || (!isAll && filter === state.releaseStatusFilter)) {
-        card.classList.add("is-active");
-      } else {
-        card.classList.remove("is-active");
-      }
+      card.classList.toggle(
+        "is-active",
+        (isAll && !state.releaseStatusFilter) || (!isAll && filter === state.releaseStatusFilter)
+      );
     });
 
     const renderQuarterSummary = (rows) => {
@@ -10417,17 +10767,9 @@
       const summaryMap = new Map();
       rows.forEach((item) => {
         const label = getQuarterLabel(item);
-        const entry = summaryMap.get(label) || {
-          quarter: label,
-          comprometido: 0,
-          ejecutado: 0,
-        };
-        if (normalizeText(item.release_tipo) === "comprometido") {
-          entry.comprometido += 1;
-        }
-        if (classifyReleaseStatus(item.status) === "finalizada") {
-          entry.ejecutado += 1;
-        }
+        const entry = summaryMap.get(label) || { quarter: label, comprometido: 0, ejecutado: 0 };
+        if (normalizeText(item.release_tipo) === "comprometido") entry.comprometido += 1;
+        if (classifyReleaseStatus(item.status) === "finalizada") entry.ejecutado += 1;
         summaryMap.set(label, entry);
       });
       const rowsData = Array.from(summaryMap.values());
@@ -10482,128 +10824,86 @@
         return Math.max(0, Math.min(1, elapsed / totalDays));
       };
       rowsData.forEach((row) => {
-        const pct = row.comprometido
-          ? Math.round((row.ejecutado / row.comprometido) * 100)
-          : 0;
+        const pct = row.comprometido ? Math.round((row.ejecutado / row.comprometido) * 100) : 0;
         const progress = calcQuarterProgress(row.quarter);
         const expected = row.comprometido * progress;
         let statusClass = "status-muted";
         if (row.comprometido > 0) {
-          if (row.ejecutado >= expected) {
-            statusClass = "status-ok";
-          } else if (row.ejecutado >= expected * 0.75) {
-            statusClass = "status-warn";
-          } else {
-            statusClass = "status-danger";
-          }
+          if (row.ejecutado >= expected) statusClass = "status-ok";
+          else if (row.ejecutado >= expected * 0.75) statusClass = "status-warn";
+          else statusClass = "status-danger";
         }
-        const dot = `<span class=\"summary-dot ${statusClass}\"></span>`;
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${row.quarter}</td>
           <td>${row.comprometido}</td>
           <td>${row.ejecutado}</td>
-          <td>${dot}${pct}%</td>
+          <td><span class="summary-dot ${statusClass}"></span>${pct}%</td>
         `;
         tbody.appendChild(tr);
       });
       container.innerHTML = "";
       container.appendChild(table);
     };
-    renderAdminTable(
-      qs("#release-table"),
-      releasesVisibles,
-      [
-        { key: "_index", label: "#" },
-        { key: "issue_key", label: "Issue" },
-        { key: "issue_type", label: "Tipo" },
-        { key: "summary", label: "Resumen" },
-        {
-          key: "quarter",
-          label: "Quarter",
-          render: (row) => buildQuarterSelect(row),
-        },
-        {
-          key: "status",
-          label: "Estado",
-          render: (row) => buildStatusSelect(row),
-        },
-        {
-          key: "start_date",
-          label: "Start Date",
-          render: (row) => buildDateInput(row, "start_date"),
-        },
-        {
-          key: "end_date",
-          label: "End Date",
-          render: (row) => buildDateInput(row, "end_date", { showFlag: true }),
-        },
-        {
-          key: "tipo",
-          label: "Type",
-          render: (row) => buildTypeSelect(row),
-        },
-        {
-          key: "release_tipo",
-          label: "Tipo release",
-          render: (row) => row.release_tipo || "",
-        },
-      ],
-      []
-    );
-    renderQuarterSummary(releasesVisibles);
+
+    const tableColumnsByKey = {
+      issue_key: { key: "issue_key", label: "Issue" },
+      issue_type: { key: "issue_type", label: "Tipo" },
+      summary: { key: "summary", label: "Resumen" },
+      quarter: { key: "quarter", label: "Quarter", render: (row) => buildQuarterSelect(row) },
+      status: { key: "status", label: "Estado", render: (row) => buildStatusSelect(row) },
+      start_date: { key: "start_date", label: "Start Date", render: (row) => buildDateInput(row, "start_date") },
+      end_date: { key: "end_date", label: "End Date", render: (row) => buildDateInput(row, "end_date", { showFlag: true }) },
+      due_date: { key: "due_date", label: "Due Date", render: (row) => buildDateInput(row, "due_date") },
+      tipo: { key: "tipo", label: "Type", render: (row) => buildTypeSelect(row) },
+    };
+    const visibleColumns = RELEASE_COLUMNS_DEFAULT.filter((key) => !columnsCfg.hidden?.[key])
+      .map((key) => tableColumnsByKey[key])
+      .filter(Boolean);
+    const finalColumns = [{ key: "_index", label: "#" }, ...(visibleColumns.length ? visibleColumns : [tableColumnsByKey.summary])];
+
+    renderAdminTable(qs("#release-table"), releasesVisibles, finalColumns, []);
+    renderQuarterSummary(quarterFiltered);
 
     const kpiCommitmentEl = qs("#release-kpi-commitment");
     const kpiAvgExecEl = qs("#release-kpi-avg-exec");
     const kpiAgingEl = qs("#release-kpi-aging");
     const kpiTypeEl = qs("#release-kpi-types");
     if (kpiCommitmentEl) {
-      const committed = releasesFiltrados.filter(
-        (item) => normalizeText(item.release_tipo) === "comprometido"
-      );
-      const executed = committed.filter(
-        (item) => classifyReleaseStatus(item.status) === "finalizada"
-      );
-      const pct = committed.length
-        ? Math.round((executed.length / committed.length) * 100)
-        : 0;
+      const committed = quarterFiltered.filter((item) => normalizeText(item.release_tipo) === "comprometido");
+      const executed = committed.filter((item) => classifyReleaseStatus(item.status) === "finalizada");
+      const pct = committed.length ? Math.round((executed.length / committed.length) * 100) : 0;
       kpiCommitmentEl.textContent = `${pct}% (${executed.length}/${committed.length})`;
     }
     if (kpiAvgExecEl) {
-      const durations = releasesFiltrados
+      const durations = quarterFiltered
         .map((item) => {
           const start = parseDateOnly(item.start_date);
           const end = parseDateOnly(item.end_date);
           if (!start || !end || end < start) return null;
-          const diff = Math.round((end - start) / 86400000);
-          return diff;
+          return Math.round((end - start) / 86400000);
         })
         .filter((value) => Number.isFinite(value));
-      const avg = durations.length
-        ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length)
-        : 0;
+      const avg = durations.length ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length) : 0;
       kpiAvgExecEl.textContent = `${avg} dias`;
     }
     if (kpiAgingEl) {
       const today = getToday();
-      const ages = releasesFiltrados
+      const ages = quarterFiltered
         .filter((item) => classifyReleaseStatus(item.status) !== "finalizada")
         .map((item) => {
           const start = parseDateOnly(item.start_date);
           const due = parseDateOnly(item.due_date);
           const baseDate = start || due;
           if (!baseDate) return null;
-          const diff = Math.round((today - baseDate) / 86400000);
-          return diff;
+          return Math.round((today - baseDate) / 86400000);
         })
         .filter((value) => Number.isFinite(value));
-      const avg = ages.length
-        ? Math.round(ages.reduce((sum, value) => sum + value, 0) / ages.length)
-        : 0;
+      const avg = ages.length ? Math.round(ages.reduce((sum, value) => sum + value, 0) / ages.length) : 0;
       kpiAgingEl.textContent = `${avg} dias`;
     }
     const typeCounts = new Map();
-    releasesFiltrados.forEach((item) => {
+    quarterFiltered.forEach((item) => {
       const key = item.tipo || "Sin tipo";
       typeCounts.set(key, (typeCounts.get(key) || 0) + 1);
     });
@@ -10615,7 +10915,6 @@
     }
     const breakdown = qs("#release-type-breakdown");
     if (breakdown) {
-      const total = releasesFiltrados.length || 0;
       const sorted = Array.from(typeCounts.entries()).sort((a, b) => b[1] - a[1]);
       if (!sorted.length) {
         breakdown.classList.remove("donut-chart");
@@ -10625,25 +10924,9 @@
         breakdown.innerHTML = '<div class="donut"></div><ul class="legend"></ul>';
         const labels = sorted.map(([label]) => label);
         const values = sorted.map(([, count]) => count);
-        const palette = [
-          "#4ba3ff",
-          "#49d1cc",
-          "#ffb347",
-          "#ff6b6b",
-          "#a7f36a",
-          "#9b6bff",
-          "#6c757d",
-        ];
+        const palette = ["#4ba3ff", "#49d1cc", "#ffb347", "#ff6b6b", "#a7f36a", "#9b6bff", "#6c757d"];
         const colors = values.map((_, idx) => palette[idx % palette.length]);
-        renderPie(
-          breakdown,
-          {
-            labels,
-            values,
-            colors,
-          },
-          "donut"
-        );
+        renderPie(breakdown, { labels, values, colors }, "donut");
       }
     }
   }

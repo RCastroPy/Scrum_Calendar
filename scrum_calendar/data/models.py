@@ -316,6 +316,8 @@ class Task(Base):
     prioridad = Column(String(20), nullable=False, default="media")
     # Fecha real de inicio (se setea automaticamente al pasar a "doing")
     start_date = Column(Date, nullable=True)
+    # Fecha real de cierre (se setea automaticamente al pasar a "done")
+    end_date = Column(Date, nullable=True)
     fecha_vencimiento = Column(Date, nullable=True)
     tipo = Column(String(30), nullable=True)
     etiquetas = Column(Text, nullable=True)  # Comma-separated for now: "ui, backend"

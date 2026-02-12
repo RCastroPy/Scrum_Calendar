@@ -144,6 +144,8 @@ def startup():
         column_names = {row[0] for row in columns}
         if "start_date" not in column_names:
             conn.execute(text("alter table tasks add column start_date date"))
+        if "end_date" not in column_names:
+            conn.execute(text("alter table tasks add column end_date date"))
         tables = conn.execute(
             text(
                 "select table_name from information_schema.tables "

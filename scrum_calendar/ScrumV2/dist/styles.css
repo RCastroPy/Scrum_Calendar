@@ -5270,6 +5270,38 @@ body.theme-dark .tasks-comment {
   white-space: pre-wrap;
   font-size: 0.95rem;
 }
+.tasks-report-chart {
+  min-height: 140px;
+}
+.tasks-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+.tasks-kpi-card {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.9);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tasks-kpi-card span {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.58);
+}
+.tasks-kpi-card strong {
+  font-size: 1.2rem;
+  line-height: 1.1;
+}
+body.theme-dark .tasks-kpi-card {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.25);
+}
+body.theme-dark .tasks-kpi-card span {
+  color: rgba(255, 255, 255, 0.72);
+}
 .tasks-tree-toggle {
   border: none;
   background: transparent;

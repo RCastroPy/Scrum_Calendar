@@ -999,7 +999,7 @@
 	
 		              <div id="tasks-status" class="small text-muted mb-2"></div>
 		              <div id="tasks-filter-chips" class="tasks-filter-chips mb-2"></div>
-			              <div id="tasks-filter-panel" class="tasks-filter-panel hidden" aria-label="Filtros avanzados">
+			          <div id="tasks-filter-panel" class="tasks-filter-panel hidden" aria-label="Filtros avanzados">
 	                <div class="card">
 	                  <div class="card-body">
 	                    <div class="row g-3">
@@ -1009,31 +1009,14 @@
 	                          <div class="form-check">
 	                            <input class="form-check-input" type="checkbox" value="backlog" id="tasks-st-backlog" checked />
 	                            <label class="form-check-label" for="tasks-st-backlog">Backlog</label>
-		              </div>
-		              <div id="tasks-columns-panel" class="tasks-filter-panel hidden" aria-label="Columnas">
-		                <div class="card">
-		                  <div class="card-body">
-		                    <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
-		                      <div class="fw-bold">Columnas (estilo Notion)</div>
-		                      <button class="btn btn-primary btn-sm" type="button" id="tasks-columns-close">Cerrar</button>
-		                    </div>
-		                    <div class="text-muted small mb-3">Puedes mostrar/ocultar y reordenar columnas.</div>
-		                    <div id="tasks-columns-list"></div>
-		                    <div class="d-flex gap-2 mt-3">
-		                      <button class="btn btn-outline-secondary btn-sm" type="button" id="tasks-columns-reset">
-		                        Restaurar por defecto
-		                      </button>
-		                    </div>
-		                  </div>
-		                </div>
-		              </div>
+	                          </div>
 	                          <div class="form-check">
 	                            <input class="form-check-input" type="checkbox" value="todo" id="tasks-st-todo" checked />
 	                            <label class="form-check-label" for="tasks-st-todo">To Do</label>
 	                          </div>
 	                          <div class="form-check">
 	                            <input class="form-check-input" type="checkbox" value="doing" id="tasks-st-doing" checked />
-	                            <label class="form-check-label" for="tasks-st-doing">In Progress</label>
+		                        <label class="form-check-label" for="tasks-st-doing">In Progress</label>
 	                          </div>
 	                          <div class="form-check">
 	                            <input class="form-check-input" type="checkbox" value="done" id="tasks-st-done" checked />
@@ -1098,6 +1081,27 @@
 	                </div>
 	              </div>
 
+              <div id="tasks-columns-panel" class="tasks-columns-panel hidden" aria-label="Columnas">
+                <div class="card">
+                  <div class="card-body">
+                    <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                      <div class="fw-bold">Columnas (estilo Notion)</div>
+                      <button class="btn btn-primary btn-sm" type="button" id="tasks-columns-close">Cerrar</button>
+                    </div>
+                    <div class="text-muted small mb-3">
+                      Desmarca para ocultar. Arrastra para reordenar. Para cambiar el ancho, arrastra el borde derecho
+                      del encabezado de columna.
+                    </div>
+                    <div id="tasks-columns-list"></div>
+                    <div class="d-flex gap-2 mt-3">
+                      <button class="btn btn-outline-secondary btn-sm" type="button" id="tasks-columns-reset">
+                        Restaurar por defecto
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
 		              <div id="tasks-view-backlog-panel">
 		                <div class="card">
 		                  <div class="card-header border-0">
@@ -1122,7 +1126,7 @@
 
               <div id="tasks-view-reports-panel" class="hidden">
                 <div class="row g-3">
-                  <div class="col-12 col-lg-6">
+                  <div class="col-12 col-lg-4">
                     <div class="card">
                       <div class="card-header border-0">
                         <h3 class="card-title mb-0">Por estado</h3>
@@ -1132,13 +1136,53 @@
                       </div>
                     </div>
                   </div>
-                  <div class="col-12 col-lg-6">
+                  <div class="col-12 col-lg-4">
                     <div class="card">
                       <div class="card-header border-0">
                         <h3 class="card-title mb-0">Por responsable</h3>
                       </div>
                       <div class="card-body">
                         <div id="tasks-report-assignee" class="tasks-report"></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="col-12 col-lg-4">
+                    <div class="card">
+                      <div class="card-header border-0">
+                        <h3 class="card-title mb-0">Por prioridad</h3>
+                      </div>
+                      <div class="card-body">
+                        <div id="tasks-report-priority" class="tasks-report"></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="col-12 col-lg-6">
+                    <div class="card">
+                      <div class="card-header border-0">
+                        <h3 class="card-title mb-0">Velocidad por sprint</h3>
+                      </div>
+                      <div class="card-body">
+                        <div id="tasks-report-velocity" class="tasks-report"></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="col-12 col-lg-6">
+                    <div class="card">
+                      <div class="card-header border-0">
+                        <h3 class="card-title mb-0">Riesgo de vencimiento</h3>
+                      </div>
+                      <div class="card-body">
+                        <div id="tasks-report-aging" class="tasks-report"></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="col-12">
+                    <div class="card">
+                      <div class="card-header border-0">
+                        <h3 class="card-title mb-0">KPIs de tareas</h3>
+                      </div>
+                      <div class="card-body">
+                        <div id="tasks-report-kpis" class="tasks-report"></div>
                       </div>
                     </div>
                   </div>

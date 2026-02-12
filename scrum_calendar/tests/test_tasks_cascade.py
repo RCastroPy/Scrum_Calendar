@@ -121,3 +121,20 @@ def test_tasks_start_date_is_min_of_descendants_and_recursive(client: TestClient
     assert parent["estado"] == "doing"
     assert parent["start_date"] == "2024-12-31"
 
+
+def test_tasks_done_sets_end_date_automatically(client: TestClient):
+    bootstrap_admin(client)
+
+    resp = client.post("/celulas", json={"nombre": "Celula Done", "jira_codigo": "DON", "activa": True})
+    assert resp.status_code == 201
+    celula_id = resp.json()["id"]
+
+    resp = client.post("/tasks", json={"titulo": "Task Done", "celula_id": celula_id})
+    assert resp.status_code == 201
+    task_id = resp.json()["id"]
+
+    resp = client.put(f"/tasks/{task_id}", json={"estado": "done"})
+    assert resp.status_code == 200
+    task = resp.json()
+    assert task["estado"] == "done"
+    assert task["end_date"] == date.today().isoformat()

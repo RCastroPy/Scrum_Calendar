@@ -445,6 +445,7 @@ class TaskCreate(BaseModel):
     parent_id: Optional[int] = None
     assignee_persona_id: Optional[int] = None
     start_date: Optional[date] = None
+    end_date: Optional[date] = None
     fecha_vencimiento: Optional[date] = None
     orden: Optional[float] = None
     tipo: Optional[str] = None
@@ -464,6 +465,7 @@ class TaskUpdate(BaseModel):
     parent_id: Optional[int] = None
     assignee_persona_id: Optional[int] = None
     start_date: Optional[date] = None
+    end_date: Optional[date] = None
     fecha_vencimiento: Optional[date] = None
     orden: Optional[float] = None
     tipo: Optional[str] = None
@@ -487,6 +489,7 @@ class TaskOut(BaseModel):
     assignee_persona_id: Optional[int]
     creado_por_usuario_id: Optional[int]
     start_date: Optional[date]
+    end_date: Optional[date]
     fecha_vencimiento: Optional[date]
     tipo: Optional[str] = None
     etiquetas: Optional[str] = None
