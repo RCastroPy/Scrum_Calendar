@@ -4775,7 +4775,7 @@
       container.innerHTML = '<p class="empty">Sin registros</p>';
       return;
     }
-    const disableDataTables = container.id === "daily-dev-table" || container.id === "release-table";
+    const disableDataTables = container.id === "daily-dev-table";
     const disableFilters = container.id === "daily-dev-table";
     const useDataTables =
       !disableDataTables && Boolean(window.jQuery && window.jQuery.fn && window.jQuery.fn.DataTable);
@@ -5231,6 +5231,7 @@
       $table.DataTable().destroy();
     }
     $table.addClass("table table-bordered table-striped");
+    const isReleaseTable = tableKey === "release-table";
     const dt = $table.DataTable({
       paging: true,
       lengthChange: true,
@@ -5240,6 +5241,29 @@
       autoWidth: false,
       responsive: false,
       order: [],
+      pageLength: 10,
+      lengthMenu: [
+        [10, 20, 25, 50, 100, -1],
+        [10, 20, 25, 50, 100, "Todos"],
+      ],
+      stateSave: isReleaseTable,
+      dom: "<'row'<'col-sm-12 col-md-6'l><'col-sm-12 col-md-6'f>>" +
+        "<'row'<'col-sm-12'tr>>" +
+        "<'row'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
+      language: {
+        lengthMenu: "Mostrar _MENU_ registros",
+        search: "Buscar:",
+        info: "Mostrando _START_ a _END_ de _TOTAL_ registros",
+        infoEmpty: "Mostrando 0 a 0 de 0 registros",
+        infoFiltered: "(filtrado de _MAX_ registros)",
+        zeroRecords: "No se encontraron resultados",
+        paginate: {
+          first: "Primero",
+          last: "Ultimo",
+          next: "Siguiente",
+          previous: "Anterior",
+        },
+      },
       buttons: [],
     });
     dt.buttons().container().remove();

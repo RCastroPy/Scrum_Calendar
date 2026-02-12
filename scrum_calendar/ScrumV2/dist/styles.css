@@ -3138,6 +3138,38 @@ body.qr-zoomed::before {
   margin-bottom: 0;
 }
 
+#release-table.admin-table table.table {
+  table-layout: auto;
+  font-size: 0.875rem;
+}
+
+#release-table .dataTables_wrapper {
+  overflow-x: auto;
+}
+
+#release-table .dataTables_wrapper .row {
+  row-gap: 0.5rem;
+}
+
+#release-table .dataTables_wrapper .dataTables_length label,
+#release-table .dataTables_wrapper .dataTables_filter label,
+#release-table .dataTables_wrapper .dataTables_info {
+  font-size: 0.85rem;
+}
+
+#release-table .dataTables_wrapper .dataTables_length select {
+  min-width: 88px;
+}
+
+#release-table .dataTables_wrapper .dataTables_filter input {
+  margin-left: 0.5rem;
+}
+
+#release-table .dataTables_wrapper .dataTables_paginate .pagination {
+  margin: 0;
+  justify-content: flex-end;
+}
+
 .admin-table .table-input {
   width: 100%;
   min-height: 34px;
