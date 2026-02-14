@@ -130,6 +130,7 @@
     dailyStatusOpen: false,
     dailyStatusOutsideBound: false,
     dailyStatusTouched: false,
+    dailyGanttZoom: 1,
 	    dailySprintOpen: false,
 	    tasksView: "backlog",
 	    tasksSearch: "",
@@ -160,6 +161,9 @@
 	    tableDataState: {},
 	    releaseStatusFilter: "",
 	    releaseQuarterFilter: "",
+	    releaseGanttQuarterFilter: "",
+	    releaseGanttQuarterInitialized: false,
+	    releaseGanttZoom: 1,
 	    releaseColumnsConfig: null,
 	    serverNow: null,
 	    serverToday: null,
@@ -6506,6 +6510,13 @@
     const form = qs("#daily-form");
     const status = qs("#daily-status");
     const storypointsKpi = qs("#daily-kpi-storypoints");
+    const ganttBoard = qs("#daily-gantt-board");
+    const ganttSummary = qs("#daily-gantt-summary");
+    const ganttContext = qs("#daily-gantt-context");
+    const ganttZoomInput = qs("#daily-gantt-zoom");
+    const ganttZoomOutBtn = qs("#daily-gantt-zoom-out");
+    const ganttZoomInBtn = qs("#daily-gantt-zoom-in");
+    const ganttZoomLabel = qs("#daily-gantt-zoom-label");
 
     const sprints = getDailySprints(base);
     if (!sprints.length) {
@@ -6517,8 +6528,63 @@
       renderDailyItemsSummary(itemsCount, 0);
       if (devTable) devTable.innerHTML = '<p class="empty">Sin datos</p>';
       if (itemsTable) itemsTable.innerHTML = '<p class="empty">Sin items cargados.</p>';
+      if (ganttBoard) ganttBoard.innerHTML = '<p class="empty">Sin items para visualizar en Gantt.</p>';
+      if (ganttSummary) ganttSummary.textContent = "Sin datos";
+      if (ganttContext) ganttContext.textContent = "Total celula";
       if (status) status.textContent = "";
       return;
+    }
+
+    const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+    const addDays = (date, days) => {
+      const copy = new Date(date.getTime());
+      copy.setDate(copy.getDate() + days);
+      copy.setHours(0, 0, 0, 0);
+      return copy;
+    };
+    const dayDiff = (end, start) => Math.round((end - start) / 86400000);
+    const startOfWeek = (date) => {
+      const copy = new Date(date.getTime());
+      copy.setHours(0, 0, 0, 0);
+      const day = copy.getDay();
+      const diff = day === 0 ? -6 : 1 - day;
+      copy.setDate(copy.getDate() + diff);
+      return copy;
+    };
+    const getIsoWeek = (date) => {
+      const copy = new Date(date.getTime());
+      copy.setHours(0, 0, 0, 0);
+      const day = copy.getDay() || 7;
+      copy.setDate(copy.getDate() + 4 - day);
+      const yearStart = new Date(copy.getFullYear(), 0, 1);
+      return Math.ceil(((copy - yearStart) / 86400000 + 1) / 7);
+    };
+    const formatShortDate = (date) =>
+      date.toLocaleDateString("es-PY", { day: "2-digit", month: "2-digit" });
+    const setDailyGanttZoom = (nextPct) => {
+      const normalizedPct = clamp(Math.round(nextPct), 60, 250);
+      const nextZoom = normalizedPct / 100;
+      if (Math.abs((state.dailyGanttZoom || 1) - nextZoom) < 0.001) return;
+      state.dailyGanttZoom = nextZoom;
+      renderDaily(state.base);
+    };
+    if (ganttZoomInput && !ganttZoomInput.dataset.bound) {
+      ganttZoomInput.dataset.bound = "true";
+      ganttZoomInput.addEventListener("change", () => {
+        setDailyGanttZoom(Number(ganttZoomInput.value || 100));
+      });
+    }
+    if (ganttZoomOutBtn && !ganttZoomOutBtn.dataset.bound) {
+      ganttZoomOutBtn.dataset.bound = "true";
+      ganttZoomOutBtn.addEventListener("click", () => {
+        setDailyGanttZoom(Math.round((state.dailyGanttZoom || 1) * 100) - 10);
+      });
+    }
+    if (ganttZoomInBtn && !ganttZoomInBtn.dataset.bound) {
+      ganttZoomInBtn.dataset.bound = "true";
+      ganttZoomInBtn.addEventListener("click", () => {
+        setDailyGanttZoom(Math.round((state.dailyGanttZoom || 1) * 100) + 10);
+      });
     }
 
     const activeSprint = getActiveSprint(sprints) || sprints[0];
@@ -7687,6 +7753,232 @@
     );
     if (itemsTable && !itemsTable.querySelector("table")) {
       renderBasicItemsTable(itemsTable, items, itemsColumns);
+    }
+
+    const selectedPersona = selectedPersonaId
+      ? personasFiltradas.find((persona) => String(persona.id) === String(selectedPersonaId))
+      : null;
+    const scopeLabel = selectedPersona
+      ? `Persona: ${selectedPersona.nombre} ${selectedPersona.apellido}`
+      : selectedAssignee
+        ? `Asignado: ${selectedAssignee}`
+        : "Total celula";
+    if (ganttContext) ganttContext.textContent = scopeLabel;
+
+    const ganttZoomPct = clamp(Math.round((state.dailyGanttZoom || 1) * 100), 60, 250);
+    state.dailyGanttZoom = ganttZoomPct / 100;
+    if (ganttZoomInput) ganttZoomInput.value = String(ganttZoomPct);
+    if (ganttZoomLabel) ganttZoomLabel.textContent = `${ganttZoomPct}%`;
+
+    if (ganttBoard) {
+      if (!ganttBoard.dataset.boundDates) {
+        ganttBoard.dataset.boundDates = "true";
+        ganttBoard.addEventListener("click", (event) => {
+          if (event.target.closest(".daily-gantt-bar")) return;
+          ganttBoard
+            .querySelectorAll(".daily-gantt-bar.show-dates")
+            .forEach((el) => el.classList.remove("show-dates"));
+        });
+      }
+
+      const today = getToday();
+      const ganttRows = items
+        .map((item) => {
+          let start =
+            parseDateOnly(item.start_date) ||
+            parseDateOnly(item.due_date) ||
+            parseDateOnly(item.end_date);
+          let end =
+            parseDateOnly(item.end_date) ||
+            parseDateOnly(item.due_date) ||
+            start;
+          let isUnscheduled = false;
+          if (!start || !end) {
+            start = today;
+            end = today;
+            isUnscheduled = true;
+          }
+          if (end < start) {
+            const tmp = start;
+            start = end;
+            end = tmp;
+          }
+          return { item, start, end, isUnscheduled };
+        })
+        .sort((a, b) => {
+          const byStart = a.start - b.start;
+          if (byStart) return byStart;
+          const byEnd = a.end - b.end;
+          if (byEnd) return byEnd;
+          return String(a.item.issue_key || "").localeCompare(String(b.item.issue_key || ""), "es", {
+            numeric: true,
+          });
+        });
+
+      if (!ganttRows.length) {
+        ganttBoard.innerHTML = '<p class="empty">Sin items para visualizar en Gantt.</p>';
+        if (ganttSummary) {
+          const sprintPrefix = selectedSprint?.nombre ? `${selectedSprint.nombre} · ` : "";
+          ganttSummary.textContent = `${sprintPrefix}0 items visibles de ${itemsAll.length} · ${scopeLabel}`;
+        }
+      } else {
+        let minDate = ganttRows[0].start;
+        let maxDate = ganttRows[0].end;
+        ganttRows.forEach((row) => {
+          if (row.start < minDate) minDate = row.start;
+          if (row.end > maxDate) maxDate = row.end;
+        });
+        minDate = addDays(minDate, -3);
+        maxDate = addDays(maxDate, 3);
+        if (dayDiff(maxDate, minDate) < 13) {
+          maxDate = addDays(minDate, 13);
+        }
+        const dayWidth = Math.max(12, Math.round(18 * state.dailyGanttZoom));
+        const totalDays = dayDiff(maxDate, minDate) + 1;
+        const timelineWidth = Math.max(640, totalDays * dayWidth);
+        const todayLeft = dayDiff(today, minDate) * dayWidth;
+        const showToday = today >= minDate && today <= maxDate;
+
+        const grid = document.createElement("div");
+        grid.className = "daily-gantt-grid";
+        grid.style.setProperty("--timeline-width", `${timelineWidth}px`);
+        grid.style.setProperty("--day-width", `${dayWidth}px`);
+
+        const headLabel = document.createElement("div");
+        headLabel.className = "daily-gantt-head-label";
+        headLabel.textContent = "Tareas";
+        grid.appendChild(headLabel);
+
+        const headTrack = document.createElement("div");
+        headTrack.className = "daily-gantt-head-track";
+        headTrack.style.width = `${timelineWidth}px`;
+        const monthsWrap = document.createElement("div");
+        monthsWrap.className = "daily-gantt-months";
+        let monthCursor = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+        monthCursor.setHours(0, 0, 0, 0);
+        while (monthCursor <= maxDate) {
+          const monthStart = new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1);
+          monthStart.setHours(0, 0, 0, 0);
+          const monthEnd = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0);
+          monthEnd.setHours(0, 0, 0, 0);
+          const segmentStart = monthStart < minDate ? minDate : monthStart;
+          const segmentEnd = monthEnd > maxDate ? maxDate : monthEnd;
+          const spanDays = dayDiff(segmentEnd, segmentStart) + 1;
+          const monthCell = document.createElement("div");
+          monthCell.className = "daily-gantt-month";
+          monthCell.style.width = `${Math.max(dayWidth, spanDays * dayWidth)}px`;
+          monthCell.textContent = segmentStart.toLocaleDateString("es-PY", {
+            month: "short",
+            year: "numeric",
+          });
+          monthsWrap.appendChild(monthCell);
+          monthCursor = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 1);
+          monthCursor.setHours(0, 0, 0, 0);
+        }
+
+        const weeksWrap = document.createElement("div");
+        weeksWrap.className = "daily-gantt-weeks";
+        let weekCursor = startOfWeek(minDate);
+        while (weekCursor <= maxDate) {
+          const weekStart = new Date(weekCursor.getTime());
+          weekStart.setHours(0, 0, 0, 0);
+          const weekEnd = addDays(weekStart, 6);
+          const segmentStart = weekStart < minDate ? minDate : weekStart;
+          const segmentEnd = weekEnd > maxDate ? maxDate : weekEnd;
+          const spanDays = dayDiff(segmentEnd, segmentStart) + 1;
+          const weekCell = document.createElement("div");
+          weekCell.className = "daily-gantt-week";
+          weekCell.style.width = `${Math.max(dayWidth, spanDays * dayWidth)}px`;
+          weekCell.textContent = `S${getIsoWeek(segmentStart)} ${formatShortDate(segmentStart)}-${formatShortDate(
+            segmentEnd
+          )}`;
+          weeksWrap.appendChild(weekCell);
+          weekCursor = addDays(weekCursor, 7);
+        }
+        headTrack.appendChild(monthsWrap);
+        headTrack.appendChild(weeksWrap);
+        if (showToday) {
+          const todayLine = document.createElement("span");
+          todayLine.className = "daily-gantt-today";
+          todayLine.style.left = `${todayLeft}px`;
+          headTrack.appendChild(todayLine);
+        }
+        grid.appendChild(headTrack);
+
+        ganttRows.forEach((row) => {
+          const labelCell = document.createElement("div");
+          labelCell.className = "daily-gantt-row-label";
+          const title = document.createElement("div");
+          title.className = "daily-gantt-title";
+          title.textContent = `${row.item.issue_key || "ITEM"} - ${row.item.summary || "Sin resumen"}`;
+          const meta = document.createElement("div");
+          meta.className = "daily-gantt-meta";
+          const assignee =
+            resolvePersonaNameFromItem(row.item, personaLookup, personaMap) ||
+            row.item.assignee_nombre ||
+            "Sin asignar";
+          const statusText = getStatusLabel(row.item.status) || row.item.status || "Sin estado";
+          meta.textContent = `${assignee} · ${statusText} · ${row.item.start_date || "-"} -> ${
+            row.item.end_date || row.item.due_date || "-"
+          }`;
+          labelCell.appendChild(title);
+          labelCell.appendChild(meta);
+          grid.appendChild(labelCell);
+
+          const trackCell = document.createElement("div");
+          trackCell.className = "daily-gantt-row-track";
+          trackCell.style.width = `${timelineWidth}px`;
+          if (showToday) {
+            const todayLine = document.createElement("span");
+            todayLine.className = "daily-gantt-today";
+            todayLine.style.left = `${todayLeft}px`;
+            trackCell.appendChild(todayLine);
+          }
+          const bar = document.createElement("div");
+          bar.className = "daily-gantt-bar";
+          const normalizedStatus = normalizeText(getStatusLabel(row.item.status) || row.item.status || "");
+          if (normalizedStatus.includes("cancelad")) bar.classList.add("is-cancelled");
+          else if (normalizedStatus.includes("finaliz")) bar.classList.add("is-done");
+          else if (normalizedStatus.includes("progress")) bar.classList.add("is-progress");
+          else bar.classList.add("is-pending");
+          if (row.isUnscheduled) bar.classList.add("is-unscheduled");
+          const left = dayDiff(row.start, minDate) * dayWidth;
+          const width = Math.max(dayWidth, (dayDiff(row.end, row.start) + 1) * dayWidth);
+          bar.style.left = `${left}px`;
+          bar.style.width = `${width}px`;
+          const barLabel = document.createElement("span");
+          barLabel.className = "daily-gantt-bar-label";
+          barLabel.textContent = row.item.issue_key || row.item.summary || "Item";
+          const dateStart = document.createElement("span");
+          dateStart.className = "daily-gantt-bar-date is-start";
+          dateStart.textContent = formatISO(row.start);
+          const dateEnd = document.createElement("span");
+          dateEnd.className = "daily-gantt-bar-date is-end";
+          dateEnd.textContent = formatISO(row.end);
+          bar.addEventListener("click", (event) => {
+            event.stopPropagation();
+            const shouldOpen = !bar.classList.contains("show-dates");
+            ganttBoard
+              .querySelectorAll(".daily-gantt-bar.show-dates")
+              .forEach((el) => el.classList.remove("show-dates"));
+            if (shouldOpen) bar.classList.add("show-dates");
+          });
+          bar.appendChild(barLabel);
+          bar.appendChild(dateStart);
+          bar.appendChild(dateEnd);
+          trackCell.appendChild(bar);
+          grid.appendChild(trackCell);
+        });
+
+        ganttBoard.innerHTML = "";
+        ganttBoard.appendChild(grid);
+        if (ganttSummary) {
+          const sprintPrefix = selectedSprint?.nombre ? `${selectedSprint.nombre} · ` : "";
+          ganttSummary.textContent = `${sprintPrefix}${ganttRows.length} items visibles de ${
+            itemsAll.length
+          } · ${scopeLabel} · Rango ${formatISO(minDate)} a ${formatISO(maxDate)}`;
+        }
+      }
     }
 
     if (form) {
@@ -11446,6 +11738,366 @@
     }
   }
 
+  function initReleaseGantt() {
+    const panel = qs("#release-gantt-page");
+    if (!panel || !state.base) return;
+    const board = qs("#release-gantt-board", panel);
+    const quarterFilterEl = qs("#release-gantt-quarter-filter", panel);
+    const summaryEl = qs("#release-gantt-summary", panel);
+    const zoomInput = qs("#release-gantt-zoom", panel);
+    const zoomOutBtn = qs("#release-gantt-zoom-out", panel);
+    const zoomInBtn = qs("#release-gantt-zoom-in", panel);
+    const zoomLabel = qs("#release-gantt-zoom-label", panel);
+    if (!board || !quarterFilterEl || !zoomInput) return;
+
+    const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+    const addDays = (date, days) => {
+      const copy = new Date(date.getTime());
+      copy.setDate(copy.getDate() + days);
+      copy.setHours(0, 0, 0, 0);
+      return copy;
+    };
+    const getIsoWeek = (date) => {
+      const copy = new Date(date.getTime());
+      copy.setHours(0, 0, 0, 0);
+      const day = copy.getDay() || 7;
+      copy.setDate(copy.getDate() + 4 - day);
+      const yearStart = new Date(copy.getFullYear(), 0, 1);
+      return Math.ceil(((copy - yearStart) / 86400000 + 1) / 7);
+    };
+    const startOfWeek = (date) => {
+      const copy = new Date(date.getTime());
+      copy.setHours(0, 0, 0, 0);
+      const day = copy.getDay();
+      const diff = day === 0 ? -6 : 1 - day;
+      copy.setDate(copy.getDate() + diff);
+      return copy;
+    };
+    const formatShortDate = (date) =>
+      date.toLocaleDateString("es-PY", { day: "2-digit", month: "2-digit" });
+    const dayDiff = (end, start) => Math.round((end - start) / 86400000);
+    const getQuarterLabel = (row) => {
+      if (row.quarter) return row.quarter;
+      const startDate = parseDateOnly(row.start_date);
+      const dueDate = parseDateOnly(row.due_date);
+      const date = startDate || dueDate;
+      if (date) {
+        const quarter = Math.floor(date.getMonth() / 3) + 1;
+        return `Q${quarter} ${date.getFullYear()}`;
+      }
+      if (row.sprint_nombre) {
+        const rank = getSprintRank(row.sprint_nombre);
+        if (rank) {
+          const year = Math.floor(rank / 100);
+          const week = rank % 100;
+          const quarter = Math.min(4, Math.max(1, Math.floor((week - 1) / 13) + 1));
+          return `Q${quarter} ${year}`;
+        }
+      }
+      return "-";
+    };
+    const getQuarterFilterValue = (item) => {
+      const label = getQuarterLabel(item);
+      return label && label !== "-" ? label : "__none__";
+    };
+    const buildQuarterOptions = (rows, manual = []) => {
+      const set = new Set();
+      manual.forEach((value) => {
+        if (value) set.add(value);
+      });
+      rows.forEach((item) => {
+        if (item.quarter) {
+          set.add(item.quarter);
+          return;
+        }
+        const label = getQuarterLabel(item);
+        if (label && label !== "-") {
+          set.add(label);
+        }
+      });
+      return Array.from(set).sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
+    };
+    const isReleaseRow = (item) => {
+      const issueType = normalizeText(item.issue_type || "");
+      const tipo = normalizeText(item.release_tipo || "");
+      return issueType === "release" || (!!tipo && tipo !== "tarea");
+    };
+
+    const setZoomPct = (nextPct) => {
+      const normalizedPct = clamp(Math.round(nextPct), 60, 250);
+      const nextZoom = normalizedPct / 100;
+      if (Math.abs((state.releaseGanttZoom || 1) - nextZoom) < 0.001) return;
+      state.releaseGanttZoom = nextZoom;
+      initReleaseGantt();
+    };
+
+    if (!zoomInput.dataset.bound) {
+      zoomInput.dataset.bound = "true";
+      zoomInput.addEventListener("change", () => {
+        setZoomPct(Number(zoomInput.value || 100));
+      });
+    }
+    if (zoomOutBtn && !zoomOutBtn.dataset.bound) {
+      zoomOutBtn.dataset.bound = "true";
+      zoomOutBtn.addEventListener("click", () => {
+        setZoomPct(Math.round((state.releaseGanttZoom || 1) * 100) - 10);
+      });
+    }
+    if (zoomInBtn && !zoomInBtn.dataset.bound) {
+      zoomInBtn.dataset.bound = "true";
+      zoomInBtn.addEventListener("click", () => {
+        setZoomPct(Math.round((state.releaseGanttZoom || 1) * 100) + 10);
+      });
+    }
+
+    const releasesFiltrados = (state.base.releaseItems || []).filter((item) => {
+      if (!isReleaseRow(item)) return false;
+      if (state.selectedCelulaId) return String(item.celula_id) === String(state.selectedCelulaId);
+      return true;
+    });
+
+    const manualQuarters = (state.base.quarters || []).map((item) => item.label).filter(Boolean);
+    const quarterOptions = buildQuarterOptions(releasesFiltrados, manualQuarters);
+    const prevQuarter = state.releaseGanttQuarterFilter || "";
+    const todayForQuarter = getToday();
+    const currentQuarterLabel = `Q${Math.floor(todayForQuarter.getMonth() / 3) + 1} ${todayForQuarter.getFullYear()}`;
+    quarterFilterEl.innerHTML = `
+      <option value="">Todos</option>
+      ${quarterOptions.map((label) => `<option value="${label}">${label}</option>`).join("")}
+      <option value="__none__">Sin quarter</option>
+    `;
+    const optionValues = Array.from(quarterFilterEl.options).map((opt) => opt.value);
+    let nextQuarter = prevQuarter;
+    if (!state.releaseGanttQuarterInitialized && !nextQuarter && optionValues.includes(currentQuarterLabel)) {
+      nextQuarter = currentQuarterLabel;
+    }
+    if (nextQuarter && !optionValues.includes(nextQuarter)) {
+      nextQuarter = optionValues.includes(currentQuarterLabel) ? currentQuarterLabel : "";
+    }
+    state.releaseGanttQuarterFilter = nextQuarter;
+    state.releaseGanttQuarterInitialized = true;
+    quarterFilterEl.value = state.releaseGanttQuarterFilter || "";
+    if (!quarterFilterEl.dataset.bound) {
+      quarterFilterEl.dataset.bound = "true";
+      quarterFilterEl.addEventListener("change", () => {
+        state.releaseGanttQuarterFilter = quarterFilterEl.value || "";
+        initReleaseGantt();
+      });
+    }
+
+    const quarterFiltered = state.releaseGanttQuarterFilter
+      ? releasesFiltrados.filter((item) => getQuarterFilterValue(item) === state.releaseGanttQuarterFilter)
+      : releasesFiltrados;
+    const today = getToday();
+    const rows = quarterFiltered
+      .map((item) => {
+        let start = parseDateOnly(item.start_date) || parseDateOnly(item.due_date) || parseDateOnly(item.end_date);
+        let end = parseDateOnly(item.end_date) || parseDateOnly(item.due_date) || start;
+        let isUnscheduled = false;
+        if (!start || !end) {
+          start = today;
+          end = today;
+          isUnscheduled = true;
+        }
+        if (end < start) {
+          const tmp = start;
+          start = end;
+          end = tmp;
+        }
+        return {
+          item,
+          start,
+          end,
+          isUnscheduled,
+          quarter: getQuarterLabel(item),
+        };
+      })
+      .sort((a, b) => {
+        const byStart = a.start - b.start;
+        if (byStart) return byStart;
+        const byEnd = a.end - b.end;
+        if (byEnd) return byEnd;
+        return String(a.item.issue_key || "").localeCompare(String(b.item.issue_key || ""), "es", { numeric: true });
+      });
+
+    const zoomPct = clamp(Math.round((state.releaseGanttZoom || 1) * 100), 60, 250);
+    state.releaseGanttZoom = zoomPct / 100;
+    zoomInput.value = String(zoomPct);
+    if (zoomLabel) zoomLabel.textContent = `${zoomPct}%`;
+
+    if (!rows.length) {
+      board.innerHTML = '<p class="empty">Sin releases para visualizar en Gantt.</p>';
+      if (summaryEl) summaryEl.textContent = "No hay datos para el filtro seleccionado.";
+      return;
+    }
+
+    let minDate = rows[0].start;
+    let maxDate = rows[0].end;
+    rows.forEach((row) => {
+      if (row.start < minDate) minDate = row.start;
+      if (row.end > maxDate) maxDate = row.end;
+    });
+    minDate = addDays(minDate, -3);
+    maxDate = addDays(maxDate, 3);
+    if (dayDiff(maxDate, minDate) < 13) {
+      maxDate = addDays(minDate, 13);
+    }
+
+    const dayWidth = Math.max(12, Math.round(18 * state.releaseGanttZoom));
+    const totalDays = dayDiff(maxDate, minDate) + 1;
+    const timelineWidth = Math.max(640, totalDays * dayWidth);
+    const todayLeft = dayDiff(today, minDate) * dayWidth;
+    const showToday = today >= minDate && today <= maxDate;
+    if (!board.dataset.boundGanttDates) {
+      board.dataset.boundGanttDates = "true";
+      board.addEventListener("click", (event) => {
+        if (event.target.closest(".release-gantt-bar")) return;
+        board
+          .querySelectorAll(".release-gantt-bar.show-dates")
+          .forEach((el) => el.classList.remove("show-dates"));
+      });
+    }
+
+    const grid = document.createElement("div");
+    grid.className = "release-gantt-grid";
+    grid.style.setProperty("--timeline-width", `${timelineWidth}px`);
+    grid.style.setProperty("--day-width", `${dayWidth}px`);
+
+    const headerLabel = document.createElement("div");
+    headerLabel.className = "release-gantt-head-label";
+    headerLabel.textContent = "Releases";
+    grid.appendChild(headerLabel);
+
+    const headerTimeline = document.createElement("div");
+    headerTimeline.className = "release-gantt-head-track";
+    headerTimeline.style.width = `${timelineWidth}px`;
+    const monthsWrap = document.createElement("div");
+    monthsWrap.className = "release-gantt-months";
+    let cursor = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+    cursor.setHours(0, 0, 0, 0);
+    while (cursor <= maxDate) {
+      const monthStart = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+      monthStart.setHours(0, 0, 0, 0);
+      const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+      monthEnd.setHours(0, 0, 0, 0);
+      const segmentStart = monthStart < minDate ? minDate : monthStart;
+      const segmentEnd = monthEnd > maxDate ? maxDate : monthEnd;
+      const spanDays = dayDiff(segmentEnd, segmentStart) + 1;
+      const monthCell = document.createElement("div");
+      monthCell.className = "release-gantt-month";
+      monthCell.style.width = `${Math.max(dayWidth, spanDays * dayWidth)}px`;
+      monthCell.textContent = segmentStart.toLocaleDateString("es-PY", { month: "short", year: "numeric" });
+      monthsWrap.appendChild(monthCell);
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+      cursor.setHours(0, 0, 0, 0);
+    }
+    const weeksWrap = document.createElement("div");
+    weeksWrap.className = "release-gantt-weeks";
+    let weekCursor = startOfWeek(minDate);
+    while (weekCursor <= maxDate) {
+      const weekStart = new Date(weekCursor.getTime());
+      weekStart.setHours(0, 0, 0, 0);
+      const weekEnd = addDays(weekStart, 6);
+      const segmentStart = weekStart < minDate ? minDate : weekStart;
+      const segmentEnd = weekEnd > maxDate ? maxDate : weekEnd;
+      const spanDays = dayDiff(segmentEnd, segmentStart) + 1;
+      const weekCell = document.createElement("div");
+      weekCell.className = "release-gantt-week";
+      weekCell.style.width = `${Math.max(dayWidth, spanDays * dayWidth)}px`;
+      weekCell.textContent = `S${getIsoWeek(segmentStart)} ${formatShortDate(segmentStart)}-${formatShortDate(
+        segmentEnd
+      )}`;
+      weeksWrap.appendChild(weekCell);
+      weekCursor = addDays(weekCursor, 7);
+    }
+    headerTimeline.appendChild(monthsWrap);
+    headerTimeline.appendChild(weeksWrap);
+    if (showToday) {
+      const todayLine = document.createElement("span");
+      todayLine.className = "release-gantt-today";
+      todayLine.style.left = `${todayLeft}px`;
+      headerTimeline.appendChild(todayLine);
+    }
+    grid.appendChild(headerTimeline);
+
+    rows.forEach((row) => {
+      const labelCell = document.createElement("div");
+      labelCell.className = "release-gantt-row-label";
+      const key = row.item.issue_key || "Release";
+      const title = row.item.summary || "Sin resumen";
+      const titleEl = document.createElement("div");
+      titleEl.className = "release-gantt-title";
+      titleEl.textContent = `${key} - ${title}`;
+      const metaEl = document.createElement("div");
+      metaEl.className = "release-gantt-meta";
+      const startText = row.item.start_date || "-";
+      const endText = row.item.end_date || row.item.due_date || "-";
+      const quarterText = row.quarter && row.quarter !== "-" ? row.quarter : "Sin quarter";
+      metaEl.textContent = `${quarterText} · ${startText} -> ${endText}`;
+      labelCell.appendChild(titleEl);
+      labelCell.appendChild(metaEl);
+      grid.appendChild(labelCell);
+
+      const trackCell = document.createElement("div");
+      trackCell.className = "release-gantt-row-track";
+      trackCell.style.width = `${timelineWidth}px`;
+      if (showToday) {
+        const todayLine = document.createElement("span");
+        todayLine.className = "release-gantt-today";
+        todayLine.style.left = `${todayLeft}px`;
+        trackCell.appendChild(todayLine);
+      }
+      const bar = document.createElement("div");
+      const statusBucket = classifyReleaseStatus(row.item.status);
+      const normalizedStatus = normalizeText(row.item.status || "");
+      bar.className = "release-gantt-bar";
+      if (normalizedStatus.includes("cancelad")) bar.classList.add("is-cancelled");
+      else if (statusBucket === "finalizada") bar.classList.add("is-done");
+      else if (statusBucket === "progreso") bar.classList.add("is-progress");
+      else bar.classList.add("is-pending");
+      if (row.isUnscheduled) bar.classList.add("is-unscheduled");
+      const left = dayDiff(row.start, minDate) * dayWidth;
+      const width = Math.max(dayWidth, (dayDiff(row.end, row.start) + 1) * dayWidth);
+      bar.style.left = `${left}px`;
+      bar.style.width = `${width}px`;
+      const label = document.createElement("span");
+      label.className = "release-gantt-bar-label";
+      label.textContent = row.item.issue_key || row.item.summary || "Release";
+      const dateStart = document.createElement("span");
+      dateStart.className = "release-gantt-bar-date is-start";
+      dateStart.textContent = formatISO(row.start);
+      const dateEnd = document.createElement("span");
+      dateEnd.className = "release-gantt-bar-date is-end";
+      dateEnd.textContent = formatISO(row.end);
+      bar.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const shouldOpen = !bar.classList.contains("show-dates");
+        board
+          .querySelectorAll(".release-gantt-bar.show-dates")
+          .forEach((el) => el.classList.remove("show-dates"));
+        if (shouldOpen) bar.classList.add("show-dates");
+      });
+      bar.appendChild(label);
+      bar.appendChild(dateStart);
+      bar.appendChild(dateEnd);
+      trackCell.appendChild(bar);
+      grid.appendChild(trackCell);
+    });
+
+    board.innerHTML = "";
+    board.appendChild(grid);
+    if (summaryEl) {
+      const quarterText = state.releaseGanttQuarterFilter
+        ? `Quarter: ${
+            state.releaseGanttQuarterFilter === "__none__" ? "Sin quarter" : state.releaseGanttQuarterFilter
+          }`
+        : "Todos los quarters";
+      summaryEl.textContent = `${rows.length} releases · ${quarterText} · Rango ${formatISO(minDate)} a ${formatISO(
+        maxDate
+      )}`;
+    }
+  }
+
   function initReleaseTable() {
     const panel = qs("#release-table-page");
     if (!panel || !state.base) return;
@@ -14933,6 +15585,7 @@
     initCelulaSelector(base);
     initDaily();
     initTasks();
+    initReleaseGantt();
     initReleaseTable();
     initOneToOne();
     initRetrospective();
@@ -14970,6 +15623,7 @@
       initDataEntrySections();
       initDaily();
       initTasks();
+      initReleaseGantt();
       initReleaseTable();
       initOneToOne();
       initRetrospective();

@@ -28,7 +28,7 @@
       crossorigin="anonymous"
     />
     <link rel="stylesheet" href="./css/adminlte.css" />
-    <link rel="stylesheet" href="./styles.css?v=20260207f" />
+    <link rel="stylesheet" href="./styles.css?v=20260214a" />
   </head>
   <body class="layout-fixed sidebar-expand-lg bg-body-tertiary adminlte-base" data-page="releases-gantt">
     <div class="app-wrapper">
@@ -218,11 +218,43 @@
             </div>
           </div>
         </div>
-        <section class="content">
+        <section class="content" id="release-gantt-page">
           <div class="container-fluid">
             <div class="card">
               <div class="card-body">
-                <p class="empty">Vista Gantt en construccion.</p>
+                <div class="release-gantt-toolbar mb-3">
+                  <div class="d-flex flex-wrap align-items-end gap-2">
+                    <div>
+                      <label class="form-label mb-1" for="release-gantt-quarter-filter">Quarter</label>
+                      <select id="release-gantt-quarter-filter" class="form-select form-select-sm">
+                        <option value="">Todos</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="release-gantt-zoom d-flex align-items-center gap-2">
+                    <span class="small text-muted">Zoom</span>
+                    <button class="btn btn-outline-secondary btn-sm" id="release-gantt-zoom-out" type="button">
+                      <i class="bi bi-dash-lg"></i>
+                    </button>
+                    <input
+                      type="range"
+                      id="release-gantt-zoom"
+                      class="form-range"
+                      min="60"
+                      max="250"
+                      step="10"
+                      value="100"
+                    />
+                    <button class="btn btn-outline-secondary btn-sm" id="release-gantt-zoom-in" type="button">
+                      <i class="bi bi-plus-lg"></i>
+                    </button>
+                    <span id="release-gantt-zoom-label" class="badge text-bg-primary">100%</span>
+                  </div>
+                </div>
+                <div id="release-gantt-summary" class="small text-muted mb-2"></div>
+                <div id="release-gantt-scroll" class="release-gantt-scroll">
+                  <div id="release-gantt-board" class="release-gantt-board"></div>
+                </div>
               </div>
             </div>
           </div>

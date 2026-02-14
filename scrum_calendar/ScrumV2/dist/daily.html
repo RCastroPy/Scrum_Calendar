@@ -63,7 +63,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.8/css/dataTables.bootstrap5.min.css" crossorigin="anonymous" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-buttons-bs5@2.4.2/css/buttons.bootstrap5.min.css" crossorigin="anonymous" />
     <!--end::Required Plugin(AdminLTE)-->
-    <link rel="stylesheet" href="./styles.css?v=20260207f" />
+    <link rel="stylesheet" href="./styles.css?v=20260214b" />
 
     <!-- apexcharts -->
     <link
@@ -1042,6 +1042,42 @@
                       </div>
                       <div class="daily-meta mb-3" id="daily-items-count"></div>
                       <div class="admin-table" id="daily-items-table"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="col-12">
+                  <div class="card daily-card">
+                    <div class="card-header border-0 d-flex flex-wrap align-items-end justify-content-between gap-2">
+                      <div>
+                        <h3 class="card-title">Gantt de tareas</h3>
+                        <p class="daily-subtitle mb-0" id="daily-gantt-context">Vista total</p>
+                      </div>
+                      <div class="daily-gantt-zoom d-flex align-items-center gap-2">
+                        <span class="small text-muted">Zoom</span>
+                        <button class="btn btn-outline-secondary btn-sm" id="daily-gantt-zoom-out" type="button">
+                          <i class="bi bi-dash-lg"></i>
+                        </button>
+                        <input
+                          type="range"
+                          id="daily-gantt-zoom"
+                          class="form-range"
+                          min="60"
+                          max="250"
+                          step="10"
+                          value="100"
+                        />
+                        <button class="btn btn-outline-secondary btn-sm" id="daily-gantt-zoom-in" type="button">
+                          <i class="bi bi-plus-lg"></i>
+                        </button>
+                        <span id="daily-gantt-zoom-label" class="badge text-bg-primary">100%</span>
+                      </div>
+                    </div>
+                    <div class="card-body">
+                      <div class="daily-meta mb-2" id="daily-gantt-summary"></div>
+                      <div class="daily-gantt-scroll" id="daily-gantt-scroll">
+                        <div class="daily-gantt-board" id="daily-gantt-board"></div>
+                      </div>
                     </div>
                   </div>
                 </div>
