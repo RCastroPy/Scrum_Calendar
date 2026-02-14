@@ -102,7 +102,7 @@
     dailyStatusOutsideBound: false,
     dailyStatusTouched: false,
 	    dailySprintOpen: false,
-	    tasksView: "board",
+	    tasksView: "backlog",
 	    tasksSearch: "",
 	    tasksStatusFilter: "",
 	    tasksSprintFilter: "",
@@ -117,6 +117,8 @@
 	    },
 	    tasksBacklogExpanded: {},
 	    tasksColumnsConfig: null,
+	    tasksBacklogSort: { key: "fecha_vencimiento", dir: "asc" },
+	    tasksCommentCounts: {},
 	    retroCommitmentFilter: "pendiente",
 	    retroPresence: { total: 0, personas: [] },
 	    retroActiveId: "",
@@ -126,6 +128,7 @@
     tableSort: {},
     tableFilters: {},
     tableDataPage: {},
+    tableDataState: {},
     releaseStatusFilter: "",
     releaseQuarterFilter: "",
     releaseColumnsConfig: null,
@@ -4781,15 +4784,30 @@
       !disableDataTables && Boolean(window.jQuery && window.jQuery.fn && window.jQuery.fn.DataTable);
     const tableKey = container.id || "table";
     state.tableFilters[tableKey] = state.tableFilters[tableKey] || {};
+    state.tableDataState = state.tableDataState || {};
     const filters = useDataTables ? {} : state.tableFilters[tableKey];
     const sortState = useDataTables ? null : state.tableSort[tableKey] || null;
     let preservedPage = null;
+    let preservedTableState = state.tableDataState[tableKey] || null;
     if (useDataTables) {
       const existingTable = container.querySelector("table");
       if (existingTable && window.jQuery.fn.DataTable.isDataTable(existingTable)) {
-        preservedPage = window.jQuery(existingTable).DataTable().page();
+        const existingDt = window.jQuery(existingTable).DataTable();
+        const columnSearch = [];
+        existingDt.columns().every(function collectColumnSearch() {
+          columnSearch.push(this.search());
+        });
+        preservedPage = existingDt.page();
+        preservedTableState = {
+          page: preservedPage,
+          order: existingDt.order(),
+          search: existingDt.search(),
+          length: existingDt.page.len(),
+          columnSearch,
+        };
         state.tableDataPage = state.tableDataPage || {};
         state.tableDataPage[tableKey] = preservedPage;
+        state.tableDataState[tableKey] = preservedTableState;
       }
     }
     const renderCellContent = (td, rendered) => {
@@ -4927,6 +4945,9 @@
     const endIndex = pageSize ? startIndex + pageSize : orderedRows.length;
     const pagedRows = pageSize ? orderedRows.slice(startIndex, endIndex) : orderedRows;
     const table = document.createElement("table");
+    if (useDataTables) {
+      table.id = `datatable-${String(tableKey).replace(/[^a-z0-9_-]/gi, "-")}`;
+    }
     table.className = "table table-bordered table-striped table-hover align-middle";
     const selection = getAdminSelection(tableKey);
     const selectableIds = sortedRows.map((row) => row?.id).filter(Boolean);
@@ -5176,9 +5197,49 @@
     }
     if (useDataTables) {
       const dt = initDataTable(table, tableKey);
+      const saveDtState = () => {
+        if (!dt) return;
+        const columnSearch = [];
+        dt.columns().every(function collectColumnSearch() {
+          columnSearch.push(this.search());
+        });
+        state.tableDataState[tableKey] = {
+          page: dt.page(),
+          order: dt.order(),
+          search: dt.search(),
+          length: dt.page.len(),
+          columnSearch,
+        };
+        state.tableDataPage[tableKey] = dt.page();
+      };
+      const targetState = state.tableDataState?.[tableKey] || preservedTableState;
+      if (dt && targetState) {
+        if (Number.isFinite(targetState.length) && targetState.length > 0) {
+          dt.page.len(targetState.length);
+        }
+        if (Array.isArray(targetState.order) && targetState.order.length) {
+          dt.order(targetState.order);
+        }
+        if (typeof targetState.search === "string") {
+          dt.search(targetState.search);
+        }
+        if (Array.isArray(targetState.columnSearch) && targetState.columnSearch.length) {
+          targetState.columnSearch.forEach((value, colIndex) => {
+            if (typeof value === "string") {
+              dt.column(colIndex).search(value);
+            }
+          });
+        }
+        dt.draw(false);
+      }
       const targetPage = state.tableDataPage?.[tableKey];
       if (dt && targetPage != null) {
         dt.page(targetPage).draw(false);
+      }
+      if (dt) {
+        const $table = window.jQuery(table);
+        $table.on("draw.dt order.dt search.dt page.dt length.dt", saveDtState);
+        saveDtState();
       }
       if (actions.length) {
         const rowById = new Map(
@@ -7139,7 +7200,6 @@
     const reportVelocity = qs("#tasks-report-velocity");
     const reportAging = qs("#tasks-report-aging");
     const reportKpis = qs("#tasks-report-kpis");
-    const sprintSelect = qs("#tasks-filter-sprint");
     const statusSelect = qs("#tasks-filter-status");
     const filtersBtn = qs("#tasks-filters-btn");
     const filterPanel = qs("#tasks-filter-panel");
@@ -7158,6 +7218,13 @@
     const searchInput = qs("#tasks-search");
     const createBtn = qs("#task-create-btn");
     const createBtnBacklog = qs("#task-create-btn-backlog");
+    const bulkOverdueBtn = qs("#tasks-bulk-overdue-btn");
+    const hasBacklogDataTable = Boolean(window.jQuery && window.jQuery.fn && window.jQuery.fn.DataTable);
+    let backlogDataTable = null;
+    let cleanupBacklogHorizontalBar = null;
+    state.tasksCommentCounts = state.tasksCommentCounts && typeof state.tasksCommentCounts === "object"
+      ? state.tasksCommentCounts
+      : {};
 
     const STATUS_ORDER = ["backlog", "todo", "doing", "done", "archived"];
     const STATUS_LABEL = {
@@ -7173,6 +7240,18 @@
       alta: "Alta",
       urgente: "Urgente",
     };
+    const TASK_FAMILY_COLORS = [
+      "#0d6efd",
+      "#6f42c1",
+      "#fd7e14",
+      "#0dcaf0",
+      "#6610f2",
+      "#e83e8c",
+      "#495057",
+      "#3f51b5",
+      "#5c7cfa",
+      "#795548",
+    ];
 
     const TASK_TYPES = [
       { id: "", nombre: "Sin tipo" },
@@ -7214,6 +7293,96 @@
       puntos: "Puntos",
       horas_estimadas: "Horas",
       importante: "Importante",
+    };
+    const TASK_FILTERS_KEY = "scrum_calendar_tasks_filters_v1";
+    const DEFAULT_TASKS_ADVANCED_FILTERS = {
+      statuses: ["backlog", "todo", "doing", "done"],
+      priorities: ["baja", "media", "alta", "urgente"],
+      assignees: [],
+      dueFrom: "",
+      dueTo: "",
+      hideSubtasks: false,
+    };
+    const cloneDefaultTasksAdvancedFilters = () => ({
+      statuses: [...DEFAULT_TASKS_ADVANCED_FILTERS.statuses],
+      priorities: [...DEFAULT_TASKS_ADVANCED_FILTERS.priorities],
+      assignees: [],
+      dueFrom: "",
+      dueTo: "",
+      hideSubtasks: false,
+    });
+    const normalizeIsoDate = (value) => {
+      const raw = String(value || "").trim();
+      return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : "";
+    };
+    const normalizeTasksFiltersState = (raw) => {
+      const viewRaw = String(raw?.view || "").trim().toLowerCase();
+      const view = ["backlog", "board", "reports"].includes(viewRaw) ? viewRaw : "backlog";
+
+      const search = String(raw?.search || "").slice(0, 300);
+      const statusFilterRaw = String(raw?.statusFilter || "").trim().toLowerCase();
+      const statusFilter = STATUS_ORDER.includes(statusFilterRaw) ? statusFilterRaw : "";
+
+      const defaults = cloneDefaultTasksAdvancedFilters();
+      const filtersRaw = raw?.filters && typeof raw.filters === "object" ? raw.filters : {};
+      const statuses = Array.isArray(filtersRaw.statuses)
+        ? filtersRaw.statuses.map((v) => String(v || "").trim().toLowerCase()).filter((v) => STATUS_ORDER.includes(v))
+        : [];
+      const priorities = Array.isArray(filtersRaw.priorities)
+        ? filtersRaw.priorities
+            .map((v) => String(v || "").trim().toLowerCase())
+            .filter((v) => ["baja", "media", "alta", "urgente"].includes(v))
+        : [];
+      const assignees = Array.isArray(filtersRaw.assignees)
+        ? filtersRaw.assignees.map((v) => String(v || "").trim()).filter(Boolean)
+        : [];
+
+      const filters = {
+        statuses: statuses.length ? statuses : defaults.statuses,
+        priorities: priorities.length ? priorities : defaults.priorities,
+        assignees,
+        dueFrom: normalizeIsoDate(filtersRaw.dueFrom),
+        dueTo: normalizeIsoDate(filtersRaw.dueTo),
+        hideSubtasks: Boolean(filtersRaw.hideSubtasks),
+      };
+
+      const sortKeyRaw = String(raw?.backlogSort?.key || "").trim();
+      const sortDirRaw = String(raw?.backlogSort?.dir || "").trim().toLowerCase();
+      const backlogSort = {
+        key: DEFAULT_COLUMNS.includes(sortKeyRaw) ? sortKeyRaw : "fecha_vencimiento",
+        dir: sortDirRaw === "asc" || sortDirRaw === "desc" ? sortDirRaw : "asc",
+      };
+
+      return {
+        view,
+        search,
+        statusFilter,
+        filters,
+        backlogSort,
+      };
+    };
+    const loadTasksFiltersState = () => {
+      try {
+        const raw = localStorage.getItem(TASK_FILTERS_KEY);
+        if (!raw) return null;
+        return normalizeTasksFiltersState(JSON.parse(raw));
+      } catch {
+        return null;
+      }
+    };
+    const saveTasksFiltersState = () => {
+      try {
+        const normalized = normalizeTasksFiltersState({
+          view: state.tasksView,
+          search: state.tasksSearch,
+          statusFilter: state.tasksStatusFilter,
+          filters: state.tasksFilters,
+          backlogSort: state.tasksBacklogSort,
+        });
+        localStorage.setItem(TASK_FILTERS_KEY, JSON.stringify(normalized));
+      } catch {
+        // ignore storage errors
+      }
     };
 
     const loadColumnsConfig = () => {
@@ -7327,21 +7496,320 @@
     };
 
     const resolveCelulaId = () => (state.selectedCelulaId ? Number(state.selectedCelulaId) : 0);
-    const resolveSelectedSprintId = () => {
-      const value = sprintSelect?.value || state.tasksSprintFilter || "";
-      return value ? Number(value) : 0;
+    const resolveSelectedSprintId = () => 0;
+
+    const compareTaskNatural = (a, b) => {
+      const ao = Number(a.orden || 0);
+      const bo = Number(b.orden || 0);
+      if (ao !== bo) return ao - bo;
+      const ad = new Date(a.actualizado_en || a.creado_en || 0).getTime();
+      const bd = new Date(b.actualizado_en || b.creado_en || 0).getTime();
+      if (ad !== bd) return bd - ad;
+      return (b.id || 0) - (a.id || 0);
     };
 
-    const sortTasks = (items) =>
-      [...items].sort((a, b) => {
-        const ao = Number(a.orden || 0);
-        const bo = Number(b.orden || 0);
-        if (ao !== bo) return ao - bo;
-        const ad = new Date(a.actualizado_en || a.creado_en || 0).getTime();
-        const bd = new Date(b.actualizado_en || b.creado_en || 0).getTime();
-        if (ad !== bd) return bd - ad;
-        return (b.id || 0) - (a.id || 0);
+    const sortTasks = (items) => [...items].sort(compareTaskNatural);
+    const resolveTaskFamilyId = (task, byId) => {
+      const seen = new Set();
+      let current = task;
+      while (current?.parent_id) {
+        const key = String(current.parent_id);
+        if (!key || seen.has(key)) break;
+        seen.add(key);
+        const next = byId.get(key);
+        if (!next) return key;
+        current = next;
+      }
+      return String(current?.id || task?.id || "");
+    };
+    const resolveTaskFamilyColor = (task, byId) => {
+      const familyId = resolveTaskFamilyId(task, byId);
+      const raw = Number.parseInt(String(familyId || "0"), 10);
+      const idx = Number.isFinite(raw)
+        ? Math.abs(raw) % TASK_FAMILY_COLORS.length
+        : Math.abs(
+            String(familyId || "")
+              .split("")
+              .reduce((acc, ch) => acc + ch.charCodeAt(0), 0)
+          ) % TASK_FAMILY_COLORS.length;
+      return TASK_FAMILY_COLORS[idx] || TASK_FAMILY_COLORS[0];
+    };
+
+    const DEFAULT_TASKS_BACKLOG_SORT = { key: "fecha_vencimiento", dir: "asc" };
+    const normalizeTasksBacklogSort = (raw) => {
+      const keyRaw = String(raw?.key || "").trim();
+      const key = DEFAULT_COLUMNS.includes(keyRaw) ? keyRaw : DEFAULT_TASKS_BACKLOG_SORT.key;
+      const dirRaw = String(raw?.dir || "").trim().toLowerCase();
+      const dir = dirRaw === "asc" || dirRaw === "desc" ? dirRaw : DEFAULT_TASKS_BACKLOG_SORT.dir;
+      return { key, dir };
+    };
+    const getTasksBacklogSort = () => {
+      state.tasksBacklogSort = normalizeTasksBacklogSort(state.tasksBacklogSort);
+      return state.tasksBacklogSort;
+    };
+    const toggleTasksBacklogSort = (key) => {
+      const normalizedKey = String(key || "").trim();
+      if (!DEFAULT_COLUMNS.includes(normalizedKey)) return;
+      const current = getTasksBacklogSort();
+      if (current.key === normalizedKey) {
+        state.tasksBacklogSort = {
+          key: normalizedKey,
+          dir: current.dir === "asc" ? "desc" : "asc",
+        };
+        saveTasksFiltersState();
+        return;
+      }
+      state.tasksBacklogSort = {
+        key: normalizedKey,
+        dir: normalizedKey === DEFAULT_TASKS_BACKLOG_SORT.key ? DEFAULT_TASKS_BACKLOG_SORT.dir : "asc",
+      };
+      saveTasksFiltersState();
+    };
+
+    const savedTasksFiltersState = loadTasksFiltersState();
+    if (savedTasksFiltersState) {
+      state.tasksView = savedTasksFiltersState.view;
+      state.tasksSearch = savedTasksFiltersState.search;
+      state.tasksStatusFilter = savedTasksFiltersState.statusFilter;
+      state.tasksFilters = {
+        ...cloneDefaultTasksAdvancedFilters(),
+        ...savedTasksFiltersState.filters,
+      };
+      state.tasksBacklogSort = savedTasksFiltersState.backlogSort;
+      saveTasksFiltersState();
+    }
+
+    const destroyBacklogDataTable = () => {
+      if (typeof cleanupBacklogHorizontalBar === "function") {
+        try {
+          cleanupBacklogHorizontalBar();
+        } catch {
+          // ignore
+        }
+        cleanupBacklogHorizontalBar = null;
+      }
+      if (!hasBacklogDataTable) return;
+      if (backlogDataTable) {
+        try {
+          backlogDataTable.destroy();
+        } catch {
+          // ignore
+        }
+        backlogDataTable = null;
+      }
+      const existing = backlogList?.querySelector("table.tasks-notion-table");
+      if (existing && window.jQuery.fn.DataTable.isDataTable(existing)) {
+        try {
+          window.jQuery(existing).DataTable().destroy();
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    const initBacklogDataTable = (table, visibleColumns) => {
+      if (!hasBacklogDataTable || !table) return;
+      const $table = window.jQuery(table);
+      backlogDataTable = $table.DataTable({
+        destroy: true,
+        stateSave: true,
+        autoWidth: false,
+        searching: true,
+        ordering: false,
+        paging: true,
+        info: true,
+        lengthChange: true,
+        pageLength: 10,
+        lengthMenu: [
+          [10, 20, 25, 50, 100, -1],
+          [10, 20, 25, 50, 100, "Todos"],
+        ],
+        scrollX: true,
+        language: {
+          decimal: ",",
+          thousands: ".",
+          emptyTable: "No hay tareas disponibles",
+          info: "Mostrando _START_ a _END_ de _TOTAL_ tareas",
+          infoEmpty: "Mostrando 0 a 0 de 0 tareas",
+          infoFiltered: "(filtrado de _MAX_ tareas totales)",
+          lengthMenu: "Mostrar _MENU_ tareas",
+          loadingRecords: "Cargando...",
+          processing: "Procesando...",
+          search: "Buscar:",
+          zeroRecords: "No se encontraron tareas",
+          paginate: {
+            first: "Primero",
+            last: "Ultimo",
+            next: "Siguiente",
+            previous: "Anterior",
+          },
+        },
       });
+      const applyBacklogTableMinWidth = () => {
+        const raw = Number(table.dataset.minWidth || 0);
+        if (!Number.isFinite(raw) || raw <= 0) return;
+        const width = `${Math.round(raw)}px`;
+        const $wrapper = $table.closest(".dataTables_wrapper");
+        $wrapper.find(".dataTables_scrollHeadInner").css("min-width", width);
+        $wrapper.find(".dataTables_scrollHeadInner table").css("min-width", width);
+        $wrapper.find(".dataTables_scrollBody table").css("min-width", width);
+      };
+      $table.on("draw.dt column-sizing.dt", applyBacklogTableMinWidth);
+      applyBacklogTableMinWidth();
+      try {
+        window.requestAnimationFrame(applyBacklogTableMinWidth);
+      } catch {
+        // ignore
+      }
+    };
+
+    const attachBacklogHorizontalBar = (wrap, scroll, useBacklogDataTable) => {
+      if (!wrap || !scroll) return;
+      if (typeof cleanupBacklogHorizontalBar === "function") {
+        try {
+          cleanupBacklogHorizontalBar();
+        } catch {
+          // ignore
+        }
+        cleanupBacklogHorizontalBar = null;
+      }
+      const oldBar = wrap.querySelector(".tasks-horizontal-bar");
+      if (oldBar) oldBar.remove();
+
+      const bar = document.createElement("div");
+      bar.className = "tasks-horizontal-bar hidden";
+      bar.innerHTML = `<input class="tasks-horizontal-range" type="range" min="0" max="0" step="1" value="0" aria-label="Scroll horizontal de tabla" />`;
+      wrap.appendChild(bar);
+
+      const range = bar.querySelector(".tasks-horizontal-range");
+      if (!range) return;
+
+      let currentScrollable = null;
+      let currentOnScroll = null;
+
+      const getTableMinWidth = () => {
+        const table =
+          wrap.querySelector("#tasks-backlog-table") ||
+          wrap.querySelector(".dataTables_scrollBody table") ||
+          wrap.querySelector(".dataTables_scrollHeadInner table");
+        if (!table) return 0;
+        const raw = Number(table.dataset.minWidth || 0);
+        if (Number.isFinite(raw) && raw > 0) return raw;
+        const rectW = Number(table.getBoundingClientRect?.().width || 0);
+        return Number.isFinite(rectW) && rectW > 0 ? rectW : 0;
+      };
+
+      const getCandidates = () => {
+        const list = [];
+        if (useBacklogDataTable) {
+          const dtBody = wrap.querySelector(".dataTables_scrollBody");
+          const dtScroll = wrap.querySelector(".dataTables_scroll");
+          const dtWrapper = wrap.querySelector(".dataTables_wrapper");
+          if (dtBody) list.push(dtBody);
+          if (dtScroll) list.push(dtScroll);
+          if (dtWrapper) list.push(dtWrapper);
+        }
+        list.push(scroll);
+        return [...new Set(list.filter(Boolean))];
+      };
+
+      const measureMax = (target) => {
+        if (!target) return 0;
+        const natural = Math.max(0, target.scrollWidth - target.clientWidth);
+        const tableMin = getTableMinWidth();
+        const fallback = tableMin > 0 ? Math.max(0, Math.round(tableMin - target.clientWidth)) : 0;
+        return Math.max(natural, fallback);
+      };
+
+      const resolveScrollable = () => {
+        let best = scroll;
+        let bestMax = measureMax(scroll);
+        getCandidates().forEach((candidate) => {
+          const candidateMax = measureMax(candidate);
+          if (candidateMax > bestMax) {
+            best = candidate;
+            bestMax = candidateMax;
+          }
+        });
+        return best;
+      };
+
+      const syncRangeFromScrollable = () => {
+        const target = resolveScrollable();
+        if (!target) return;
+        const max = measureMax(target);
+        if (max <= 0) {
+          bar.classList.add("hidden");
+          range.disabled = true;
+          range.max = "0";
+          range.value = "0";
+          return;
+        }
+        bar.classList.remove("hidden");
+        range.disabled = false;
+        range.max = String(max);
+        range.value = String(Math.min(max, Math.round(target.scrollLeft)));
+      };
+
+      const bindScrollable = () => {
+        const nextScrollable = resolveScrollable();
+        if (!nextScrollable) return;
+        if (currentScrollable === nextScrollable) return;
+        if (currentScrollable && currentOnScroll) {
+          currentScrollable.removeEventListener("scroll", currentOnScroll);
+        }
+        currentScrollable = nextScrollable;
+        currentOnScroll = () => {
+          const max = Math.max(0, currentScrollable.scrollWidth - currentScrollable.clientWidth);
+          range.max = String(max);
+          range.value = String(Math.min(max, Math.round(currentScrollable.scrollLeft)));
+        };
+        currentScrollable.addEventListener("scroll", currentOnScroll, { passive: true });
+      };
+
+      range.addEventListener("input", () => {
+        const next = Number(range.value || 0);
+        const targets = getCandidates();
+        targets.forEach((target) => {
+          const max = measureMax(target);
+          if (max > 0) {
+            target.scrollLeft = Math.min(max, next);
+          }
+        });
+      });
+
+      bindScrollable();
+      syncRangeFromScrollable();
+      try {
+        window.requestAnimationFrame(() => {
+          bindScrollable();
+          syncRangeFromScrollable();
+        });
+        window.requestAnimationFrame(() => {
+          bindScrollable();
+          syncRangeFromScrollable();
+        });
+        window.requestAnimationFrame(() => {
+          bindScrollable();
+          syncRangeFromScrollable();
+        });
+      } catch {
+        // ignore
+      }
+
+      const onResize = () => {
+        bindScrollable();
+        syncRangeFromScrollable();
+      };
+      window.addEventListener("resize", onResize, { passive: true });
+
+      cleanupBacklogHorizontalBar = () => {
+        if (currentScrollable && currentOnScroll) {
+          currentScrollable.removeEventListener("scroll", currentOnScroll);
+        }
+        window.removeEventListener("resize", onResize);
+      };
+    };
 
     const setTasksStatus = (text, type = "info") => {
       if (!statusEl) return;
@@ -7375,6 +7843,7 @@
         btn.classList.toggle("btn-primary", key === view);
         btn.classList.toggle("btn-outline-primary", key !== view);
       });
+      saveTasksFiltersState();
     };
 
     const ensureTaskForm = () => {
@@ -7402,6 +7871,20 @@
                 <textarea class="form-control" id="task-descripcion" name="descripcion" rows="4"></textarea>
               </div>
               <div class="small text-muted mb-2" id="task-parent-hint"></div>
+              <div class="card mb-0 hidden task-existing-only mt-2">
+                <div class="card-header border-0 py-2">
+                  <h3 class="card-title mb-0">Comentarios</h3>
+                </div>
+                <div class="card-body pt-0">
+                  <div id="task-comments-list" class="tasks-comments"></div>
+                  <div class="mt-2">
+                    <textarea class="form-control" id="task-comment-text" rows="3" placeholder="Escribe un comentario..."></textarea>
+                    <div class="d-flex gap-2 mt-2">
+                      <button class="btn btn-primary btn-sm" type="button" id="task-comment-submit">Comentar</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
             <div class="col-md-4">
               <div class="mb-3">
@@ -7428,55 +7911,41 @@
                 <select class="form-select" id="task-assignee" name="assignee_persona_id"></select>
               </div>
               <div class="mb-3">
-                <label class="form-label" for="task-sprint">Sprint</label>
-                <select class="form-select" id="task-sprint" name="sprint_id"></select>
-              </div>
-              <div class="mb-3">
                 <label class="form-label" for="task-due">Vencimiento</label>
                 <input class="form-control" id="task-due" name="fecha_vencimiento" type="date" />
               </div>
+              <div class="card mb-0 hidden task-existing-only">
+                <div class="card-header border-0 py-2">
+                  <div class="d-flex align-items-center justify-content-between gap-2">
+                    <h3 class="card-title mb-0">Subtareas</h3>
+                    <button class="btn btn-outline-primary btn-sm px-2" type="button" id="task-subtask-add" title="Agregar subtarea" aria-label="Agregar subtarea">
+                      <i class="bi bi-diagram-3"></i>
+                    </button>
+                  </div>
+                </div>
+                <div class="card-body pt-0">
+                  <div id="task-subtasks-list" class="tasks-subtasks"></div>
+                  <div class="input-group input-group-sm mt-2">
+                    <input class="form-control" id="task-subtask-title" type="text" placeholder="Titulo subtarea..." />
+                    <button class="btn btn-outline-primary" type="button" id="task-subtask-create">Crear</button>
+                  </div>
+                </div>
+              </div>
 	            </div>
 	          </div>
-	          <div id="task-existing-only" class="hidden">
-	            <div class="row g-3 mt-1">
-	              <div class="col-12 col-lg-6">
-	                <div class="card mb-0">
-	                  <div class="card-header border-0 py-2">
-	                    <div class="d-flex align-items-center justify-content-between gap-2">
-	                      <h3 class="card-title mb-0">Subtareas</h3>
-	                      <button class="btn btn-outline-primary btn-sm" type="button" id="task-subtask-add">
-	                        <i class="bi bi-plus-lg me-1"></i>Subtarea
-	                      </button>
-	                    </div>
-	                  </div>
-	                  <div class="card-body pt-0">
-	                    <div id="task-subtasks-list" class="tasks-subtasks"></div>
-	                    <div class="input-group input-group-sm mt-2">
-	                      <input class="form-control" id="task-subtask-title" type="text" placeholder="Titulo subtarea..." />
-	                      <button class="btn btn-outline-primary" type="button" id="task-subtask-create">Crear</button>
-	                    </div>
-	                  </div>
-	                </div>
+	          <div id="task-new-subtasks" class="hidden mb-2">
+	            <div class="d-flex align-items-center justify-content-between gap-2">
+	              <h3 class="card-title mb-0">Subtareas iniciales</h3>
+	              <button class="btn btn-outline-primary btn-sm" type="button" id="task-new-subtask-toggle">
+	                <i class="bi bi-list-task me-1"></i>Agregar subtareas
+	              </button>
+	            </div>
+	            <div id="task-new-subtask-panel" class="hidden mt-2">
+	              <div class="input-group input-group-sm">
+	                <input class="form-control" id="task-new-subtask-title" type="text" placeholder="Titulo subtarea..." />
+	                <button class="btn btn-outline-primary" type="button" id="task-new-subtask-create">Agregar</button>
 	              </div>
-	              <div class="col-12 col-lg-6">
-	                <div class="card mb-0">
-	                  <div class="card-header border-0 py-2">
-	                    <h3 class="card-title mb-0">Comentarios</h3>
-	                  </div>
-	                  <div class="card-body pt-0">
-	                    <div id="task-comments-list" class="tasks-comments"></div>
-	                    <div class="mt-2">
-	                      <textarea class="form-control" id="task-comment-text" rows="3" placeholder="Escribe un comentario..."></textarea>
-	                      <div class="d-flex gap-2 mt-2">
-	                        <button class="btn btn-primary btn-sm" type="button" id="task-comment-submit">Comentar</button>
-	                        <button class="btn btn-outline-secondary btn-sm" type="button" id="task-comments-refresh">
-	                          Actualizar
-	                        </button>
-	                      </div>
-	                    </div>
-	                  </div>
-	                </div>
-	              </div>
+	              <div id="task-new-subtasks-list" class="tasks-subtasks mt-2"></div>
 	            </div>
 	          </div>
 	          <div class="d-flex gap-2 align-items-center">
@@ -7494,12 +7963,209 @@
       return form;
     };
 
+    const taskCommentCountQueue = new Set();
+    let taskCommentCountQueueRunning = false;
+
+    const getTaskCommentCount = (taskId) => {
+      const key = String(taskId || "");
+      if (!key) return 0;
+      const value = Number(state.tasksCommentCounts?.[key]);
+      return Number.isFinite(value) && value >= 0 ? value : 0;
+    };
+
+    const applyTaskCommentCountToDom = (taskId, count) => {
+      const key = String(taskId || "");
+      if (!key) return;
+      root.querySelectorAll(`[data-comment-count-task="${key}"]`).forEach((node) => {
+        node.textContent = String(count);
+      });
+      root.querySelectorAll(`[data-comment-btn-task="${key}"]`).forEach((node) => {
+        node.classList.toggle("d-none", Number(count) <= 0);
+      });
+    };
+
+    const setTaskCommentCount = (taskId, count) => {
+      const key = String(taskId || "");
+      if (!key) return;
+      const normalized = Number.isFinite(Number(count)) ? Math.max(0, Number(count)) : 0;
+      state.tasksCommentCounts[key] = normalized;
+      applyTaskCommentCountToDom(key, normalized);
+    };
+
+    const fetchTaskComments = async (taskId) => {
+      const id = Number(taskId || 0);
+      if (!id) return [];
+      const items = await fetchJson(`/tasks/${id}/comments`);
+      return Array.isArray(items) ? items : [];
+    };
+
+    const flushTaskCommentCountQueue = async () => {
+      if (taskCommentCountQueueRunning) return;
+      taskCommentCountQueueRunning = true;
+      try {
+        while (taskCommentCountQueue.size) {
+          const batch = Array.from(taskCommentCountQueue).slice(0, 6);
+          batch.forEach((id) => taskCommentCountQueue.delete(id));
+          await Promise.all(
+            batch.map(async (id) => {
+              try {
+                const items = await fetchTaskComments(id);
+                setTaskCommentCount(id, items.length);
+              } catch {
+                setTaskCommentCount(id, 0);
+              }
+            })
+          );
+        }
+      } finally {
+        taskCommentCountQueueRunning = false;
+      }
+    };
+
+    const queueTaskCommentCount = (taskId) => {
+      const id = Number(taskId || 0);
+      if (!id) return;
+      const key = String(id);
+      if (Object.prototype.hasOwnProperty.call(state.tasksCommentCounts || {}, key)) return;
+      taskCommentCountQueue.add(id);
+      void flushTaskCommentCountQueue();
+    };
+
+    const queueTaskCommentCounts = (taskIds = []) => {
+      (taskIds || []).forEach((taskId) => {
+        const id = Number(taskId || 0);
+        if (!id) return;
+        const key = String(id);
+        if (Object.prototype.hasOwnProperty.call(state.tasksCommentCounts || {}, key)) return;
+        taskCommentCountQueue.add(id);
+      });
+      void flushTaskCommentCountQueue();
+    };
+
+    const ensureTaskCommentsModalForm = () => {
+      let form = qs("#task-comments-modal-form");
+      if (!form) {
+        let host = qs("#tasks-form-host");
+        if (!host) {
+          host = document.createElement("div");
+          host.id = "tasks-form-host";
+          root.appendChild(host);
+        }
+        form = document.createElement("form");
+        form.id = "task-comments-modal-form";
+        form.className = "adminlte-form";
+        form.innerHTML = `
+          <div class="tasks-comments-modal-list" id="task-comments-modal-list"></div>
+          <div class="mt-3">
+            <label class="form-label" for="task-comments-modal-text">Nuevo comentario</label>
+            <textarea class="form-control" id="task-comments-modal-text" rows="3" placeholder="Escribe un comentario..."></textarea>
+            <div class="d-flex gap-2 mt-2 align-items-center">
+              <button class="btn btn-primary btn-sm" type="button" id="task-comments-modal-submit">Agregar comentario</button>
+              <button class="btn btn-outline-secondary btn-sm" type="button" id="task-comments-modal-close">Cerrar</button>
+            </div>
+            <p class="form-status mt-2 mb-0" id="task-comments-modal-status"></p>
+          </div>
+        `;
+        host.appendChild(form);
+      }
+      return form;
+    };
+
+    const renderTaskCommentsModalList = (listEl, items) => {
+      if (!listEl) return;
+      const comments = Array.isArray(items) ? items : [];
+      if (!comments.length) {
+        listEl.innerHTML = `<p class="empty small mb-0">Sin comentarios.</p>`;
+        return;
+      }
+      listEl.innerHTML = comments
+        .map(
+          () => `
+            <div class="tasks-comment tasks-comment-compact">
+              <div class="tasks-comment-body" data-role="comment-text"></div>
+              <div class="tasks-comment-date text-muted small" data-role="comment-date"></div>
+            </div>
+          `
+        )
+        .join("");
+      const rows = Array.from(listEl.querySelectorAll(".tasks-comment-compact"));
+      rows.forEach((row, idx) => {
+        const comment = comments[idx] || {};
+        const textNode = row.querySelector("[data-role='comment-text']");
+        const dateNode = row.querySelector("[data-role='comment-date']");
+        if (textNode) textNode.textContent = String(comment.texto || "");
+        if (dateNode) {
+          dateNode.textContent = comment.creado_en ? new Date(comment.creado_en).toLocaleString() : "";
+        }
+      });
+    };
+
+    const openTaskCommentsModal = async (task) => {
+      if (!task?.id) return;
+      const form = ensureTaskCommentsModalForm();
+      const listEl = form.querySelector("#task-comments-modal-list");
+      const textEl = form.querySelector("#task-comments-modal-text");
+      const submitBtn = form.querySelector("#task-comments-modal-submit");
+      const closeBtn = form.querySelector("#task-comments-modal-close");
+      const statusEl = form.querySelector("#task-comments-modal-status");
+
+      form.dataset.taskId = String(task.id);
+      if (textEl) textEl.value = "";
+      if (statusEl) statusEl.textContent = "";
+      if (listEl) listEl.innerHTML = `<p class="empty small mb-0">Cargando comentarios...</p>`;
+      openAdminModal(form, `Comentarios · ${task.titulo || `Task #${task.id}`}`);
+
+      try {
+        const items = await fetchTaskComments(task.id);
+        renderTaskCommentsModalList(listEl, items);
+        setTaskCommentCount(task.id, items.length);
+      } catch (err) {
+        if (listEl) listEl.innerHTML = `<p class="empty small mb-0">No se pudieron cargar comentarios.</p>`;
+        if (statusEl) {
+          statusEl.textContent = err.message || "No se pudieron cargar comentarios.";
+          statusEl.dataset.type = "error";
+        }
+      }
+
+      if (closeBtn && !closeBtn.dataset.bound) {
+        closeBtn.dataset.bound = "true";
+        closeBtn.addEventListener("click", () => closeAdminModal(false));
+      }
+      if (submitBtn && !submitBtn.dataset.bound) {
+        submitBtn.dataset.bound = "true";
+        submitBtn.addEventListener("click", async () => {
+          const taskId = Number(form.dataset.taskId || 0);
+          if (!taskId) return;
+          const text = (textEl?.value || "").trim();
+          if (!text) return;
+          try {
+            submitBtn.disabled = true;
+            await postJson(`/tasks/${taskId}/comments`, { texto: text });
+            if (textEl) textEl.value = "";
+            const items = await fetchTaskComments(taskId);
+            renderTaskCommentsModalList(listEl, items);
+            setTaskCommentCount(taskId, items.length);
+            if (statusEl) {
+              statusEl.textContent = "Comentario agregado.";
+              statusEl.dataset.type = "ok";
+            }
+          } catch (err) {
+            if (statusEl) {
+              statusEl.textContent = err.message || "No se pudo guardar el comentario.";
+              statusEl.dataset.type = "error";
+            }
+          } finally {
+            submitBtn.disabled = false;
+          }
+        });
+      }
+    };
+
 	    const openTaskModal = (opts = {}) => {
       const {
         task = null,
         parentId = null,
         status = null,
-        sprintId = null,
         celulaId = null,
       } = opts;
 
@@ -7508,15 +8174,20 @@
 	      const deleteBtn = form.querySelector("#task-delete-btn");
 	      const formStatus = form.querySelector("#task-form-status");
 	      const parentHint = form.querySelector("#task-parent-hint");
-	      const existingOnly = form.querySelector("#task-existing-only");
+	      const existingOnlyBlocks = Array.from(form.querySelectorAll(".task-existing-only"));
 	      const subtasksList = form.querySelector("#task-subtasks-list");
 	      const subtaskTitle = form.querySelector("#task-subtask-title");
 	      const subtaskCreate = form.querySelector("#task-subtask-create");
 	      const subtaskAdd = form.querySelector("#task-subtask-add");
+	      const newSubtasksWrap = form.querySelector("#task-new-subtasks");
+	      const newSubtaskToggle = form.querySelector("#task-new-subtask-toggle");
+	      const newSubtaskPanel = form.querySelector("#task-new-subtask-panel");
+	      const newSubtaskTitle = form.querySelector("#task-new-subtask-title");
+	      const newSubtaskCreate = form.querySelector("#task-new-subtask-create");
+	      const newSubtasksList = form.querySelector("#task-new-subtasks-list");
 	      const commentsList = form.querySelector("#task-comments-list");
 	      const commentText = form.querySelector("#task-comment-text");
 	      const commentSubmit = form.querySelector("#task-comment-submit");
-	      const commentsRefresh = form.querySelector("#task-comments-refresh");
 
       const resolvedCelulaId = Number(task?.celula_id || celulaId || resolveCelulaId() || 0);
       form.dataset.celulaId = resolvedCelulaId ? String(resolvedCelulaId) : "";
@@ -7524,23 +8195,10 @@
         .filter((p) => !resolvedCelulaId || personaBelongsToCelula(p, resolvedCelulaId))
         .map((p) => ({ id: p.id, nombre: `${p.nombre} ${p.apellido}`.trim() }))
         .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
-      const sprintsFiltrados = [...(base.sprints || [])]
-        .filter((s) => !resolvedCelulaId || String(s.celula_id) === String(resolvedCelulaId))
-        .map((s) => ({ id: s.id, nombre: s.nombre }))
-        .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
-
       fillSelect(form.assignee_persona_id, personasFiltradas, {
         includeEmpty: true,
         emptyLabel: "Sin responsable",
       });
-      fillSelect(form.sprint_id, sprintsFiltrados, { includeEmpty: true });
-
-      const currentSprintId = sprintId || resolveSelectedSprintId() || 0;
-      if (currentSprintId && form.sprint_id) {
-        form.sprint_id.value = String(currentSprintId);
-      } else if (form.sprint_id) {
-        form.sprint_id.value = "";
-      }
 
       form.dataset.parentId = parentId ? String(parentId) : "";
 	      if (parentHint) {
@@ -7565,17 +8223,52 @@
 	          return;
 	        }
 	        subtasksList.innerHTML = subtasks
-	          .map((t) => {
-	            const statusLabel = STATUS_LABEL[t.estado] || t.estado || "-";
-	            const prLabel = PRIORITY_LABEL[t.prioridad] || t.prioridad || "-";
-	            return `
+	          .map((t) => `
 	              <div class="tasks-subtask-item" data-task-id="${t.id}">
-	                <button type="button" class="tasks-subtask-link" data-action="edit-subtask">${t.titulo || `Task #${t.id}`}</button>
-	                <span class="text-muted small ms-2">${statusLabel} · ${prLabel}</span>
+	                <button type="button" class="tasks-subtask-link" data-action="edit-subtask" data-role="subtask-title"></button>
 	              </div>
-	            `;
-	          })
+	            `)
 	          .join("");
+	        Array.from(subtasksList.querySelectorAll("[data-role='subtask-title']")).forEach((node, idx) => {
+	          const title = String(subtasks[idx]?.titulo || `Task #${subtasks[idx]?.id || ""}`);
+	          node.textContent = title;
+	          node.title = title;
+	        });
+	      };
+
+	      const getDraftSubtasks = () => {
+	        if (!Array.isArray(form.__draftSubtasks)) {
+	          form.__draftSubtasks = [];
+	        }
+	        return form.__draftSubtasks;
+	      };
+
+	      const renderDraftSubtasks = () => {
+	        if (!newSubtasksList) return;
+	        const drafts = getDraftSubtasks();
+	        if (!drafts.length) {
+	          newSubtasksList.innerHTML = `<p class="empty small mb-0">Sin subtareas cargadas.</p>`;
+	          return;
+	        }
+	        newSubtasksList.innerHTML = drafts
+	          .map(
+	            (_title, idx) => `
+	              <div class="tasks-subtask-item" data-draft-idx="${idx}">
+	                <span class="tasks-subtask-link" data-role="draft-title"></span>
+	                <button type="button" class="btn btn-link btn-sm text-danger p-0 ms-2" data-action="remove-draft-subtask" title="Eliminar subtarea" aria-label="Eliminar subtarea"><i class="bi bi-trash-fill" aria-hidden="true"></i></button>
+	              </div>
+	            `
+	          )
+	          .join("");
+	        Array.from(newSubtasksList.querySelectorAll("[data-role='draft-title']")).forEach((node, idx) => {
+	          node.textContent = String(drafts[idx] || "");
+	        });
+	      };
+
+	      const clearDraftSubtasks = () => {
+	        form.__draftSubtasks = [];
+	        if (newSubtaskTitle) newSubtaskTitle.value = "";
+	        renderDraftSubtasks();
 	      };
 
 	      const renderComments = (items) => {
@@ -7612,8 +8305,9 @@
 	        const taskId = Number(form.dataset.currentTaskId || 0);
 	        if (!taskId) return;
 	        try {
-	          const items = await fetchJson(`/tasks/${taskId}/comments`);
+	          const items = await fetchTaskComments(taskId);
 	          renderComments(items);
+	          setTaskCommentCount(taskId, items.length);
 	        } catch (err) {
 	          if (commentsList) {
 	            commentsList.innerHTML = `<p class="empty small mb-0">No se pudieron cargar comentarios.</p>`;
@@ -7633,11 +8327,16 @@
 	        form.estado.value = task.estado || "backlog";
 	        form.prioridad.value = task.prioridad || "media";
 	        form.assignee_persona_id.value = task.assignee_persona_id ? String(task.assignee_persona_id) : "";
-	        form.sprint_id.value = task.sprint_id ? String(task.sprint_id) : form.sprint_id.value || "";
 	        form.fecha_vencimiento.value = task.fecha_vencimiento || "";
 	        setFormMode(form, "edit", task.id, "Guardar");
 	        if (deleteBtn) deleteBtn.classList.remove("hidden");
-	        if (existingOnly) existingOnly.classList.remove("hidden");
+	        existingOnlyBlocks.forEach((node) => node.classList.remove("hidden"));
+	        if (newSubtasksWrap) newSubtasksWrap.classList.add("hidden");
+	        if (newSubtaskPanel) newSubtaskPanel.classList.add("hidden");
+	        if (newSubtaskToggle) {
+	          newSubtaskToggle.innerHTML = `<i class="bi bi-list-task me-1"></i>Agregar subtareas`;
+	        }
+	        clearDraftSubtasks();
 	        if (commentsList) commentsList.innerHTML = `<p class="empty small mb-0">Cargando...</p>`;
 	        refreshDetails();
 	      } else {
@@ -7646,19 +8345,21 @@
 	        resetFormMode(form, "Guardar");
 	        form.estado.value = status || "backlog";
 	        if (status) form.estado.value = status;
-	        if (currentSprintId && form.sprint_id) {
-	          form.sprint_id.value = String(currentSprintId);
-	        } else if (form.sprint_id) {
-	          form.sprint_id.value = "";
-	        }
 	        if (deleteBtn) deleteBtn.classList.add("hidden");
-	        if (existingOnly) existingOnly.classList.add("hidden");
+	        existingOnlyBlocks.forEach((node) => node.classList.add("hidden"));
+	        const canUseDraftSubtasks = !parentId;
+	        if (newSubtasksWrap) newSubtasksWrap.classList.toggle("hidden", !canUseDraftSubtasks);
+	        if (newSubtaskPanel) newSubtaskPanel.classList.add("hidden");
+	        if (newSubtaskToggle) {
+	          newSubtaskToggle.innerHTML = `<i class="bi bi-list-task me-1"></i>Agregar subtareas`;
+	        }
+	        clearDraftSubtasks();
 	        if (subtasksList) subtasksList.innerHTML = "";
 	        if (commentsList) commentsList.innerHTML = "";
 	      }
 
       if (formStatus) formStatus.textContent = "";
-      openAdminModal(form, task ? "Editar tarea" : "Nueva tarea");
+      openAdminModal(form, task ? "Editar tarea" : parentId ? "Nueva subtarea" : "Nueva tarea");
 
       if (cancelBtn && !cancelBtn.dataset.bound) {
         cancelBtn.dataset.bound = "true";
@@ -7707,7 +8408,6 @@
 	              estado: parent.estado || "backlog",
 	              prioridad: parent.prioridad || "media",
 	              celula_id: parent.celula_id || resolveCelulaId() || null,
-	              sprint_id: parent.sprint_id || null,
 	              parent_id: taskId,
 	              assignee_persona_id: parent.assignee_persona_id || null,
 	              fecha_vencimiento: null,
@@ -7736,9 +8436,61 @@
 	            task: null,
 	            parentId: taskId,
 	            status: parent?.estado || "backlog",
-	            sprintId: parent?.sprint_id || null,
 	            celulaId: parent?.celula_id || null,
 	          });
+	        });
+	      }
+
+	      if (newSubtaskToggle && !newSubtaskToggle.dataset.bound) {
+	        newSubtaskToggle.dataset.bound = "true";
+	        newSubtaskToggle.addEventListener("click", () => {
+	          if (!newSubtaskPanel) return;
+	          const opening = newSubtaskPanel.classList.contains("hidden");
+	          newSubtaskPanel.classList.toggle("hidden", !opening);
+	          if (opening) {
+	            if (newSubtaskTitle) newSubtaskTitle.focus();
+	            renderDraftSubtasks();
+	            newSubtaskToggle.innerHTML = `<i class="bi bi-chevron-up me-1"></i>Ocultar subtareas`;
+	          } else {
+	            newSubtaskToggle.innerHTML = `<i class="bi bi-list-task me-1"></i>Agregar subtareas`;
+	          }
+	        });
+	      }
+
+	      if (newSubtaskCreate && !newSubtaskCreate.dataset.bound) {
+	        newSubtaskCreate.dataset.bound = "true";
+	        newSubtaskCreate.addEventListener("click", () => {
+	          const title = (newSubtaskTitle?.value || "").trim();
+	          if (!title) return;
+	          const drafts = getDraftSubtasks();
+	          drafts.push(title);
+	          if (newSubtaskTitle) newSubtaskTitle.value = "";
+	          renderDraftSubtasks();
+	          newSubtaskTitle?.focus();
+	        });
+	      }
+
+	      if (newSubtaskTitle && !newSubtaskTitle.dataset.bound) {
+	        newSubtaskTitle.dataset.bound = "true";
+	        newSubtaskTitle.addEventListener("keydown", (event) => {
+	          if (event.key !== "Enter") return;
+	          event.preventDefault();
+	          newSubtaskCreate?.click();
+	        });
+	      }
+
+	      if (newSubtasksList && !newSubtasksList.dataset.bound) {
+	        newSubtasksList.dataset.bound = "true";
+	        newSubtasksList.addEventListener("click", (event) => {
+	          const btn = event.target.closest("button[data-action='remove-draft-subtask']");
+	          if (!btn) return;
+	          const row = btn.closest("[data-draft-idx]");
+	          const idx = Number(row?.dataset?.draftIdx);
+	          if (!Number.isFinite(idx)) return;
+	          const drafts = getDraftSubtasks();
+	          if (idx < 0 || idx >= drafts.length) return;
+	          drafts.splice(idx, 1);
+	          renderDraftSubtasks();
 	        });
 	      }
 
@@ -7779,11 +8531,6 @@
 	        });
 	      }
 
-	      if (commentsRefresh && !commentsRefresh.dataset.bound) {
-	        commentsRefresh.dataset.bound = "true";
-	        commentsRefresh.addEventListener("click", loadComments);
-	      }
-
 	      if (!form.dataset.bound) {
         form.dataset.bound = "true";
         form.addEventListener("submit", async (event) => {
@@ -7796,30 +8543,48 @@
             estado: (form.estado.value || "backlog").trim().toLowerCase(),
             prioridad: (form.prioridad.value || "media").trim().toLowerCase(),
             celula_id: Number(form.dataset.celulaId || 0) || null,
-            sprint_id: form.sprint_id.value ? Number(form.sprint_id.value) : null,
             parent_id: form.dataset.parentId ? Number(form.dataset.parentId) : null,
             assignee_persona_id: form.assignee_persona_id.value ? Number(form.assignee_persona_id.value) : null,
             fecha_vencimiento: form.fecha_vencimiento.value || null,
           };
 
-          const submitBtn = form.querySelector("button[type='submit']");
-          const formStatus = form.querySelector("#task-form-status");
-          try {
-            if (formStatus) formStatus.textContent = "";
-            await withButtonBusy(
-              submitBtn,
-              async () => {
-                const editId = form.dataset.editId;
-                if (editId) {
-                  await putJson(`/tasks/${editId}`, payload);
-                } else {
-                  await postJson("/tasks", payload);
-                }
-              },
-              "Guardando..."
-            );
-            closeAdminModal(true);
-            await root.__tasksApi?.loadAndRender?.();
+	          const submitBtn = form.querySelector("button[type='submit']");
+	          const formStatus = form.querySelector("#task-form-status");
+	          try {
+	            if (formStatus) formStatus.textContent = "";
+	            const draftSubtasks = getDraftSubtasks()
+	              .map((item) => String(item || "").trim())
+	              .filter(Boolean);
+	            await withButtonBusy(
+	              submitBtn,
+	              async () => {
+	                const editId = form.dataset.editId;
+	                if (editId) {
+	                  await putJson(`/tasks/${editId}`, payload);
+	                } else {
+	                  const created = await postJson("/tasks", payload);
+	                  const createdId = Number(created?.id || 0);
+	                  if (createdId && draftSubtasks.length) {
+	                    for (const subTitle of draftSubtasks) {
+	                      await postJson("/tasks", {
+	                        titulo: subTitle,
+	                        descripcion: null,
+	                        estado: payload.estado || "backlog",
+	                        prioridad: payload.prioridad || "media",
+	                        celula_id: payload.celula_id,
+	                        parent_id: createdId,
+	                        assignee_persona_id: payload.assignee_persona_id || null,
+	                        fecha_vencimiento: null,
+	                      });
+	                    }
+	                  }
+	                }
+	              },
+	              "Guardando..."
+	            );
+	            clearDraftSubtasks();
+	            closeAdminModal(true);
+	            await root.__tasksApi?.loadAndRender?.();
           } catch (err) {
             if (formStatus) {
               formStatus.textContent = err.message || "No se pudo guardar.";
@@ -7837,7 +8602,6 @@
         (state.tasksFilters?.statuses || []).map((v) => String(v || "").trim().toLowerCase()).filter(Boolean)
       );
       const statusAllowed = statusFilter ? new Set([statusFilter]) : statusSet.size ? statusSet : null;
-      const sprintFilter = state.tasksSprintFilter ? String(state.tasksSprintFilter) : "";
       const prioritySet = new Set(
         (state.tasksFilters?.priorities || []).map((v) => String(v || "").trim().toLowerCase()).filter(Boolean)
       );
@@ -7850,7 +8614,6 @@
       return items.filter((task) => {
         if (hideSubtasks && task.parent_id) return false;
         if (statusAllowed && !statusAllowed.has(String(task.estado || "").toLowerCase())) return false;
-        if (sprintFilter && String(task.sprint_id || "") !== sprintFilter) return false;
         if (prioritySet.size && !prioritySet.has(String(task.prioridad || "").toLowerCase())) return false;
         if (assigneeSet.size) {
           const key = task.assignee_persona_id ? String(task.assignee_persona_id) : "__none__";
@@ -7888,10 +8651,71 @@
       return Array.from(keep.values());
     };
 
+    const buildTaskHierarchy = (items) => {
+      const list = Array.isArray(items) ? items.filter(Boolean) : [];
+      const byId = new Map(
+        list
+          .filter((t) => t.id != null)
+          .map((t) => [String(t.id), t])
+      );
+      const safeParentByTask = new Map();
+
+      const sameCelula = (a, b) => {
+        if (!a || !b) return true;
+        if (a.celula_id == null || b.celula_id == null) return true;
+        return String(a.celula_id) === String(b.celula_id);
+      };
+
+      const resolveSafeParentId = (task) => {
+        const taskId = String(task?.id || "");
+        const rawParent = task?.parent_id ? String(task.parent_id) : "";
+        if (!taskId || !rawParent) return "";
+        if (taskId === rawParent) return "";
+        const directParent = byId.get(rawParent);
+        if (!directParent) return "";
+        if (!sameCelula(task, directParent)) return "";
+
+        const seen = new Set([taskId]);
+        let currentId = rawParent;
+        let guard = 0;
+        while (currentId && guard < 300) {
+          if (seen.has(currentId)) return "";
+          seen.add(currentId);
+          const current = byId.get(currentId);
+          if (!current) return "";
+          if (!sameCelula(task, current)) return "";
+          const nextId = current.parent_id ? String(current.parent_id) : "";
+          if (!nextId) break;
+          currentId = nextId;
+          guard += 1;
+        }
+        return rawParent;
+      };
+
+      list.forEach((task) => {
+        safeParentByTask.set(String(task.id), resolveSafeParentId(task));
+      });
+
+      const roots = list.filter((task) => !safeParentByTask.get(String(task.id)));
+      const childrenByParent = new Map();
+      list.forEach((task) => {
+        const pid = safeParentByTask.get(String(task.id));
+        if (!pid) return;
+        if (!childrenByParent.has(pid)) childrenByParent.set(pid, []);
+        childrenByParent.get(pid).push(task);
+      });
+
+      return { roots, childrenByParent };
+    };
+
     const renderBacklog = (filtered, all) => {
       if (!backlogList) return;
+      destroyBacklogDataTable();
 
       const tasks = buildBacklogContext(filtered || [], all || []);
+      const taskById = new Map((tasks || []).map((t) => [String(t.id), t]));
+      // Backlog should always behave like AdminLTE DataTable.
+      const useBacklogDataTable = hasBacklogDataTable;
 
       const taskCelulaIds = new Set(
         tasks
@@ -7927,23 +8751,19 @@
         backlogList.innerHTML = `<p class="empty">No hay tareas. Crea una nueva tarea para comenzar.</p>`;
         return;
       }
+      queueTaskCommentCounts(tasks.map((t) => t.id));
 
-      const roots = tasks.filter((t) => !t.parent_id);
-      const childrenByParent = new Map();
-      tasks.forEach((t) => {
-        if (!t.parent_id) return;
-        const key = String(t.parent_id);
-        if (!childrenByParent.has(key)) childrenByParent.set(key, []);
-        childrenByParent.get(key).push(t);
-      });
+      const { roots, childrenByParent } = buildTaskHierarchy(tasks);
 
       const wrap = document.createElement("div");
       wrap.className = "tasks-notion-wrap";
       wrap.style.maxWidth = "100%";
       const scroll = document.createElement("div");
       scroll.className = "tasks-notion-scroll";
+      const tableHost = scroll;
 
       const table = document.createElement("table");
+      table.id = "tasks-backlog-table";
       table.className = "tasks-notion-table";
       table.innerHTML = `<thead><tr></tr></thead><tbody></tbody>`;
       const theadRow = table.querySelector("thead tr");
@@ -7967,6 +8787,29 @@
         importante: 120,
       };
       const resolveWidthPx = (key) => getColumnWidth(key) || widthPxDefaults[key] || 140;
+      const sortState = getTasksBacklogSort();
+      const parseDateSortKey = (value) => {
+        const raw = String(value || "").trim();
+        if (!raw) return null;
+        const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!match) return null;
+        return Number(`${match[1]}${match[2]}${match[3]}`);
+      };
+      const isMissingSortValue = (value) =>
+        value === null ||
+        value === undefined ||
+        value === "" ||
+        (typeof value === "number" && !Number.isFinite(value));
+      const statusRank = Object.fromEntries(STATUS_ORDER.map((key, idx) => [key, idx]));
+      const priorityRank = {
+        baja: 1,
+        media: 2,
+        alta: 3,
+        urgente: 4,
+      };
+      const setCellOrder = (td, value) => {
+        td.dataset.order = isMissingSortValue(value) ? "" : String(value);
+      };
 
       const applyEstadoPill = (pill, estado) => {
         const key = STATUS_ORDER.includes(estado) ? estado : "backlog";
@@ -7989,12 +8832,26 @@
 
       const buildTh = (key) => {
         const th = document.createElement("th");
-        th.textContent = COLUMN_LABEL[key] ?? key;
+        const label = document.createElement("span");
+        label.className = "tasks-th-label";
+        label.textContent = COLUMN_LABEL[key] ?? key;
+        th.appendChild(label);
+        th.classList.add("sorting");
+        if (sortState.key === key) {
+          th.classList.add(sortState.dir === "asc" ? "sorting_asc" : "sorting_desc");
+          th.setAttribute("aria-sort", sortState.dir === "asc" ? "ascending" : "descending");
+        } else {
+          th.setAttribute("aria-sort", "none");
+        }
         th.dataset.colKey = key;
         th.draggable = true;
         const px = resolveWidthPx(key);
         th.style.width = `${px}px`;
         th.style.minWidth = `${Math.max(60, px)}px`;
+        const sortIndicator = document.createElement("span");
+        sortIndicator.className = "tasks-th-sort-indicator";
+        sortIndicator.setAttribute("aria-hidden", "true");
+        th.appendChild(sortIndicator);
         const resizer = document.createElement("span");
         resizer.className = "tasks-col-resizer";
         resizer.dataset.action = "resize-col";
@@ -8023,6 +8880,7 @@
       const tableWidth = visibleColumns.reduce((acc, key) => acc + resolveWidthPx(key), 0);
       table.style.width = `${tableWidth}px`;
       table.style.minWidth = `${tableWidth}px`;
+      table.dataset.minWidth = String(tableWidth);
 
       const buildStatusSelect = (task) => {
         const pill = document.createElement("span");
@@ -8289,10 +9147,72 @@
         return td;
       };
 
-      const renderRow = (task, depth = 0) => {
+      const resolveBacklogSortValue = (task, key) => {
+        if (key === "titulo") return normalizeText(task.titulo || "");
+        if (key === "estado") return statusRank[String(task.estado || "backlog").toLowerCase()] ?? 0;
+        if (key === "prioridad") return priorityRank[String(task.prioridad || "media").toLowerCase()] ?? 0;
+        if (key === "tipo") return normalizeText(task.tipo || "");
+        if (key === "etiquetas") return normalizeText(task.etiquetas || "");
+        if (key === "assignee_persona_id") {
+          const personId = task.assignee_persona_id ? String(task.assignee_persona_id) : "";
+          const name = personId ? personaMap[personId] || `Persona ${personId}` : "";
+          return normalizeText(name);
+        }
+        if (key === "sprint_id") {
+          const sprintId = task.sprint_id ? String(task.sprint_id) : "";
+          const name = sprintId ? sprintMap[sprintId] || `Sprint ${sprintId}` : "";
+          return normalizeText(name);
+        }
+        if (key === "start_date" || key === "end_date" || key === "fecha_vencimiento") {
+          return parseDateSortKey(task[key]);
+        }
+        if (key === "dias_habiles") {
+          if (!task.start_date || !task.fecha_vencimiento) return null;
+          const days = countWeekdays(task.start_date, task.fecha_vencimiento, feriadosSet);
+          return Number.isFinite(days) ? days : null;
+        }
+        if (key === "puntos" || key === "horas_estimadas") {
+          const value = Number(task[key]);
+          return Number.isFinite(value) ? value : null;
+        }
+        if (key === "importante") return task.importante ? 1 : 0;
+        return normalizeText(task?.[key] ?? "");
+      };
+      const compareBacklogTasks = (a, b) => {
+        const av = resolveBacklogSortValue(a, sortState.key);
+        const bv = resolveBacklogSortValue(b, sortState.key);
+        const aMissing = isMissingSortValue(av);
+        const bMissing = isMissingSortValue(bv);
+        if (aMissing && bMissing) return compareTaskNatural(a, b);
+        if (aMissing) return 1;
+        if (bMissing) return -1;
+        let cmp = 0;
+        if (typeof av === "number" && typeof bv === "number") {
+          cmp = av - bv;
+        } else {
+          cmp = String(av).localeCompare(String(bv), "es", { sensitivity: "base", numeric: true });
+        }
+        if (cmp === 0 && sortState.key === "fecha_vencimiento") {
+          const pa = priorityRank[String(a?.prioridad || "media").toLowerCase()] ?? 0;
+          const pb = priorityRank[String(b?.prioridad || "media").toLowerCase()] ?? 0;
+          const priorityCmp = pb - pa; // urgente -> baja
+          if (priorityCmp !== 0) return priorityCmp;
+        }
+        if (cmp === 0) return compareTaskNatural(a, b);
+        return sortState.dir === "desc" ? -cmp : cmp;
+      };
+      const sortBacklogTasks = (items) => [...items].sort(compareBacklogTasks);
+
+      const renderRow = (task, depth = 0, ancestors = new Set()) => {
+        const taskKey = String(task.id || "");
+        if (!taskKey || ancestors.has(taskKey)) return;
+        const nextAncestors = new Set(ancestors);
+        nextAncestors.add(taskKey);
+        const familyColor = resolveTaskFamilyColor(task, taskById);
         const hideSubtasks = Boolean(state.tasksFilters?.hideSubtasks);
-        const children = sortTasks(childrenByParent.get(String(task.id)) || []);
-        const hasChildren = !hideSubtasks && children.length > 0;
+        const children = sortBacklogTasks(childrenByParent.get(String(task.id)) || []);
+        const hasChildrenAny = children.length > 0;
+        const hasChildren = !hideSubtasks && hasChildrenAny;
         const expanded = Boolean(state.tasksBacklogExpanded?.[String(task.id)]);
 
         const tr = document.createElement("tr");
@@ -8303,28 +9223,25 @@
         const titleWrap = document.createElement("div");
         titleWrap.className = "tasks-notion-name";
         titleWrap.style.paddingLeft = `${depth * 16}px`;
+        titleWrap.style.setProperty("--task-family-color", familyColor);
 
-        if (hasChildren) {
-          const toggle = document.createElement("button");
-          toggle.type = "button";
-          toggle.className = "tasks-tree-toggle";
-          toggle.dataset.action = "toggle-subtasks";
-          toggle.title = expanded ? "Ocultar subtareas" : "Mostrar subtareas";
-          toggle.textContent = expanded ? "▾" : "▸";
-          titleWrap.appendChild(toggle);
-        } else {
-          const spacer = document.createElement("span");
-          spacer.className = "tasks-tree-spacer";
-          spacer.textContent = task.parent_id ? " " : "";
-          titleWrap.appendChild(spacer);
-        }
+        const spacer = document.createElement("span");
+        spacer.className = "tasks-tree-spacer";
+        spacer.textContent = "";
+        titleWrap.appendChild(spacer);
+
+        const familyDot = document.createElement("span");
+        familyDot.className = "tasks-family-dot";
+        familyDot.style.backgroundColor = familyColor;
+        titleWrap.appendChild(familyDot);
 
         const main = document.createElement("div");
         main.className = "tasks-notion-name-main";
         const titleBtn = document.createElement("button");
         titleBtn.type = "button";
         titleBtn.dataset.action = "edit";
-        titleBtn.textContent = `${task.parent_id ? "↳ " : ""}${task.titulo || `Task #${task.id}`}`;
+        const showHierarchyArrow = Boolean(task.parent_id || hasChildrenAny);
+        titleBtn.textContent = `${showHierarchyArrow ? "↳ " : ""}${task.titulo || `Task #${task.id}`}`;
         main.appendChild(titleBtn);
         if (task.descripcion) {
           const hint = document.createElement("div");
@@ -8332,12 +9249,36 @@
           hint.textContent = String(task.descripcion).slice(0, 120);
           main.appendChild(hint);
         }
+        if (hasChildrenAny) {
+          const childDates = children
+            .map((child) => String(child.fecha_vencimiento || child.start_date || child.end_date || "").trim())
+            .filter(Boolean)
+            .sort((a, b) => a.localeCompare(b));
+          const fallbackTaskDate = String(task.fecha_vencimiento || task.start_date || task.end_date || "").trim();
+          const refDate = childDates[0] || fallbackTaskDate;
+          const subtasksMeta = document.createElement("div");
+          subtasksMeta.className = "tasks-subtasks-meta text-muted small";
+          subtasksMeta.textContent = refDate
+            ? `Subtareas (${children.length}) · ${formatDate(refDate)}`
+            : `Subtareas (${children.length})`;
+          main.appendChild(subtasksMeta);
+        }
         titleWrap.appendChild(main);
+
+        queueTaskCommentCount(task.id);
+        const commentCount = getTaskCommentCount(task.id);
 
         const actions = document.createElement("div");
         actions.className = "tasks-row-actions";
         actions.innerHTML = `
-          <button class="btn btn-outline-primary btn-sm" type="button" title="Subtarea" data-action="subtask">
+          <button class="btn btn-outline-secondary btn-sm tasks-comments-trigger ${commentCount > 0 ? "" : "d-none"}" type="button" title="Comentarios" data-action="comments" data-comment-btn-task="${task.id}">
+            <i class="bi bi-chat-left-text"></i>
+            <span class="tasks-comment-count" data-comment-count-task="${task.id}">${commentCount}</span>
+          </button>
+          ${hasChildren ? `<button class="btn btn-outline-info btn-sm" type="button" title="${expanded ? "Ocultar subtareas" : "Mostrar subtareas"}" data-action="toggle-subtasks">
+            <span class="tasks-subtasks-arrow" aria-hidden="true">↳</span>
+          </button>` : ""}
+          <button class="btn btn-outline-primary btn-sm" type="button" title="Crear subtarea" data-action="subtask">
             <i class="bi bi-node-plus"></i>
           </button>
           <button class="btn btn-outline-danger btn-sm" type="button" title="Eliminar" data-action="delete">
@@ -8351,60 +9292,89 @@
 
         const columnCell = (key) => {
           const td = document.createElement("td");
-          if (key === "titulo") return buildTitleTd();
+          td.dataset.colKey = key;
+          if (key === "titulo") {
+            const cell = buildTitleTd();
+            cell.dataset.colKey = key;
+            setCellOrder(cell, normalizeText(task.titulo || ""));
+            return cell;
+          }
           if (key === "estado") {
             td.appendChild(buildStatusSelect(task));
+            setCellOrder(td, statusRank[String(task.estado || "backlog").toLowerCase()] ?? 0);
             return td;
           }
           if (key === "prioridad") {
             td.appendChild(buildPrioritySelect(task));
+            setCellOrder(td, priorityRank[String(task.prioridad || "media").toLowerCase()] ?? 0);
             return td;
           }
           if (key === "tipo") {
             td.appendChild(buildTypeSelect(task));
+            setCellOrder(td, normalizeText(task.tipo || ""));
             return td;
           }
           if (key === "etiquetas") {
             td.appendChild(buildTagsInput(task));
+            setCellOrder(td, normalizeText(task.etiquetas || ""));
             return td;
           }
           if (key === "assignee_persona_id") {
             td.appendChild(buildAssigneeSelect(task));
+            const personId = task.assignee_persona_id ? String(task.assignee_persona_id) : "";
+            const personName = personId ? personaMap[personId] || `Persona ${personId}` : "";
+            setCellOrder(td, normalizeText(personName));
             return td;
           }
           if (key === "sprint_id") {
             td.appendChild(buildSprintSelect(task));
+            const sprintId = task.sprint_id ? String(task.sprint_id) : "";
+            const sprintName = sprintId ? sprintMap[sprintId] || `Sprint ${sprintId}` : "";
+            setCellOrder(td, normalizeText(sprintName));
             return td;
           }
           if (key === "start_date") {
             td.appendChild(buildStartInput(task));
+            setCellOrder(td, parseDateSortKey(task.start_date));
             return td;
           }
           if (key === "end_date") {
             td.appendChild(buildEndInput(task));
+            setCellOrder(td, parseDateSortKey(task.end_date));
             return td;
           }
           if (key === "fecha_vencimiento") {
             td.appendChild(buildDueInput(task));
+            setCellOrder(td, parseDateSortKey(task.fecha_vencimiento));
             return td;
           }
           if (key === "dias_habiles") {
             td.appendChild(buildDaysCell(task));
+            const days = task.start_date && task.fecha_vencimiento
+              ? countWeekdays(task.start_date, task.fecha_vencimiento, feriadosSet)
+              : null;
+            setCellOrder(td, Number.isFinite(days) ? days : null);
             return td;
           }
           if (key === "puntos") {
             td.appendChild(buildNumberCell(task, "puntos", "0"));
+            const points = Number(task.puntos);
+            setCellOrder(td, Number.isFinite(points) ? points : null);
             return td;
           }
           if (key === "horas_estimadas") {
             td.appendChild(buildNumberCell(task, "horas_estimadas", "0"));
+            const hours = Number(task.horas_estimadas);
+            setCellOrder(td, Number.isFinite(hours) ? hours : null);
             return td;
           }
           if (key === "importante") {
             td.appendChild(buildCheckboxCell(task));
+            setCellOrder(td, task.importante ? 1 : 0);
             return td;
           }
           td.textContent = "";
+          setCellOrder(td, null);
           return td;
         };
 
@@ -8412,15 +9382,19 @@
         tbody.appendChild(tr);
 
         if (hasChildren && expanded) {
-          children.forEach((child) => renderRow(child, depth + 1));
+          children.forEach((child) => renderRow(child, depth + 1, nextAncestors));
         }
       };
 
-      sortTasks(roots).forEach((t) => renderRow(t, 0));
-      scroll.appendChild(table);
+      sortBacklogTasks(roots).forEach((t) => renderRow(t, 0));
+      tableHost.appendChild(table);
       wrap.appendChild(scroll);
 
       backlogList.appendChild(wrap);
+      if (useBacklogDataTable) {
+        initBacklogDataTable(table, visibleColumns);
+      }
+      attachBacklogHorizontalBar(wrap, scroll, useBacklogDataTable);
     };
 
     const renderBoard = (filtered, all) => {
@@ -8428,21 +9402,13 @@
       board.innerHTML = "";
 
       const allTasks = Array.isArray(all) ? all : filtered;
-      const childrenByParent = new Map();
-      allTasks.forEach((t) => {
-        if (!t?.parent_id) return;
-        const key = String(t.parent_id);
-        if (!childrenByParent.has(key)) childrenByParent.set(key, []);
-        childrenByParent.get(key).push(t);
-      });
+      const taskById = new Map((allTasks || []).map((t) => [String(t.id), t]));
 
       const byStatus = Object.fromEntries(STATUS_ORDER.map((s) => [s, []]));
-      (filtered || [])
-        .filter((t) => !t.parent_id) // tablero: tarjetas principales, subtareas dentro
-        .forEach((t) => {
-          const key = STATUS_ORDER.includes(t.estado) ? t.estado : "backlog";
-          byStatus[key].push(t);
-        });
+      (filtered || []).forEach((t) => {
+        const key = STATUS_ORDER.includes(t.estado) ? t.estado : "backlog";
+        byStatus[key].push(t);
+      });
       STATUS_ORDER.forEach((s) => {
         byStatus[s] = sortTasks(byStatus[s]);
       });
@@ -8520,8 +9486,12 @@
         });
 
         byStatus[statusKey].forEach((task) => {
+          const familyColor = resolveTaskFamilyColor(task, taskById);
           const card = document.createElement("div");
           card.className = "task-card";
+          card.classList.add("has-family-color");
+          if (task.parent_id) card.classList.add("is-subtask");
+          card.style.setProperty("--task-family-color", familyColor);
           card.draggable = true;
           card.dataset.taskId = String(task.id);
           card.addEventListener("dragstart", (e) => {
@@ -8537,6 +9507,12 @@
           const title = document.createElement("div");
           title.className = "task-card-title";
           title.textContent = task.titulo || `Task #${task.id}`;
+          const parentLabel = (() => {
+            if (!task.parent_id) return "";
+            const parent = taskById.get(String(task.parent_id));
+            if (!parent) return `Task #${task.parent_id}`;
+            return parent.titulo || `Task #${parent.id}`;
+          })();
 
           const badges = document.createElement("div");
           badges.className = "task-card-badges";
@@ -8577,6 +9553,18 @@
           `;
 
           card.appendChild(top);
+          if (parentLabel) {
+            const parentHint = document.createElement("div");
+            parentHint.className = "task-card-parent";
+            const badge = document.createElement("span");
+            badge.className = "badge";
+            badge.style.backgroundColor = familyColor;
+            badge.style.color = "#fff";
+            badge.innerHTML = `<i class="bi bi-diagram-2 me-1" aria-hidden="true"></i>`;
+            badge.appendChild(document.createTextNode(`Hija de: ${parentLabel}`));
+            parentHint.appendChild(badge);
+            card.appendChild(parentHint);
+          }
           if (task.descripcion) {
             const desc = document.createElement("div");
             desc.className = "task-card-desc";
@@ -8584,39 +9572,6 @@
             card.appendChild(desc);
           }
           card.appendChild(meta);
-
-          // Subtasks (inside card)
-          if (!state.tasksFilters?.hideSubtasks) {
-            const subs = sortTasks(childrenByParent.get(String(task.id)) || []);
-            if (subs.length) {
-              const subWrap = document.createElement("div");
-              subWrap.className = "task-card-subtasks";
-              subWrap.innerHTML = `
-                <button type="button" class="task-card-subtasks-toggle" data-action="toggle-subtasks">
-                  <span>Subtareas</span>
-                  <span class="badge text-bg-light">${subs.length}</span>
-                </button>
-                <div class="task-card-subtasks-list"></div>
-              `;
-              const listEl = subWrap.querySelector(".task-card-subtasks-list");
-              const expanded = Boolean(state.tasksBacklogExpanded?.[`kanban:${task.id}`]);
-              subWrap.classList.toggle("is-collapsed", !expanded);
-              if (listEl) {
-                listEl.innerHTML = subs
-                  .map((s) => {
-                    const st = STATUS_LABEL[s.estado] || s.estado || "-";
-                    return `
-                      <div class="task-card-subtask" data-task-id="${s.id}">
-                        <button type="button" class="task-card-subtask-title" data-action="edit-subtask">${s.titulo || `Task #${s.id}`}</button>
-                        <span class="task-card-subtask-meta">${st}</span>
-                      </div>
-                    `;
-                  })
-                  .join("");
-              }
-              card.appendChild(subWrap);
-            }
-          }
 
           card.appendChild(actions);
           list.appendChild(card);
@@ -8850,6 +9805,52 @@
       }
     };
 
+    const updateOverdueInProgressToToday = async () => {
+      const today = formatISO(getToday());
+      const candidates = (state.tasksCache || []).filter((task) => {
+        const status = String(task.estado || "")
+          .trim()
+          .toLowerCase();
+        if (status === "done" || status === "archived") return false;
+        const due = String(task.fecha_vencimiento || "").trim();
+        if (!due) return false;
+        return due < today;
+      });
+      if (!candidates.length) {
+        setTasksStatus("No hay tareas vencidas (anteriores a hoy) para actualizar.", "info");
+        return;
+      }
+      const confirmed = confirm(
+        `Se actualizaran ${candidates.length} tarea(s) vencidas (fecha menor a ${today}) al vencimiento ${today}. Deseas continuar?`
+      );
+      if (!confirmed) return;
+
+      let updatedCount = 0;
+      let errorCount = 0;
+      for (const task of candidates) {
+        try {
+          const updated = await putJson(`/tasks/${task.id}`, { fecha_vencimiento: today });
+          const idx = (state.tasksCache || []).findIndex((item) => item.id === task.id);
+          if (idx >= 0) state.tasksCache[idx] = updated;
+          else state.tasksCache = [...(state.tasksCache || []), updated];
+          updatedCount += 1;
+        } catch {
+          errorCount += 1;
+        }
+      }
+      renderAll();
+      if (updatedCount && !errorCount) {
+        setTasksStatus(`Se actualizaron ${updatedCount} tarea(s) al dia ${today}.`, "ok");
+      } else if (updatedCount && errorCount) {
+        setTasksStatus(
+          `Se actualizaron ${updatedCount} tarea(s) y ${errorCount} fallaron. Reintenta para completar.`,
+          "warning"
+        );
+      } else {
+        setTasksStatus("No se pudo actualizar ninguna tarea.", "error");
+      }
+    };
+
     const renderAll = () => {
       const filtered = applyFilters(state.tasksCache || []);
       renderBacklog(filtered, state.tasksCache || []);
@@ -8860,42 +9861,21 @@
     const loadAndRender = async () => {
       const celulaId = resolveCelulaId();
       const celula = (base.cells || []).find((c) => String(c.id) === String(celulaId));
-      const sprints = [...(base.sprints || [])];
-      const sprintNameMap = Object.fromEntries(
-        sprints.map((s) => [String(s.id), String(s.nombre || "").trim() || `Sprint ${s.id}`])
-      );
-      const sprintOptions = sprints
-        .map((s) => ({ id: s.id, nombre: s.nombre }))
-        .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
-
-      if (sprintSelect) {
-        const previous = sprintSelect.value || state.tasksSprintFilter || "";
-        sprintSelect.innerHTML = `<option value="">Todos</option>`;
-        sprintOptions.forEach((opt) => {
-          const o = document.createElement("option");
-          o.value = String(opt.id);
-          o.textContent = opt.nombre;
-          sprintSelect.appendChild(o);
-        });
-        if (state.selectedSprintId && sprintOptions.some((s) => String(s.id) === String(state.selectedSprintId))) {
-          sprintSelect.value = state.tasksSprintFilter || state.selectedSprintId;
-        } else if (previous && sprintOptions.some((s) => String(s.id) === String(previous))) {
-          sprintSelect.value = previous;
-        } else {
-          sprintSelect.value = state.tasksSprintFilter || "";
-        }
-        state.tasksSprintFilter = sprintSelect.value || "";
-      }
+      state.tasksSprintFilter = "";
 
       try {
         setTasksStatus("Cargando tareas...", "info");
         const items = await fetchJson("/tasks");
         state.tasksCache = Array.isArray(items) ? items : [];
-        const sprintLabel = state.tasksSprintFilter
-          ? sprintNameMap[String(state.tasksSprintFilter)] || `Sprint ${state.tasksSprintFilter}`
-          : "Todos los sprints";
+        const validTaskIds = new Set((state.tasksCache || []).map((t) => String(t.id)));
+        Object.keys(state.tasksCommentCounts || {}).forEach((key) => {
+          if (!validTaskIds.has(String(key))) {
+            delete state.tasksCommentCounts[key];
+          }
+        });
+        queueTaskCommentCounts((state.tasksCache || []).map((t) => t.id));
         setTasksStatus(
-          `Todas las celulas · ${sprintLabel} · ${state.tasksCache.length} tarea(s)${
+          `Todas las celulas · ${state.tasksCache.length} tarea(s)${
             celula ? ` · Celula por defecto: ${celula.nombre}` : ""
           }`,
           "ok"
@@ -8927,17 +9907,11 @@
         });
       });
 
-      if (sprintSelect && !sprintSelect.dataset.bound) {
-        sprintSelect.dataset.bound = "true";
-        sprintSelect.addEventListener("change", () => {
-          state.tasksSprintFilter = sprintSelect.value || "";
-          renderAll();
-        });
-      }
       if (statusSelect && !statusSelect.dataset.bound) {
         statusSelect.dataset.bound = "true";
         statusSelect.addEventListener("change", () => {
           state.tasksStatusFilter = (statusSelect.value || "").trim().toLowerCase();
+          saveTasksFiltersState();
           renderAll();
         });
       }
@@ -8946,6 +9920,7 @@
         let timer = null;
         searchInput.addEventListener("input", () => {
           state.tasksSearch = searchInput.value || "";
+          saveTasksFiltersState();
           if (timer) window.clearTimeout(timer);
           timer = window.setTimeout(() => renderAll(), 120);
         });
@@ -8953,22 +9928,38 @@
       if (createBtn && !createBtn.dataset.bound) {
         createBtn.dataset.bound = "true";
         createBtn.addEventListener("click", () => {
-          const sprintId = resolveSelectedSprintId() || null;
-          root.__tasksApi?.openTaskModal?.({ task: null, sprintId });
+          root.__tasksApi?.openTaskModal?.({ task: null });
         });
       }
       if (createBtnBacklog && !createBtnBacklog.dataset.bound) {
         createBtnBacklog.dataset.bound = "true";
         createBtnBacklog.addEventListener("click", () => {
-          const sprintId = resolveSelectedSprintId() || null;
-          root.__tasksApi?.openTaskModal?.({ task: null, sprintId });
+          root.__tasksApi?.openTaskModal?.({ task: null });
+        });
+      }
+      if (bulkOverdueBtn && !bulkOverdueBtn.dataset.bound) {
+        bulkOverdueBtn.dataset.bound = "true";
+        bulkOverdueBtn.addEventListener("click", async () => {
+          await withButtonBusy(
+            bulkOverdueBtn,
+            async () => {
+              await updateOverdueInProgressToToday();
+            },
+            "Actualizando..."
+          );
         });
       }
 
+      const syncFiltersButtonState = (isOpen) => {
+        if (!filtersBtn) return;
+        filtersBtn.classList.toggle("btn-primary", Boolean(isOpen));
+        filtersBtn.classList.toggle("btn-outline-secondary", !isOpen);
+      };
       const toggleFilterPanel = (open) => {
         if (!filterPanel) return;
         const next = open ?? filterPanel.classList.contains("hidden");
         filterPanel.classList.toggle("hidden", !next);
+        syncFiltersButtonState(next);
       };
       const toggleColumnsPanel = (open) => {
         if (!columnsPanel) return;
@@ -8984,6 +9975,7 @@
         filterCloseBtn.dataset.bound = "true";
         filterCloseBtn.addEventListener("click", () => toggleFilterPanel(false));
       }
+      syncFiltersButtonState(filterPanel ? !filterPanel.classList.contains("hidden") : false);
 
       const renderColumnsManager = () => {
         if (!columnsList) return;
@@ -9000,7 +9992,7 @@
             const label = COLUMN_LABEL[key] ?? key;
             const checked = !hidden[key];
             return `
-              <div class="d-flex align-items-center gap-2 mb-2" data-col="${key}" draggable="true">
+              <div class="tasks-col-row d-flex align-items-center gap-2 mb-2" data-col="${key}" draggable="true">
                 <input class="form-check-input" type="checkbox" data-action="toggle" ${checked ? "checked" : ""} />
                 <div class="flex-grow-1">${label}</div>
                 <button class="btn btn-outline-secondary btn-sm" type="button" data-action="up" ${idx === 0 ? "disabled" : ""}>
@@ -9037,25 +10029,42 @@
           renderAll();
         });
       }
+      if (columnsPanel && !columnsPanel.dataset.boundInside) {
+        columnsPanel.dataset.boundInside = "true";
+        columnsPanel.addEventListener("pointerdown", (event) => event.stopPropagation());
+        columnsPanel.addEventListener("click", (event) => event.stopPropagation());
+      }
       if (columnsList && !columnsList.dataset.bound) {
         columnsList.dataset.bound = "true";
         let dragKey = "";
+        const clearDropTarget = () => {
+          columnsList
+            .querySelectorAll(".tasks-col-drop-target")
+            .forEach((node) => node.classList.remove("tasks-col-drop-target"));
+        };
         columnsList.addEventListener("dragstart", (event) => {
           const row = event.target.closest("[data-col]");
           if (!row) return;
           dragKey = row.dataset.col || "";
+          row.classList.add("tasks-col-dragging");
           event.dataTransfer?.setData("application/x-scrum-col", dragKey);
           event.dataTransfer?.setData("text/plain", dragKey);
+          if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
         });
         columnsList.addEventListener("dragover", (event) => {
           const row = event.target.closest("[data-col]");
           if (!row) return;
           event.preventDefault();
+          clearDropTarget();
+          if ((row.dataset.col || "") !== dragKey) {
+            row.classList.add("tasks-col-drop-target");
+          }
         });
         columnsList.addEventListener("drop", (event) => {
           const row = event.target.closest("[data-col]");
           if (!row) return;
           event.preventDefault();
+          clearDropTarget();
           const fromKey =
             event.dataTransfer?.getData("application/x-scrum-col") ||
             event.dataTransfer?.getData("text/plain") ||
@@ -9068,14 +10077,26 @@
           const fromIdx = order.indexOf(fromKey);
           const toIdx = order.indexOf(toKey);
           if (fromIdx < 0 || toIdx < 0) return;
+          const rect = row.getBoundingClientRect();
+          let insertIdx = toIdx + (event.clientY > rect.top + rect.height / 2 ? 1 : 0);
           order.splice(fromIdx, 1);
-          order.splice(toIdx, 0, fromKey);
+          if (fromIdx < insertIdx) insertIdx -= 1;
+          const safeIdx = Math.max(0, Math.min(insertIdx, order.length));
+          order.splice(safeIdx, 0, fromKey);
           state.tasksColumnsConfig = { ...cfg, order };
           saveColumnsConfig();
           renderColumnsManager();
           renderAll();
         });
+        columnsList.addEventListener("dragend", () => {
+          dragKey = "";
+          clearDropTarget();
+          columnsList
+            .querySelectorAll(".tasks-col-dragging")
+            .forEach((node) => node.classList.remove("tasks-col-dragging"));
+        });
         columnsList.addEventListener("click", (event) => {
+          event.stopPropagation();
           const btn = event.target.closest("button[data-action]");
           if (!btn) return;
           const row = btn.closest("[data-col]");
@@ -9101,6 +10122,7 @@
           renderAll();
         });
         columnsList.addEventListener("change", (event) => {
+          event.stopPropagation();
           const cb = event.target.closest("input[type='checkbox'][data-action='toggle']");
           if (!cb) return;
           const row = cb.closest("[data-col]");
@@ -9124,16 +10146,7 @@
         filterClearBtn.addEventListener("click", () => {
           state.tasksStatusFilter = "";
           if (statusSelect) statusSelect.value = "";
-          state.tasksSprintFilter = "";
-          if (sprintSelect) sprintSelect.value = "";
-          state.tasksFilters = {
-            statuses: ["backlog", "todo", "doing", "done"],
-            priorities: ["baja", "media", "alta", "urgente"],
-            assignees: [],
-            dueFrom: "",
-            dueTo: "",
-            hideSubtasks: false,
-          };
+          state.tasksFilters = cloneDefaultTasksAdvancedFilters();
           if (filterDueFrom) filterDueFrom.value = "";
           if (filterDueTo) filterDueTo.value = "";
           if (filterHideSubtasks) filterHideSubtasks.checked = false;
@@ -9145,6 +10158,7 @@
           root.querySelectorAll("#tasks-filter-priorities input[type='checkbox']").forEach((cb) => {
             cb.checked = true;
           });
+          saveTasksFiltersState();
           renderAll();
           renderFilterChips();
         });
@@ -9170,6 +10184,7 @@
           dueTo: filterDueTo?.value || "",
           hideSubtasks: Boolean(filterHideSubtasks?.checked),
         };
+        saveTasksFiltersState();
       };
 
       const renderFilterChips = () => {
@@ -9179,12 +10194,6 @@
           chips.push({
             key: "estado",
             label: `Estado: ${STATUS_LABEL[state.tasksStatusFilter] || state.tasksStatusFilter}`,
-          });
-        }
-        if (state.tasksSprintFilter) {
-          chips.push({
-            key: "sprint",
-            label: `Sprint: ${sprintNameById[String(state.tasksSprintFilter)] || state.tasksSprintFilter}`,
           });
         }
         const s = state.tasksFilters?.statuses || [];
@@ -9244,9 +10253,6 @@
           if (key === "estado") {
             state.tasksStatusFilter = "";
             if (statusSelect) statusSelect.value = "";
-          } else if (key === "sprint") {
-            state.tasksSprintFilter = "";
-            if (sprintSelect) sprintSelect.value = "";
           } else if (key === "statuses") {
             root.querySelectorAll("#tasks-filter-statuses input[type='checkbox']").forEach((cb) => {
               cb.checked = cb.value !== "archived";
@@ -9262,6 +10268,7 @@
             if (filterHideSubtasks) filterHideSubtasks.checked = false;
           }
           syncAdvancedFiltersFromUI();
+          saveTasksFiltersState();
           renderAll();
           renderFilterChips();
         });
@@ -9291,11 +10298,14 @@
           if (!key) return;
           const table = th.closest("table");
           if (!table) return;
+          const isDataTableActive =
+            hasBacklogDataTable && window.jQuery.fn.DataTable.isDataTable(table);
 
           // Resize
           const handle = event.target.closest("[data-action='resize-col']");
           if (handle) {
-            const col = table.querySelector(`colgroup col[data-col-key="${CSS.escape(key)}"]`);
+            const selectorKey = CSS.escape(key);
+            const col = table.querySelector(`colgroup col[data-col-key="${selectorKey}"]`);
             const startX = event.clientX;
             const startW = th.getBoundingClientRect().width;
             const startTableW = table.getBoundingClientRect().width;
@@ -9303,28 +10313,46 @@
             event.preventDefault();
 
             const min = 70;
+            const applyWidth = (px) => {
+              backlogList
+                .querySelectorAll(
+                  `th[data-col-key="${selectorKey}"], td[data-col-key="${selectorKey}"], col[data-col-key="${selectorKey}"]`
+                )
+                .forEach((node) => {
+                  node.style.width = `${px}px`;
+                  node.style.minWidth = `${px}px`;
+                });
+            };
             const onMove = (e) => {
               const dx = e.clientX - startX;
               const next = Math.max(min, Math.round(startW + dx));
-              th.style.width = `${next}px`;
-              th.style.minWidth = `${next}px`;
-              if (col) col.style.width = `${next}px`;
-              const nextTableW = Math.max(320, Math.round(startTableW + dx));
-              table.style.width = `${nextTableW}px`;
-              table.style.minWidth = `${nextTableW}px`;
+              applyWidth(next);
+              if (!isDataTableActive) {
+                if (col) col.style.width = `${next}px`;
+                const nextTableW = Math.max(320, Math.round(startTableW + dx));
+                table.style.width = `${nextTableW}px`;
+                table.style.minWidth = `${nextTableW}px`;
+              }
             };
             const onUp = (e) => {
               document.removeEventListener("pointermove", onMove, true);
               document.removeEventListener("pointerup", onUp, true);
               const finalW = th.getBoundingClientRect().width;
               setColumnWidth(key, finalW);
+              if (isDataTableActive && backlogDataTable) {
+                try {
+                  backlogDataTable.columns.adjust().draw(false);
+                } catch {
+                  // ignore
+                }
+              }
             };
             document.addEventListener("pointermove", onMove, true);
             document.addEventListener("pointerup", onUp, true);
             return;
           }
 
-          // Reorder (pointer-based to work reliably across browsers)
+          // Click sorts by this column; dragging reorders columns.
           if (event.button !== 0) return;
           const headerRow = th.parentElement;
           if (!headerRow) return;
@@ -9353,13 +10381,23 @@
           };
 
           let overKey = key;
-          clearMarks();
-          th.classList.add("tasks-col-dragging");
-          markTarget(overKey);
+          const startX = event.clientX;
+          const startY = event.clientY;
+          const dragThreshold = 6;
+          let isDragging = false;
           th.setPointerCapture?.(event.pointerId);
           event.preventDefault();
 
           const onMove = (e) => {
+            if (!isDragging) {
+              const dx = Math.abs(e.clientX - startX);
+              const dy = Math.abs(e.clientY - startY);
+              if (Math.max(dx, dy) < dragThreshold) return;
+              isDragging = true;
+              clearMarks();
+              th.classList.add("tasks-col-dragging");
+              markTarget(overKey);
+            }
             const next = pickClosestKey(e.clientX);
             if (next && next !== overKey) {
               overKey = next;
@@ -9369,6 +10407,11 @@
           const onUp = (e) => {
             document.removeEventListener("pointermove", onMove, true);
             document.removeEventListener("pointerup", onUp, true);
+            if (!isDragging) {
+              toggleTasksBacklogSort(key);
+              renderAll();
+              return;
+            }
             clearMarks();
             if (!overKey || overKey === key) return;
             const cfg = loadColumnsConfig();
@@ -9515,8 +10558,7 @@
             return;
           }
           if (action === "create") {
-            const sprintId = resolveSelectedSprintId() || null;
-            root.__tasksApi?.openTaskModal?.({ task: null, sprintId });
+            root.__tasksApi?.openTaskModal?.({ task: null });
             return;
           }
           if (!taskId) return;
@@ -9524,6 +10566,10 @@
           if (!task) return;
           if (action === "edit") {
             root.__tasksApi?.openTaskModal?.({ task });
+            return;
+          }
+          if (action === "comments") {
+            await openTaskCommentsModal(task);
             return;
           }
           if (action === "subtask") {
@@ -9644,7 +10690,7 @@
     if (filterDueFrom) filterDueFrom.value = state.tasksFilters?.dueFrom || "";
     if (filterDueTo) filterDueTo.value = state.tasksFilters?.dueTo || "";
     if (filterHideSubtasks) filterHideSubtasks.checked = Boolean(state.tasksFilters?.hideSubtasks);
-    setActiveView(state.tasksView || "board");
+    setActiveView(state.tasksView || "backlog");
     loadAndRender();
     if (root.__tasksRenderFilterChips) root.__tasksRenderFilterChips();
   }
@@ -9707,6 +10753,7 @@
       "start_date",
       "end_date",
       "due_date",
+      "days_count",
     ];
     const RELEASE_COLUMN_LABELS = {
       issue_key: "Issue",
@@ -9717,6 +10764,7 @@
       start_date: "Start Date",
       end_date: "End Date",
       due_date: "Due Date",
+      days_count: "Dias",
     };
     const buildQuarterOptions = (rows, manual = []) => {
       const set = new Set();
@@ -9895,6 +10943,28 @@
       wrap.appendChild(flag);
       wrap.appendChild(input);
       return wrap;
+    };
+    const getReleaseDaysCount = (row) => {
+      const start = parseDateOnly(row.start_date);
+      if (!start) return null;
+      const end = parseDateOnly(row.end_date) || getToday();
+      return Math.round((end - start) / 86400000);
+    };
+    const getReleaseDaysStatus = (days) => {
+      if (!Number.isFinite(days)) return "status-muted";
+      if (days < 0) return "status-danger";
+      if (days <= 1) return "status-warn";
+      return "status-ok";
+    };
+    const buildDaysCountCell = (row) => {
+      const days = getReleaseDaysCount(row);
+      if (!Number.isFinite(days)) {
+        return { text: "-", className: "release-days-pill status-muted" };
+      }
+      return {
+        text: `${days} dia${Math.abs(days) === 1 ? "" : "s"}`,
+        className: `release-days-pill ${getReleaseDaysStatus(days)}`,
+      };
     };
     const getQuarterLabel = (row) => {
       if (row.quarter) return row.quarter;
@@ -10162,6 +11232,15 @@
       start_date: { key: "start_date", label: "Start Date", render: (row) => buildDateInput(row, "start_date") },
       end_date: { key: "end_date", label: "End Date", render: (row) => buildDateInput(row, "end_date", { showFlag: true }) },
       due_date: { key: "due_date", label: "Due Date", render: (row) => buildDateInput(row, "due_date") },
+      days_count: {
+        key: "days_count",
+        label: "Dias",
+        getValue: (row) => {
+          const days = getReleaseDaysCount(row);
+          return Number.isFinite(days) ? days : "";
+        },
+        render: (row) => buildDaysCountCell(row),
+      },
       tipo: { key: "tipo", label: "Type", render: (row) => buildTypeSelect(row) },
     };
     const visibleColumns = RELEASE_COLUMNS_DEFAULT.filter((key) => !columnsCfg.hidden?.[key])

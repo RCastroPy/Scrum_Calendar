@@ -226,6 +226,32 @@ def _cascade_task_parents_for_inprogress(db: Session, task: Task) -> None:
 
         current_id = int(parent.parent_id) if parent.parent_id else 0
 
+
+def _same_optional_int(a: Optional[int], b: Optional[int]) -> bool:
+    if a is None and b is None:
+        return True
+    if a is None or b is None:
+        return False
+    return int(a) == int(b)
+
+
+def _would_create_parent_cycle(db: Session, child_id: int, new_parent_id: int) -> bool:
+    seen = set()
+    current_id = int(new_parent_id)
+    safety = 0
+    while current_id and safety < 400:
+        safety += 1
+        if current_id == int(child_id):
+            return True
+        if current_id in seen:
+            return True
+        seen.add(current_id)
+        current = db.get(Task, current_id)
+        if not current or not current.parent_id:
+            return False
+        current_id = int(current.parent_id)
+    return False
+
 def normalize_text(value: str) -> str:
     cleaned = unicodedata.normalize("NFD", value or "")
     cleaned = "".join(ch for ch in cleaned if not unicodedata.combining(ch))
@@ -4491,13 +4517,14 @@ def crear_task(
     titulo = (payload.titulo or "").strip()
     if not titulo:
         raise HTTPException(status_code=400, detail="Titulo requerido")
+    resolved_celula_id = payload.celula_id
     estado = (payload.estado or "backlog").strip().lower()
     if estado not in TASK_STATUSES:
         raise HTTPException(status_code=400, detail="Estado invalido")
     prioridad = (payload.prioridad or "media").strip().lower()
     if prioridad not in TASK_PRIORITIES:
         raise HTTPException(status_code=400, detail="Prioridad invalida")
-    if payload.celula_id is not None and not db.get(Celula, payload.celula_id):
+    if resolved_celula_id is not None and not db.get(Celula, resolved_celula_id):
         raise HTTPException(status_code=404, detail="Celula no encontrada")
     if payload.sprint_id is not None and not db.get(Sprint, payload.sprint_id):
         raise HTTPException(status_code=404, detail="Sprint no encontrado")
@@ -4507,6 +4534,10 @@ def crear_task(
         parent = db.get(Task, payload.parent_id)
         if not parent:
             raise HTTPException(status_code=404, detail="Task padre no encontrado")
+        if resolved_celula_id is None:
+            resolved_celula_id = parent.celula_id
+        if not _same_optional_int(resolved_celula_id, parent.celula_id):
+            raise HTTPException(status_code=400, detail="La subtarea debe pertenecer a la misma celula del padre")
     tipo = (payload.tipo or "").strip() or None
     if tipo and len(tipo) > 30:
         raise HTTPException(status_code=400, detail="Tipo demasiado largo")
@@ -4514,18 +4545,19 @@ def crear_task(
     if etiquetas and len(etiquetas) > 2000:
         raise HTTPException(status_code=400, detail="Etiquetas demasiado largas")
     orden = payload.orden if payload.orden is not None else now_py().timestamp()
+    business_today = now_py().date()
     start_date = payload.start_date
     if start_date is None and estado == "doing":
-        start_date = date.today()
+        start_date = business_today
     end_date = payload.end_date
     if end_date is None and estado == "done":
-        end_date = date.today()
+        end_date = business_today
     task = Task(
         titulo=titulo,
         descripcion=payload.descripcion,
         estado=estado,
         prioridad=prioridad,
-        celula_id=payload.celula_id,
+        celula_id=resolved_celula_id,
         sprint_id=payload.sprint_id,
         parent_id=payload.parent_id,
         assignee_persona_id=payload.assignee_persona_id,
@@ -4595,7 +4627,7 @@ def actualizar_task(
         task.horas_estimadas = payload.horas_estimadas
     if payload.importante is not None:
         task.importante = bool(payload.importante)
-    if payload.celula_id is not None:
+    if "celula_id" in fields_set:
         if payload.celula_id and not db.get(Celula, payload.celula_id):
             raise HTTPException(status_code=404, detail="Celula no encontrada")
         task.celula_id = payload.celula_id
@@ -4615,26 +4647,35 @@ def actualizar_task(
         task.fecha_vencimiento = payload.fecha_vencimiento
     if payload.orden is not None:
         task.orden = float(payload.orden)
-    if payload.parent_id is not None:
+    if "parent_id" in fields_set:
         if payload.parent_id == task.id:
             raise HTTPException(status_code=400, detail="Task padre invalido")
         if payload.parent_id is not None:
-            parent = db.get(Task, payload.parent_id) if payload.parent_id else None
-            if payload.parent_id and not parent:
+            parent = db.get(Task, payload.parent_id)
+            if not parent:
                 raise HTTPException(status_code=404, detail="Task padre no encontrado")
+            if _would_create_parent_cycle(db, int(task.id), int(payload.parent_id)):
+                raise HTTPException(status_code=400, detail="Relacion padre-hijo invalida (ciclo)")
+            if not _same_optional_int(task.celula_id, parent.celula_id):
+                raise HTTPException(status_code=400, detail="La subtarea debe pertenecer a la misma celula del padre")
         task.parent_id = payload.parent_id
+    if ("celula_id" in fields_set or "parent_id" in fields_set) and task.parent_id is not None:
+        parent = db.get(Task, task.parent_id)
+        if parent and not _same_optional_int(task.celula_id, parent.celula_id):
+            raise HTTPException(status_code=400, detail="La subtarea debe pertenecer a la misma celula del padre")
 
     # Auto set start_date when moving to In Progress (doing) unless explicitly provided.
+    business_today = now_py().date()
     if (
         prev_estado != "doing"
         and (task.estado or "") == "doing"
         and "start_date" not in fields_set
         and task.start_date is None
     ):
-        task.start_date = date.today()
+        task.start_date = business_today
     # Auto set end_date when moving to Done unless explicitly provided.
     if prev_estado != "done" and (task.estado or "") == "done" and "end_date" not in fields_set:
-        task.end_date = date.today()
+        task.end_date = business_today
 
     # Cascade: propagate earliest start_date + in-progress status to all ancestors.
     if prev_estado != task.estado or prev_start_date != getattr(task, "start_date", None):

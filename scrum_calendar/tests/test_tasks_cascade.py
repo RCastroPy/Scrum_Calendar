@@ -1,5 +1,3 @@
-from datetime import date
-
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -7,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 
 import main as main_mod
 import data.db as db
-from data.models import Base
+from data.models import Base, now_py
 
 
 @pytest.fixture()
@@ -63,14 +61,14 @@ def test_tasks_doing_sets_start_date_and_cascades_to_parents(client: TestClient)
     assert resp.status_code == 200
     child = resp.json()
     assert child["estado"] == "doing"
-    assert child["start_date"] == date.today().isoformat()
+    assert child["start_date"] == now_py().date().isoformat()
 
     resp = client.get(f"/tasks?celula_id={celula_id}")
     assert resp.status_code == 200
     items = resp.json()
     parent = next(t for t in items if t["id"] == parent_id)
     assert parent["estado"] == "doing"
-    assert parent["start_date"] == date.today().isoformat()
+    assert parent["start_date"] == now_py().date().isoformat()
 
 
 def test_tasks_start_date_is_min_of_descendants_and_recursive(client: TestClient):
@@ -137,4 +135,49 @@ def test_tasks_done_sets_end_date_automatically(client: TestClient):
     assert resp.status_code == 200
     task = resp.json()
     assert task["estado"] == "done"
-    assert task["end_date"] == date.today().isoformat()
+    assert task["end_date"] == now_py().date().isoformat()
+
+
+def test_subtask_must_belong_to_same_celula_as_parent(client: TestClient):
+    bootstrap_admin(client)
+
+    resp = client.post("/celulas", json={"nombre": "Celula A", "jira_codigo": "CLA", "activa": True})
+    assert resp.status_code == 201
+    celula_a = resp.json()["id"]
+
+    resp = client.post("/celulas", json={"nombre": "Celula B", "jira_codigo": "CLB", "activa": True})
+    assert resp.status_code == 201
+    celula_b = resp.json()["id"]
+
+    resp = client.post("/tasks", json={"titulo": "Padre", "celula_id": celula_a})
+    assert resp.status_code == 201
+    parent_id = resp.json()["id"]
+
+    # Cannot create a child in another cell.
+    resp = client.post("/tasks", json={"titulo": "Hija invalida", "celula_id": celula_b, "parent_id": parent_id})
+    assert resp.status_code == 400
+
+
+def test_rejects_parent_cycles_and_allows_detach_parent(client: TestClient):
+    bootstrap_admin(client)
+
+    resp = client.post("/celulas", json={"nombre": "Celula Tree", "jira_codigo": "TRE", "activa": True})
+    assert resp.status_code == 201
+    celula_id = resp.json()["id"]
+
+    resp = client.post("/tasks", json={"titulo": "A", "celula_id": celula_id})
+    assert resp.status_code == 201
+    a_id = resp.json()["id"]
+
+    resp = client.post("/tasks", json={"titulo": "B", "celula_id": celula_id, "parent_id": a_id})
+    assert resp.status_code == 201
+    b_id = resp.json()["id"]
+
+    # Can't make A a child of B (would create cycle A -> B -> A).
+    resp = client.put(f"/tasks/{a_id}", json={"parent_id": b_id})
+    assert resp.status_code == 400
+
+    # Can detach B from A by sending parent_id null.
+    resp = client.put(f"/tasks/{b_id}", json={"parent_id": None})
+    assert resp.status_code == 200
+    assert resp.json()["parent_id"] is None
