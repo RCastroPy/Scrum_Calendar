@@ -7,6 +7,7 @@
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#007bff" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#1a1a1a" media="(prefers-color-scheme: dark)" />
+    <script id="theme-preload">(function(){try{var k="scrum_calendar_theme";var s=localStorage.getItem(k);var m=s?(s==="dark"?"dark":"light"):((window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light");document.documentElement.setAttribute("data-bs-theme",m);}catch(e){}})();</script>
     <meta name="title" content="ScrumIA | Releases Gantt" />
     <link rel="preload" href="./css/adminlte.css" as="style" />
     <link
@@ -220,6 +221,28 @@
         </div>
         <section class="content" id="release-gantt-page">
           <div class="container-fluid">
+            <div class="row g-3 mb-3">
+              <div class="col-lg-3 col-md-6">
+                <div class="info-box">
+                  <span class="info-box-icon bg-primary"><i class="bi bi-list-check"></i></span>
+                  <div class="info-box-content">
+                    <span class="info-box-text">Total releases celula</span>
+                    <span class="info-box-number" id="release-gantt-kpi-total">0</span>
+                    <span class="text-muted small" id="release-gantt-kpi-total-context">Todas las celulas</span>
+                  </div>
+                </div>
+              </div>
+              <div class="col-lg-3 col-md-6">
+                <div class="info-box">
+                  <span class="info-box-icon bg-info"><i class="bi bi-funnel"></i></span>
+                  <div class="info-box-content">
+                    <span class="info-box-text">Releases celula + quarter</span>
+                    <span class="info-box-number" id="release-gantt-kpi-quarter-total">0</span>
+                    <span class="text-muted small" id="release-gantt-kpi-quarter-context">Todas las celulas · Todos</span>
+                  </div>
+                </div>
+              </div>
+            </div>
             <div class="card">
               <div class="card-body">
                 <div class="release-gantt-toolbar mb-3">

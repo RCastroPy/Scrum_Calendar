@@ -605,7 +605,7 @@
       fetchJson("/public/celulas")
         .then((cells) => {
           if (!Array.isArray(cells)) return;
-          fillSelect(loginCellSelect, cells, { includeEmpty: true });
+          fillSelect(loginCellSelect, cells, { includeEmpty: true, sortByLabel: true });
           if (loginCellSelect.options.length) {
             loginCellSelect.options[0].textContent = "Todas";
           }
@@ -741,10 +741,25 @@
   }
 
   function fillSelect(select, items, opts = {}) {
-    const { valueKey = "id", labelKey = "nombre", includeEmpty = false, emptyLabel = "Sin sprint" } = opts;
+    const {
+      valueKey = "id",
+      labelKey = "nombre",
+      includeEmpty = false,
+      emptyLabel = "Sin sprint",
+      sortByLabel = false,
+    } = opts;
     if (!select) return;
     select.innerHTML = includeEmpty ? `<option value="">${emptyLabel}</option>` : "";
-    items.forEach((item) => {
+    const list = Array.isArray(items) ? [...items] : [];
+    if (sortByLabel) {
+      list.sort((a, b) =>
+        String(a?.[labelKey] || "").localeCompare(String(b?.[labelKey] || ""), "es", {
+          sensitivity: "base",
+          numeric: true,
+        })
+      );
+    }
+    list.forEach((item) => {
       const opt = document.createElement("option");
       opt.value = item[valueKey];
       opt.textContent = item[labelKey];
@@ -2218,10 +2233,14 @@
           )
         )
       : personasActivas;
-    const personaOptions = personasFiltradas.map((p) => ({
-      id: p.id,
-      nombre: `${p.nombre} ${p.apellido}`,
-    }));
+    const personaOptions = personasFiltradas
+      .map((p) => ({
+        id: p.id,
+        nombre: `${p.nombre} ${p.apellido}`.trim(),
+      }))
+      .sort((a, b) =>
+        a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true })
+      );
     const getExistingPersonIds = () => {
       const typeId = typeSelect?.value ? Number(typeSelect.value) : null;
       const jornada = jornadaSelect?.value || "completo";
@@ -2963,11 +2982,11 @@
     if (!cellSelect) return;
     if (state.selectedCelulaId) {
       const cells = base.cells.filter((celula) => String(celula.id) === state.selectedCelulaId);
-      fillSelect(cellSelect, cells);
+      fillSelect(cellSelect, cells, { sortByLabel: true });
       cellSelect.value = state.selectedCelulaId;
       cellSelect.disabled = true;
     } else {
-      fillSelect(cellSelect, base.cells, { includeEmpty: true });
+      fillSelect(cellSelect, base.cells, { includeEmpty: true, sortByLabel: true });
       if (cellSelect.options.length) {
         cellSelect.options[0].textContent = "Todas";
       }
@@ -2990,7 +3009,7 @@
           // ignore storage errors
         }
       }
-      fillSelect(select, list, { includeEmpty: true });
+      fillSelect(select, list, { includeEmpty: true, sortByLabel: true });
       if (select.options.length) {
         select.options[0].textContent = "Todas";
       }
@@ -3093,7 +3112,7 @@
       personaForm.celulas || personaForm.querySelector('select[name="celulas"]');
     const sinCelulaToggle =
       personaForm.sin_celula || personaForm.querySelector('input[name="sin_celula"]');
-    fillSelect(personaCelulasSelect, base.cells);
+    fillSelect(personaCelulasSelect, base.cells, { sortByLabel: true });
     if (state.selectedCelulaId) {
       Array.from(personaCelulasSelect.options).forEach((opt) => {
         opt.selected = String(opt.value) === state.selectedCelulaId;
@@ -3127,7 +3146,7 @@
       });
     }
     syncPersonaCelulas();
-    fillSelect(sprintForm.celula, base.cells);
+    fillSelect(sprintForm.celula, base.cells, { sortByLabel: true });
     if (state.selectedCelulaId) {
       sprintForm.celula.value = state.selectedCelulaId;
     }
@@ -3147,7 +3166,7 @@
       id: p.id,
       nombre: `${p.nombre} ${p.apellido}`,
     }));
-    fillSelect(eventoForm.persona, personaOptions);
+    fillSelect(eventoForm.persona, personaOptions, { sortByLabel: true });
     fillSelect(eventoForm.tipo, base.tipos);
     const sprintsFiltrados = state.selectedCelulaId
       ? base.sprints.filter((sprint) => String(sprint.celula_id) === state.selectedCelulaId)
@@ -6587,12 +6606,34 @@
       });
     }
 
+    const sprintItemsForSelection = (base.sprintItems || []).filter((item) => {
+      if (!item?.sprint_id) return false;
+      if (state.selectedCelulaId && String(item.celula_id) !== state.selectedCelulaId) {
+        return false;
+      }
+      return true;
+    });
+    const sprintItemsCountBySprint = new Map();
+    sprintItemsForSelection.forEach((item) => {
+      const key = String(item.sprint_id);
+      sprintItemsCountBySprint.set(key, (sprintItemsCountBySprint.get(key) || 0) + 1);
+    });
     const activeSprint = getActiveSprint(sprints) || sprints[0];
     let selectedSprint = state.selectedSprintId
       ? sprints.find((sprint) => String(sprint.id) === state.selectedSprintId)
       : null;
     if (!selectedSprint) {
       selectedSprint = activeSprint;
+      const selectedHasItems =
+        selectedSprint && (sprintItemsCountBySprint.get(String(selectedSprint.id)) || 0) > 0;
+      if (!selectedHasItems) {
+        const latestSprintWithItems = sprints.find(
+          (sprint) => (sprintItemsCountBySprint.get(String(sprint.id)) || 0) > 0
+        );
+        if (latestSprintWithItems) {
+          selectedSprint = latestSprintWithItems;
+        }
+      }
       state.selectedSprintId = selectedSprint ? String(selectedSprint.id) : "";
     }
 
@@ -7993,7 +8034,7 @@
       const sprintOptions = [...sprints].sort((a, b) =>
         a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true })
       );
-      fillSelect(form.persona_id, personaOptions);
+      fillSelect(form.persona_id, personaOptions, { sortByLabel: true });
       fillSelect(form.sprint_id, sprintOptions);
       if (selectedSprint) {
         form.sprint_id.value = String(selectedSprint.id);
@@ -9165,6 +9206,7 @@
       fillSelect(form.assignee_persona_id, personasFiltradas, {
         includeEmpty: true,
         emptyLabel: "Sin responsable",
+        sortByLabel: true,
       });
 
       form.dataset.parentId = parentId ? String(parentId) : "";
@@ -11744,6 +11786,10 @@
     const board = qs("#release-gantt-board", panel);
     const quarterFilterEl = qs("#release-gantt-quarter-filter", panel);
     const summaryEl = qs("#release-gantt-summary", panel);
+    const kpiTotalEl = qs("#release-gantt-kpi-total", panel);
+    const kpiTotalContextEl = qs("#release-gantt-kpi-total-context", panel);
+    const kpiQuarterTotalEl = qs("#release-gantt-kpi-quarter-total", panel);
+    const kpiQuarterContextEl = qs("#release-gantt-kpi-quarter-context", panel);
     const zoomInput = qs("#release-gantt-zoom", panel);
     const zoomOutBtn = qs("#release-gantt-zoom-out", panel);
     const zoomInBtn = qs("#release-gantt-zoom-in", panel);
@@ -11822,6 +11868,21 @@
       const tipo = normalizeText(item.release_tipo || "");
       return issueType === "release" || (!!tipo && tipo !== "tarea");
     };
+    const getReleaseYear = (row) => {
+      const startDate = parseDateOnly(row.start_date);
+      const dueDate = parseDateOnly(row.due_date);
+      const endDate = parseDateOnly(row.end_date);
+      const baseDate = startDate || dueDate || endDate;
+      if (baseDate) return baseDate.getFullYear();
+      const quarterLabel = row.quarter || getQuarterLabel(row);
+      const quarterMatch = String(quarterLabel || "").match(/(\d{4})/);
+      if (quarterMatch) return Number(quarterMatch[1]);
+      if (row.sprint_nombre) {
+        const rank = getSprintRank(row.sprint_nombre);
+        if (rank) return Math.floor(rank / 100);
+      }
+      return null;
+    };
 
     const setZoomPct = (nextPct) => {
       const normalizedPct = clamp(Math.round(nextPct), 60, 250);
@@ -11860,6 +11921,8 @@
     const quarterOptions = buildQuarterOptions(releasesFiltrados, manualQuarters);
     const prevQuarter = state.releaseGanttQuarterFilter || "";
     const todayForQuarter = getToday();
+    const currentYear = todayForQuarter.getFullYear();
+    const releasesCurrentYear = releasesFiltrados.filter((item) => getReleaseYear(item) === currentYear);
     const currentQuarterLabel = `Q${Math.floor(todayForQuarter.getMonth() / 3) + 1} ${todayForQuarter.getFullYear()}`;
     quarterFilterEl.innerHTML = `
       <option value="">Todos</option>
@@ -11888,6 +11951,19 @@
     const quarterFiltered = state.releaseGanttQuarterFilter
       ? releasesFiltrados.filter((item) => getQuarterFilterValue(item) === state.releaseGanttQuarterFilter)
       : releasesFiltrados;
+    const selectedCell = state.selectedCelulaId
+      ? (state.base.celulas || []).find((item) => String(item.id) === String(state.selectedCelulaId))
+      : null;
+    const cellLabel = selectedCell?.nombre || "Todas las celulas";
+    const quarterLabel = state.releaseGanttQuarterFilter
+      ? state.releaseGanttQuarterFilter === "__none__"
+        ? "Sin quarter"
+        : state.releaseGanttQuarterFilter
+      : "Todos";
+    if (kpiTotalEl) kpiTotalEl.textContent = String(releasesCurrentYear.length || 0);
+    if (kpiTotalContextEl) kpiTotalContextEl.textContent = `${cellLabel} · ${currentYear}`;
+    if (kpiQuarterTotalEl) kpiQuarterTotalEl.textContent = String(quarterFiltered.length || 0);
+    if (kpiQuarterContextEl) kpiQuarterContextEl.textContent = `${cellLabel} · ${quarterLabel}`;
     const today = getToday();
     const rows = quarterFiltered
       .map((item) => {
@@ -13002,8 +13078,15 @@
     const fillPersonaSelect = (select, placeholder) => {
       if (!select) return;
       const currentValue = select.value;
+      const sortedPersonas = [...personasFiltradas].sort((a, b) =>
+        `${a?.nombre || ""} ${a?.apellido || ""}`.trim().localeCompare(
+          `${b?.nombre || ""} ${b?.apellido || ""}`.trim(),
+          "es",
+          { sensitivity: "base", numeric: true }
+        )
+      );
       select.innerHTML = `<option value="">${placeholder}</option>`;
-      personasFiltradas.forEach((persona) => {
+      sortedPersonas.forEach((persona) => {
         const opt = document.createElement("option");
         opt.value = persona.id;
         opt.textContent = `${persona.nombre} ${persona.apellido}`.trim();
@@ -14082,8 +14165,15 @@
     };
     const fillPersona = (select, placeholder, personas) => {
       if (!select) return;
+      const sortedPersonas = [...(personas || [])].sort((a, b) =>
+        `${a?.nombre || ""} ${a?.apellido || ""}`.trim().localeCompare(
+          `${b?.nombre || ""} ${b?.apellido || ""}`.trim(),
+          "es",
+          { sensitivity: "base", numeric: true }
+        )
+      );
       select.innerHTML = `<option value=\"\">${placeholder}</option>`;
-      personas.forEach((persona) => {
+      sortedPersonas.forEach((persona) => {
         const opt = document.createElement("option");
         opt.value = persona.id;
         opt.textContent = `${persona.nombre} ${persona.apellido}`.trim();
@@ -16208,8 +16298,15 @@
       }
       if (info.personas && authorSelect) {
         const current = authorSelect.value;
+        const sortedPersonas = [...info.personas].sort((a, b) =>
+          `${a?.nombre || ""} ${a?.apellido || ""}`.trim().localeCompare(
+            `${b?.nombre || ""} ${b?.apellido || ""}`.trim(),
+            "es",
+            { sensitivity: "base", numeric: true }
+          )
+        );
         authorSelect.innerHTML = '<option value=\"\">Tu nombre</option>';
-        info.personas.forEach((persona) => {
+        sortedPersonas.forEach((persona) => {
           const opt = document.createElement("option");
           opt.value = persona.id;
           opt.textContent = `${persona.nombre} ${persona.apellido}`.trim();
