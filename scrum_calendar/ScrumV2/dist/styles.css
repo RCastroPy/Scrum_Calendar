@@ -1830,6 +1830,14 @@ h1 {
   color: #ff9aa4;
 }
 
+.daily-gantt-bar.is-complete-dates {
+  background: linear-gradient(90deg, rgba(170, 255, 55, 0.22) 0%, rgba(170, 255, 55, 0.14) 100%);
+  border-color: rgba(170, 255, 55, 0.66);
+  color: #d7ff9f;
+  box-shadow: inset 0 0 0 1px rgba(170, 255, 55, 0.28);
+  font-weight: 600;
+}
+
 .daily-gantt-bar.is-unscheduled {
   border-style: dashed;
 }
@@ -2395,6 +2403,36 @@ body.qr-zoomed::before {
   background: rgba(255, 255, 255, 0.07);
   border-color: rgba(255, 255, 255, 0.2);
   color: #9aa0a6;
+}
+
+.release-days-pill.status-heat-green {
+  background: rgba(46, 204, 113, 0.16);
+  border-color: rgba(46, 204, 113, 0.55);
+  color: #2ecc71;
+}
+
+.release-days-pill.status-heat-lime {
+  background: rgba(139, 195, 74, 0.16);
+  border-color: rgba(139, 195, 74, 0.55);
+  color: #8bc34a;
+}
+
+.release-days-pill.status-heat-yellow {
+  background: rgba(255, 214, 102, 0.18);
+  border-color: rgba(255, 214, 102, 0.58);
+  color: #ffd666;
+}
+
+.release-days-pill.status-heat-orange {
+  background: rgba(255, 159, 67, 0.2);
+  border-color: rgba(255, 159, 67, 0.62);
+  color: #ff9f43;
+}
+
+.release-days-pill.status-heat-red {
+  background: rgba(255, 99, 132, 0.2);
+  border-color: rgba(255, 99, 132, 0.65);
+  color: #ff6384;
 }
 
 .retro-form textarea,
@@ -3006,8 +3044,15 @@ body.qr-zoomed::before {
   accent-color: var(--accent-2);
 }
 
+.oneonone-commitments-table {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .oneonone-commitments-table table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: 0.85rem;
 }
@@ -3239,10 +3284,11 @@ body.qr-zoomed::before {
 }
 
 .admin-table table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: 0.8rem;
-  table-layout: fixed;
+  table-layout: auto;
 }
 
 .admin-table th,
@@ -3368,6 +3414,30 @@ body.qr-zoomed::before {
   overflow-x: auto;
 }
 
+/* Global horizontal scroll behavior for app tables */
+.admin-table,
+.person-summary,
+.oneonone-commitments-table,
+.table-responsive,
+.dataTables_scroll,
+.dataTables_scrollHead,
+.dataTables_scrollBody {
+  max-width: 100%;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable both-edges;
+}
+
+.admin-table table,
+.person-summary table,
+.oneonone-commitments-table table,
+.table-responsive table,
+.dataTables_scrollHead table,
+.dataTables_scrollBody table {
+  width: max-content;
+  min-width: 100%;
+}
+
 .release-toolbar {
   display: grid;
   gap: 10px;
@@ -3381,6 +3451,36 @@ body.qr-zoomed::before {
   box-shadow: 0 12px 38px rgba(0, 0, 0, 0.16);
 }
 
+.release-columns-item {
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+.release-columns-item:hover {
+  background: rgba(75, 163, 255, 0.08);
+}
+
+.release-columns-item.is-dragging {
+  opacity: 0.45;
+}
+
+.release-columns-item.drop-target {
+  border-color: rgba(75, 163, 255, 0.65);
+  background: rgba(75, 163, 255, 0.14);
+}
+
+.release-columns-drag {
+  cursor: grab;
+  user-select: none;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.release-columns-item:active .release-columns-drag {
+  cursor: grabbing;
+}
+
 #release-table table {
   margin-bottom: 0;
 }
@@ -3388,6 +3488,52 @@ body.qr-zoomed::before {
 #release-table.admin-table table.table {
   table-layout: auto;
   font-size: 0.875rem;
+}
+
+#release-table.admin-table table.table.resizable-columns {
+  table-layout: fixed;
+  width: max-content;
+  min-width: 100%;
+}
+
+#release-table.admin-table table.table.resizable-columns th {
+  position: relative;
+}
+
+#release-table.admin-table table.table.resizable-columns th.is-resizable-col {
+  user-select: none;
+}
+
+#release-table .col-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  width: 10px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 3;
+}
+
+#release-table .col-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 22%;
+  bottom: 22%;
+  right: 4px;
+  width: 1px;
+  background: rgba(75, 163, 255, 0.8);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+#release-table.admin-table table.table.resizable-columns th:hover .col-resize-handle::after,
+#release-table.admin-table table.table.resizable-columns th.is-resizable-col:focus-within .col-resize-handle::after {
+  opacity: 1;
+}
+
+body.col-resize-active {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 
 #release-table .dataTables_wrapper {
@@ -3616,6 +3762,14 @@ body.qr-zoomed::before {
   background: rgba(25, 135, 84, 0.22);
   border-color: rgba(25, 135, 84, 0.6);
   color: #98f5bf;
+}
+
+.release-gantt-bar.is-complete-dates {
+  background: linear-gradient(90deg, rgba(170, 255, 55, 0.22) 0%, rgba(170, 255, 55, 0.14) 100%);
+  border-color: rgba(170, 255, 55, 0.66);
+  color: #d7ff9f;
+  box-shadow: inset 0 0 0 1px rgba(170, 255, 55, 0.28);
+  font-weight: 600;
 }
 
 .release-gantt-bar.is-cancelled {
@@ -4574,7 +4728,8 @@ body.qr-zoomed::before {
 }
 
 .summary-table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: 0.78rem;
 }
@@ -5416,6 +5571,41 @@ body.page-tasks .tasks-notion-scroll {
   overscroll-behavior-x: contain;
 }
 
+#tasks-backlog-list {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+#tasks-backlog-list .tasks-notion-wrap {
+  overflow-x: auto !important;
+  max-width: 100%;
+}
+#tasks-backlog-list .tasks-notion-scroll {
+  overflow-x: auto !important;
+  max-width: 100%;
+  scrollbar-gutter: stable both-edges;
+}
+#tasks-backlog-list .dataTables_wrapper {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+#tasks-backlog-list .dataTables_scroll,
+#tasks-backlog-list .dataTables_scrollHead,
+#tasks-backlog-list .dataTables_scrollBody {
+  max-width: 100%;
+  overflow-x: auto !important;
+}
+#tasks-backlog-list .dataTables_scrollHeadInner,
+#tasks-backlog-list .dataTables_scrollHeadInner table,
+#tasks-backlog-list .dataTables_scrollBody table {
+  width: max-content !important;
+  min-width: max-content !important;
+}
+#tasks-backlog-list table.tasks-notion-table,
+#tasks-backlog-list .dataTables_wrapper table {
+  min-width: max-content !important;
+}
+
 /* Backlog: create button lives under the table (prevents drifting with horizontal scroll) */
 #task-create-btn-backlog {
   display: none;
@@ -5530,6 +5720,7 @@ body.theme-dark .tasks-chip {
 .tasks-notion-wrap .dataTables_scrollHeadInner,
 .tasks-notion-wrap .dataTables_scrollHeadInner table,
 .tasks-notion-wrap .dataTables_scrollBody table {
+  width: max-content !important;
   min-width: max-content !important;
 }
 .tasks-notion-wrap .dataTables_wrapper .row {
@@ -5726,6 +5917,29 @@ body.theme-dark .tasks-notion-table thead th {
   min-width: 0;
   flex: 1;
 }
+.tasks-desc-preview {
+  white-space: pre-wrap;
+  line-height: 1.25;
+}
+.tasks-desc-preview.is-collapsed {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.tasks-desc-toggle {
+  align-self: flex-start;
+  font-size: 11px;
+  line-height: 1;
+  text-decoration: none;
+  color: #0d6efd;
+}
+.tasks-desc-toggle:hover {
+  text-decoration: underline;
+}
+body.theme-dark .tasks-desc-toggle {
+  color: #9ec5fe;
+}
 .tasks-notion-name button {
   padding: 0;
   border: none;
@@ -5844,12 +6058,39 @@ body.theme-dark .tasks-notion-pill.pill-estado.is-archived {
   gap: 6px;
   opacity: 1;
   transition: opacity 120ms ease;
+  position: relative;
 }
 tr:hover .tasks-row-actions {
   opacity: 1;
 }
 .tasks-row-actions .btn {
   padding: 2px 8px;
+}
+.tasks-actions-more-toggle {
+  font-weight: 700;
+  min-width: 30px;
+}
+.tasks-row-actions-more {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 8;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.12);
+  gap: 6px;
+  align-items: center;
+}
+.tasks-row-actions.is-open .tasks-row-actions-more {
+  display: inline-flex;
+}
+body.theme-dark .tasks-row-actions-more {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(15, 15, 15, 0.96);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.45);
 }
 .tasks-comments-trigger {
   display: inline-flex;
@@ -5973,6 +6214,16 @@ body.theme-dark .tasks-comment {
   gap: 12px;
   align-items: baseline;
   margin-bottom: 6px;
+}
+.tasks-comment-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tasks-comment-actions .icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
 }
 .tasks-comment-body {
   white-space: pre-wrap;

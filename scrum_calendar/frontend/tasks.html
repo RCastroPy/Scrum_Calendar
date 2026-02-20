@@ -64,7 +64,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.8/css/dataTables.bootstrap5.min.css" crossorigin="anonymous" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-buttons-bs5@2.4.2/css/buttons.bootstrap5.min.css" crossorigin="anonymous" />
     <!--end::Required Plugin(AdminLTE)-->
-    <link rel="stylesheet" href="./styles.css?v=20260213b" />
+    <link rel="stylesheet" href="./styles.css?v=20260220tasks9" />
 
     <!-- apexcharts -->
     <link
@@ -933,9 +933,9 @@
                   <p class="text-muted mb-0">Backlog y tablero Kanban.</p>
                 </div>
                 <div class="d-flex flex-wrap gap-2 align-items-end tasks-toolbar">
-                  <div>
-                    <label class="form-label mb-1">Vista</label>
-                    <div class="btn-group btn-group-sm" role="group" aria-label="Vistas de tareas">
+	                  <div>
+	                    <label class="form-label mb-1">Vista</label>
+	                    <div class="btn-group btn-group-sm" role="group" aria-label="Vistas de tareas">
                       <button class="btn btn-outline-primary" type="button" id="tasks-view-backlog" data-view="backlog">
                         Backlog
 	                      </button>
@@ -944,6 +944,23 @@
 	                      </button>
 	                      <button class="btn btn-outline-primary" type="button" id="tasks-view-reports" data-view="reports">
 	                        Reportes
+	                      </button>
+	                    </div>
+	                  </div>
+	                  <div>
+	                    <label class="form-label mb-1">Fecha</label>
+	                    <div class="btn-group btn-group-sm" role="group" aria-label="Filtro rapido por fecha">
+	                      <button class="btn btn-outline-secondary" type="button" id="tasks-date-today" data-period="today">
+	                        Hoy
+	                      </button>
+	                      <button class="btn btn-outline-secondary" type="button" id="tasks-date-week" data-period="week">
+	                        Semana
+	                      </button>
+	                      <button class="btn btn-outline-secondary" type="button" id="tasks-date-month" data-period="month">
+	                        Mes
+	                      </button>
+	                      <button class="btn btn-outline-secondary" type="button" id="tasks-date-year" data-period="year">
+	                        Año
 	                      </button>
 	                    </div>
 	                  </div>
@@ -1301,7 +1318,7 @@
     <script src="https://cdn.jsdelivr.net/npm/pdfmake@0.2.7/build/vfs_fonts.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/datatables.net-buttons@2.4.2/js/buttons.html5.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/datatables.net-buttons@2.4.2/js/buttons.print.min.js"></script>
-<script src="./app.js?v=20260213b"></script>
+<script src="./app.js?v=20260220tasks9"></script>
     <!--end::Script-->
   </body>
   <!--end::Body-->

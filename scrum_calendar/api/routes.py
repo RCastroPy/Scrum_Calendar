@@ -92,6 +92,7 @@ from api.schemas import (
     TaskOut,
     TaskUpdate,
     TaskCommentCreate,
+    TaskCommentUpdate,
     TaskCommentOut,
     QuarterOptionCreate,
     QuarterOptionOut,
@@ -3576,9 +3577,6 @@ async def importar_sprint_items(
         start_date = parse_date_value(get_value(row, resolved["start_date"]))
         end_date = parse_date_value(get_value(row, resolved["end_date"]))
         due_date = parse_date_value(get_value(row, resolved["due_date"]))
-        start_date = None
-        end_date = None
-        due_date = None
         raw_data = json.dumps(row, ensure_ascii=False)
 
         created_flag = False
@@ -4131,9 +4129,6 @@ async def importar_release_items(
         start_date = parse_date_value(get_value(row, resolved["start_date"]))
         end_date = parse_date_value(get_value(row, resolved["end_date"]))
         due_date = parse_date_value(get_value(row, resolved["due_date"]))
-        start_date = None
-        end_date = None
-        due_date = None
 
         sprint_values: list[str] = []
         for header in sprint_headers:
@@ -4736,6 +4731,29 @@ def crear_task_comment(
         raise HTTPException(status_code=400, detail="Texto requerido")
     comment = TaskComment(task_id=task_id, usuario_id=user.id, texto=texto)
     db.add(comment)
+    db.commit()
+    db.refresh(comment)
+    return comment
+
+
+@router.put("/tasks/{task_id}/comments/{comment_id}", response_model=TaskCommentOut)
+def actualizar_task_comment(
+    task_id: int,
+    comment_id: int,
+    payload: TaskCommentUpdate,
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    user = require_user(db, scrum_session)
+    comment = db.get(TaskComment, comment_id)
+    if not comment or comment.task_id != task_id:
+        raise HTTPException(status_code=404, detail="Comentario no encontrado")
+    if user.rol != "admin" and comment.usuario_id != user.id:
+        raise HTTPException(status_code=403, detail="Sin permisos")
+    texto = (payload.texto or "").strip()
+    if not texto:
+        raise HTTPException(status_code=400, detail="Texto requerido")
+    comment.texto = texto
     db.commit()
     db.refresh(comment)
     return comment

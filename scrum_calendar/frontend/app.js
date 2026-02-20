@@ -101,11 +101,14 @@
     dailyStatusOpen: false,
     dailyStatusOutsideBound: false,
     dailyStatusTouched: false,
+    dailySprintManual: false,
+    dailyRealtimeSignature: "",
 	    dailySprintOpen: false,
 	    tasksView: "backlog",
 	    tasksSearch: "",
 	    tasksStatusFilter: "",
 	    tasksSprintFilter: "",
+	    tasksDatePreset: "",
 	    tasksCache: [],
 	    tasksFilters: {
 	      statuses: ["backlog", "todo", "doing", "done"],
@@ -130,8 +133,15 @@
     tableDataPage: {},
     tableDataState: {},
     releaseStatusFilter: "",
+    releaseStatusValueFilter: "",
     releaseQuarterFilter: "",
+    releaseCompNewFilters: [],
+    releaseTypeFilters: [],
+    releaseItemsSource: "api",
+    releaseItemsFetchError: "",
+    releaseTableRecoveryTried: false,
     releaseColumnsConfig: null,
+    releaseColumnsPanelOpen: false,
     serverNow: null,
     serverToday: null,
     serverTimezone: "America/Asuncion",
@@ -213,22 +223,76 @@
       window.location.href = "index.html";
     }
   }
+  const getDateTimeInTimezone = (timeZone, sourceDate = new Date()) => {
+    try {
+      const fmt = new Intl.DateTimeFormat("en-CA", {
+        timeZone: timeZone || "America/Asuncion",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23",
+      });
+      const parts = fmt.formatToParts(sourceDate);
+      const y = parts.find((part) => part.type === "year")?.value;
+      const m = parts.find((part) => part.type === "month")?.value;
+      const d = parts.find((part) => part.type === "day")?.value;
+      const hh = parts.find((part) => part.type === "hour")?.value ?? "00";
+      const mm = parts.find((part) => part.type === "minute")?.value ?? "00";
+      const ss = parts.find((part) => part.type === "second")?.value ?? "00";
+      if (y && m && d && hh != null && mm != null && ss != null) {
+        const parsed = new Date(
+          Number(y),
+          Number(m) - 1,
+          Number(d),
+          Number(hh),
+          Number(mm),
+          Number(ss),
+          0
+        );
+        return parsed;
+      }
+    } catch {
+      // ignore Intl timezone parsing errors
+    }
+    const timezone = timeZone || "America/Asuncion";
+    if (timezone === "America/Asuncion") {
+      const shifted = new Date(sourceDate.getTime() - 3 * 60 * 60 * 1000);
+      return new Date(
+        shifted.getUTCFullYear(),
+        shifted.getUTCMonth(),
+        shifted.getUTCDate(),
+        shifted.getUTCHours(),
+        shifted.getUTCMinutes(),
+        shifted.getUTCSeconds(),
+        shifted.getUTCMilliseconds()
+      );
+    }
+    return new Date(sourceDate.getTime());
+  };
+
+  const getDateInTimezone = (timeZone, sourceDate = new Date()) => {
+    const parsed = getDateTimeInTimezone(timeZone, sourceDate);
+    parsed.setHours(0, 0, 0, 0);
+    return parsed;
+  };
+
   const getToday = () => {
     if (state.serverToday instanceof Date && !Number.isNaN(state.serverToday.valueOf())) {
       const copy = new Date(state.serverToday.getTime());
       copy.setHours(0, 0, 0, 0);
       return copy;
     }
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return today;
+    return getDateInTimezone(state.serverTimezone || "America/Asuncion");
   };
 
   const getNow = () => {
     if (state.serverNow instanceof Date && !Number.isNaN(state.serverNow.valueOf())) {
       return new Date(state.serverNow.getTime());
     }
-    return new Date();
+    return getDateTimeInTimezone(state.serverTimezone || "America/Asuncion");
   };
 
   const toggle = qs("#menu-toggle");
@@ -992,7 +1056,10 @@
   }
 
   function formatISO(date) {
-    return date.toISOString().slice(0, 10);
+    const year = String(date.getFullYear()).padStart(4, "0");
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
   }
 
   function formatRangeLabel(dates) {
@@ -1043,7 +1110,7 @@
       const weekdays = ["Dom", "Lun", "Mar", "Mie", "Jue", "Vie", "Sab"];
       const selected = new Map();
       let anchor = null;
-      let current = new Date();
+      let current = getToday();
       current.setDate(1);
 
       const syncInputs = () => {
@@ -1291,7 +1358,7 @@
     const date = new Date(dateString);
     if (Number.isNaN(date.getTime())) return dateString;
     date.setDate(date.getDate() + days);
-    return date.toISOString().slice(0, 10);
+    return formatISO(date);
   }
 
   function nextSprintName(name) {
@@ -1310,9 +1377,66 @@
     return "#ff4b4b";
   }
 
+  const RELEASE_ITEMS_CACHE_KEY = "scrum_calendar_release_items_cache_v1";
+  const RELEASE_IMPORT_ITEMS_CACHE_KEY = "scrum_calendar_release_import_items_cache_v1";
+  const loadCachedRows = (key) => {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+  const saveCachedRows = (key, rows) => {
+    try {
+      if (!Array.isArray(rows) || !rows.length) return;
+      localStorage.setItem(key, JSON.stringify(rows));
+    } catch {
+      // ignore storage errors
+    }
+  };
+  const normalizeReleaseRowsForUi = (rows) =>
+    (Array.isArray(rows) ? rows : []).map((row) => ({
+      ...row,
+      tipo: row?.tipo ?? null,
+      start_date: row?.start_date ?? null,
+      end_date: row?.end_date ?? null,
+      due_date: row?.due_date ?? null,
+    }));
+
   async function loadBase() {
     const usuariosPromise =
       state.user?.rol === "admin" ? fetchJson("/usuarios").catch(() => []) : Promise.resolve([]);
+    let releaseItems = [];
+    let releaseImportItems = [];
+    let releaseItemsSource = "api";
+    let releaseItemsFetchError = "";
+    try {
+      const rows = await fetchJson("/release-items");
+      releaseItems = Array.isArray(rows) ? rows : [];
+      saveCachedRows(RELEASE_ITEMS_CACHE_KEY, releaseItems);
+    } catch (err) {
+      releaseItemsSource = "cache";
+      releaseItemsFetchError = err?.message || "No se pudo leer /release-items";
+      console.error("[loadBase] /release-items error:", err);
+      releaseItems = loadCachedRows(RELEASE_ITEMS_CACHE_KEY);
+    }
+    try {
+      const rows = await fetchJson("/import-release-items");
+      releaseImportItems = Array.isArray(rows) ? rows : [];
+      saveCachedRows(RELEASE_IMPORT_ITEMS_CACHE_KEY, releaseImportItems);
+    } catch (err) {
+      console.error("[loadBase] /import-release-items error:", err);
+      releaseImportItems = loadCachedRows(RELEASE_IMPORT_ITEMS_CACHE_KEY);
+    }
+    if (!releaseItems.length && releaseImportItems.length) {
+      releaseItems = normalizeReleaseRowsForUi(releaseImportItems);
+      releaseItemsSource = releaseItemsSource === "api" ? "import-fallback" : `${releaseItemsSource}+import`;
+    }
+    state.releaseItemsSource = releaseItemsSource;
+    state.releaseItemsFetchError = releaseItemsFetchError;
     const [
       sprints,
       cells,
@@ -1321,9 +1445,7 @@
       tipos,
       feriados,
       sprintItems,
-      releaseItems,
       sprintImportItems,
-      releaseImportItems,
       quarters,
       timeInfo,
       usuarios,
@@ -1335,9 +1457,7 @@
       fetchJson("/eventos-tipo"),
       fetchJson("/feriados"),
       fetchJson("/sprint-items").catch(() => []),
-      fetchJson("/release-items").catch(() => []),
       fetchJson("/import-sprint-items").catch(() => []),
-      fetchJson("/import-release-items").catch(() => []),
       fetchJson("/quarters").catch(() => []),
       fetchJson("/time").catch(() => null),
       usuariosPromise,
@@ -1354,7 +1474,10 @@
     if (timeInfo?.now) {
       const parsedNow = new Date(timeInfo.now);
       if (!Number.isNaN(parsedNow.getTime())) {
-        state.serverNow = parsedNow;
+        state.serverNow = getDateTimeInTimezone(
+          timeInfo.timezone || state.serverTimezone || "America/Asuncion",
+          parsedNow
+        );
       }
     }
     const sprintsSorted = [...sprints].sort(
@@ -1772,7 +1895,7 @@
   }
 
   function renderCalendar(
-    date = new Date(),
+    date = getToday(),
     sprints = [],
     events = [],
     feriados = [],
@@ -1872,7 +1995,7 @@
       if (rangeEnd < rangeStart) return;
       const cursor = new Date(rangeStart);
       while (cursor <= rangeEnd) {
-        const key = cursor.toISOString().slice(0, 10);
+        const key = formatISO(cursor);
         const isWeekend = cursor.getDay() === 0 || cursor.getDay() === 6;
         if (isWeekend) {
           cursor.setDate(cursor.getDate() + 1);
@@ -1963,7 +2086,7 @@
       topRow.appendChild(dayLabel);
       cell.appendChild(topRow);
       const currentDate = new Date(year, month, day);
-      const dateKey = currentDate.toISOString().slice(0, 10);
+      const dateKey = formatISO(currentDate);
       const sprintMatches = sprintRanges.filter(
         (range) => currentDate >= range.start && currentDate <= range.end
       );
@@ -2988,6 +3111,7 @@
         state.dailyStoryPointsFilter = null;
         state.dailyStatusOpen = false;
         state.dailyStatusTouched = false;
+        state.dailySprintManual = false;
         state.selectedSprintId = "";
         state.dailySprintOpen = false;
         state.dailyCapacityCache = {};
@@ -3003,6 +3127,7 @@
         applyCells(cells);
         state.dailySelectedPersonaId = "";
         state.dailySelectedAssignee = "";
+        state.dailySprintManual = false;
         state.dailyCapacityCache = {};
         initDashboardCellFilter(base);
         initForms(base);
@@ -4801,6 +4926,15 @@
     const disableFilters = container.id === "daily-dev-table";
     const useDataTables =
       !disableDataTables && Boolean(window.jQuery && window.jQuery.fn && window.jQuery.fn.DataTable);
+    const dataTableNonSortableTargets = [];
+    columns.forEach((col, idx) => {
+      if (col?.sortable === false) dataTableNonSortableTargets.push(idx);
+    });
+    tailColumns.forEach((col, idx) => {
+      if (col?.sortable === false) {
+        dataTableNonSortableTargets.push(columns.length + (actions.length ? 1 : 0) + idx);
+      }
+    });
     const tableKey = container.id || "table";
     state.tableFilters[tableKey] = state.tableFilters[tableKey] || {};
     state.tableDataState = state.tableDataState || {};
@@ -4932,7 +5066,7 @@
     const sortedRows = [...sortableRows];
     if (sortState?.key) {
       const sortCol = filterColumns.find((col) => col.key === sortState.key);
-      if (sortCol && sortCol.key !== "_select") {
+      if (sortCol && sortCol.key !== "_select" && sortCol.sortable !== false) {
         sortedRows.sort((a, b) => {
           const aVal = normalizeValue(getColumnValue(a, sortCol, 0));
           const bVal = normalizeValue(getColumnValue(b, sortCol, 0));
@@ -4949,6 +5083,8 @@
           }
           return sortState.dir === "desc" ? -result : result;
         });
+      } else {
+        state.tableSort[tableKey] = null;
       }
     }
     const orderedRows = [...sortedRows, ...totalRows];
@@ -5017,37 +5153,7 @@
       } else if (useDataTables) {
         th.textContent = col.label;
       } else {
-        th.className = "sortable";
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "table-sort";
-        const indicator = document.createElement("span");
-        indicator.className = "sort-indicator";
-        if (sortState?.key === col.key) {
-          indicator.textContent = sortState.dir === "desc" ? "▼" : "▲";
-        }
-        btn.append(document.createTextNode(col.label), indicator);
-        btn.addEventListener("click", () => {
-          const current = state.tableSort[tableKey];
-          const nextDir =
-            current && current.key === col.key && current.dir === "asc" ? "desc" : "asc";
-          state.tableSort[tableKey] = { key: col.key, dir: nextDir };
-          state.adminPage[pageKey] = 1;
-          rerenderTable();
-        });
-        th.appendChild(btn);
-      }
-      headRow.appendChild(th);
-    });
-    if (actions.length) {
-      const th = document.createElement("th");
-      th.textContent = "Acciones";
-      headRow.appendChild(th);
-    }
-    if (tailColumns.length) {
-      tailColumns.forEach((col) => {
-        const th = document.createElement("th");
-        if (useDataTables) {
+        if (col.sortable === false) {
           th.textContent = col.label;
         } else {
           th.className = "sortable";
@@ -5069,6 +5175,44 @@
             rerenderTable();
           });
           th.appendChild(btn);
+        }
+      }
+      headRow.appendChild(th);
+    });
+    if (actions.length) {
+      const th = document.createElement("th");
+      th.textContent = "Acciones";
+      headRow.appendChild(th);
+    }
+    if (tailColumns.length) {
+      tailColumns.forEach((col) => {
+        const th = document.createElement("th");
+        if (useDataTables) {
+          th.textContent = col.label;
+        } else {
+          if (col.sortable === false) {
+            th.textContent = col.label;
+          } else {
+            th.className = "sortable";
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "table-sort";
+            const indicator = document.createElement("span");
+            indicator.className = "sort-indicator";
+            if (sortState?.key === col.key) {
+              indicator.textContent = sortState.dir === "desc" ? "▼" : "▲";
+            }
+            btn.append(document.createTextNode(col.label), indicator);
+            btn.addEventListener("click", () => {
+              const current = state.tableSort[tableKey];
+              const nextDir =
+                current && current.key === col.key && current.dir === "asc" ? "desc" : "asc";
+              state.tableSort[tableKey] = { key: col.key, dir: nextDir };
+              state.adminPage[pageKey] = 1;
+              rerenderTable();
+            });
+            th.appendChild(btn);
+          }
         }
         headRow.appendChild(th);
       });
@@ -5215,7 +5359,26 @@
       restoreTableFocus(table);
     }
     if (useDataTables) {
-      const dt = initDataTable(table, tableKey);
+      const dt = initDataTable(table, tableKey, {
+        nonSortableTargets: dataTableNonSortableTargets,
+      });
+      const shouldRenumberVisualIndex =
+        (tableKey === "release-table" || tableKey === "daily-items-table") &&
+        Array.isArray(columns) &&
+        columns.length > 0 &&
+        (columns[0]?.key === "_index" || columns[0]?.key === "item_order");
+      const applyVisualIndexCounter = () => {
+        if (!dt || !shouldRenumberVisualIndex) return;
+        const info = typeof dt.page?.info === "function" ? dt.page.info() : null;
+        const base = Number(info?.start || 0);
+        dt
+          .column(0, { page: "current" })
+          .nodes()
+          .each((cell, index) => {
+            if (!cell) return;
+            cell.textContent = String(base + index + 1);
+          });
+      };
       const saveDtState = () => {
         if (!dt) return;
         const columnSearch = [];
@@ -5231,13 +5394,23 @@
         };
         state.tableDataPage[tableKey] = dt.page();
       };
+      const normalizeOrderState = (order) => {
+        if (!Array.isArray(order) || !order.length) return [];
+        if (!dataTableNonSortableTargets.length) return order;
+        const blocked = new Set(dataTableNonSortableTargets.map((idx) => Number(idx)));
+        return order.filter((entry) => {
+          const colIdx = Number(Array.isArray(entry) ? entry[0] : NaN);
+          return Number.isFinite(colIdx) && !blocked.has(colIdx);
+        });
+      };
       const targetState = state.tableDataState?.[tableKey] || preservedTableState;
       if (dt && targetState) {
         if (Number.isFinite(targetState.length) && targetState.length > 0) {
           dt.page.len(targetState.length);
         }
-        if (Array.isArray(targetState.order) && targetState.order.length) {
-          dt.order(targetState.order);
+        const safeOrder = normalizeOrderState(targetState.order);
+        if (safeOrder.length) {
+          dt.order(safeOrder);
         }
         if (typeof targetState.search === "string") {
           dt.search(targetState.search);
@@ -5250,14 +5423,18 @@
           });
         }
         dt.draw(false);
+        applyVisualIndexCounter();
       }
       const targetPage = state.tableDataPage?.[tableKey];
       if (dt && targetPage != null) {
         dt.page(targetPage).draw(false);
+        applyVisualIndexCounter();
       }
       if (dt) {
         const $table = window.jQuery(table);
+        $table.on("draw.dt.releaseIndex order.dt.releaseIndex search.dt.releaseIndex page.dt.releaseIndex length.dt.releaseIndex", applyVisualIndexCounter);
         $table.on("draw.dt order.dt search.dt page.dt length.dt", saveDtState);
+        applyVisualIndexCounter();
         saveDtState();
       }
       if (actions.length) {
@@ -5303,7 +5480,7 @@
     }
   }
 
-  function initDataTable(table, tableKey) {
+  function initDataTable(table, tableKey, options = {}) {
     if (!table) return;
     if (!(window.jQuery && window.jQuery.fn && window.jQuery.fn.DataTable)) return;
     const $table = window.jQuery(table);
@@ -5312,6 +5489,15 @@
     }
     $table.addClass("table table-bordered table-striped");
     const isReleaseTable = tableKey === "release-table";
+    const nonSortableTargets = Array.isArray(options.nonSortableTargets)
+      ? options.nonSortableTargets.filter((idx) => Number.isFinite(Number(idx)))
+      : [];
+    if (
+      tableKey === "daily-items-table" &&
+      !nonSortableTargets.some((idx) => Number(idx) === 0)
+    ) {
+      nonSortableTargets.unshift(0);
+    }
     const dt = $table.DataTable({
       paging: true,
       lengthChange: true,
@@ -5345,7 +5531,31 @@
         },
       },
       buttons: [],
+      columnDefs: nonSortableTargets.length
+        ? [
+            {
+              targets: nonSortableTargets,
+              orderable: false,
+            },
+          ]
+        : [],
     });
+    if (tableKey === "daily-items-table") {
+      const firstHeader = table.querySelector("thead th:first-child");
+      if (firstHeader) firstHeader.classList.add("sorting_disabled");
+      $table.off("order.dt.noIndex");
+      $table.on("order.dt.noIndex", () => {
+        const currentOrder = dt.order() || [];
+        const hasIndexSort = currentOrder.some(
+          (entry) => Number(Array.isArray(entry) ? entry[0] : NaN) === 0
+        );
+        if (!hasIndexSort) return;
+        const fallbackOrder = currentOrder.filter(
+          (entry) => Number(Array.isArray(entry) ? entry[0] : NaN) !== 0
+        );
+        dt.order(fallbackOrder).draw(false);
+      });
+    }
     dt.buttons().container().remove();
     return dt;
   }
@@ -5856,6 +6066,55 @@
     const storypointsKpi = qs("#daily-kpi-storypoints");
 
     const sprints = getDailySprints(base);
+    const sprintIdByName = new Map(
+      sprints
+        .map((sprint) => [normalizeText(sprint?.nombre || ""), sprint.id])
+        .filter(([name]) => name)
+    );
+    const toDailyItemKey = (item) => {
+      const celula = String(item?.celula_id || "");
+      const sprint = String(item?.sprint_id || "");
+      const issue = String(item?.issue_key || item?.issue_id || item?.id || "")
+        .trim()
+        .toLowerCase();
+      return `${celula}:${sprint}:${issue}`;
+    };
+    const sprintItemsBase = Array.isArray(base.sprintItems) ? base.sprintItems : [];
+    const releaseItemsBase = Array.isArray(base.releaseItems) ? base.releaseItems : [];
+    const releaseItemsAsDaily = releaseItemsBase
+      .map((item) => {
+        if (!item || !item.celula_id) return null;
+        const mappedSprintId =
+          item.sprint_id || sprintIdByName.get(normalizeText(item.sprint_nombre || ""));
+        if (!mappedSprintId) return null;
+        return {
+          id: `rel-${item.id}`,
+          celula_id: item.celula_id,
+          sprint_id: mappedSprintId,
+          persona_id: item.persona_id || null,
+          assignee_nombre: item.assignee_nombre || "",
+          issue_key: item.issue_key || "",
+          issue_type: item.issue_type || "",
+          summary: item.summary || "",
+          status: item.status || "",
+          story_points: item.story_points ?? null,
+          start_date: item.start_date || null,
+          end_date: item.end_date || null,
+          due_date: item.due_date || null,
+        };
+      })
+      .filter(Boolean);
+    const dailyItemsMap = new Map();
+    sprintItemsBase.forEach((item) => {
+      dailyItemsMap.set(toDailyItemKey(item), item);
+    });
+    releaseItemsAsDaily.forEach((item) => {
+      const key = toDailyItemKey(item);
+      if (!dailyItemsMap.has(key)) {
+        dailyItemsMap.set(key, item);
+      }
+    });
+    const dailyItemsSource = Array.from(dailyItemsMap.values());
     if (!sprints.length) {
       if (sprintSelect) sprintSelect.innerHTML = "";
       if (remainingEl) remainingEl.textContent = "-";
@@ -5869,36 +6128,31 @@
       return;
     }
 
-    const sprintItemsForSelection = (base.sprintItems || []).filter((item) => {
-      if (!item?.sprint_id) return false;
-      if (state.selectedCelulaId && String(item.celula_id) !== state.selectedCelulaId) {
-        return false;
-      }
-      return true;
-    });
-    const sprintItemsCountBySprint = new Map();
-    sprintItemsForSelection.forEach((item) => {
-      const key = String(item.sprint_id);
-      sprintItemsCountBySprint.set(key, (sprintItemsCountBySprint.get(key) || 0) + 1);
-    });
+    const hasDataForSprint = (sprint) => {
+      if (!sprint) return false;
+      return dailyItemsSource.some((item) => {
+        if (state.selectedCelulaId && String(item.celula_id) !== state.selectedCelulaId) {
+          return false;
+        }
+        return String(item.sprint_id) === String(sprint.id);
+      });
+    };
+    const firstSprintWithData = sprints.find((sprint) => hasDataForSprint(sprint)) || null;
     const activeSprint = getActiveSprint(sprints) || sprints[0];
-    let selectedSprint = state.selectedSprintId
+    const selectedSprintByState = state.selectedSprintId
       ? sprints.find((sprint) => String(sprint.id) === state.selectedSprintId)
       : null;
-    if (!selectedSprint) {
-      selectedSprint = activeSprint;
-      const selectedHasItems =
-        selectedSprint && (sprintItemsCountBySprint.get(String(selectedSprint.id)) || 0) > 0;
-      if (!selectedHasItems) {
-        const latestSprintWithItems = sprints.find(
-          (sprint) => (sprintItemsCountBySprint.get(String(sprint.id)) || 0) > 0
-        );
-        if (latestSprintWithItems) {
-          selectedSprint = latestSprintWithItems;
-        }
+    let selectedSprint;
+    if (state.dailySprintManual) {
+      selectedSprint = selectedSprintByState || activeSprint || firstSprintWithData || sprints[0];
+    } else {
+      selectedSprint =
+        activeSprint || selectedSprintByState || firstSprintWithData || sprints[0];
+      if ((!selectedSprint || !hasDataForSprint(selectedSprint)) && firstSprintWithData) {
+        selectedSprint = firstSprintWithData;
       }
-      state.selectedSprintId = selectedSprint ? String(selectedSprint.id) : "";
     }
+    state.selectedSprintId = selectedSprint ? String(selectedSprint.id) : "";
 
     const orderedSprints = selectedSprint
       ? [selectedSprint, ...sprints.filter((sprint) => String(sprint.id) !== String(selectedSprint.id))]
@@ -5922,6 +6176,7 @@
         }
         btn.addEventListener("click", () => {
           state.selectedSprintId = String(sprint.id);
+          state.dailySprintManual = true;
           state.dailySelectedPersonaId = "";
           state.dailySelectedAssignee = "";
           state.dailyStatusFilters = [];
@@ -6087,7 +6342,7 @@
     const personaLookup = buildPersonaLookup(personasFiltradas);
     const activePersonaIds = new Set(personasActivas.map((persona) => persona.id));
     const shouldFilterByPersona = activePersonaIds.size > 0;
-    const itemsAll = base.sprintItems.filter((item) => {
+    const itemsAll = dailyItemsSource.filter((item) => {
       if (state.selectedCelulaId && String(item.celula_id) !== state.selectedCelulaId) {
         return false;
       }
@@ -6270,7 +6525,7 @@
       ])
     );
     const issueSprintMap = new Map();
-    base.sprintItems
+    dailyItemsSource
       .filter((item) =>
         state.selectedCelulaId ? String(item.celula_id) === state.selectedCelulaId : true
       )
@@ -6480,7 +6735,7 @@
       if (kpi4El) kpi4El.textContent = "—";
     }
     const previousItems = previousSprint
-      ? base.sprintItems.filter((item) => {
+      ? dailyItemsSource.filter((item) => {
           if (state.selectedCelulaId && String(item.celula_id) !== state.selectedCelulaId) {
             return false;
           }
@@ -6491,7 +6746,7 @@
         })
       : [];
     const previousItems2 = previousSprint2
-      ? base.sprintItems.filter((item) => {
+      ? dailyItemsSource.filter((item) => {
           if (state.selectedCelulaId && String(item.celula_id) !== state.selectedCelulaId) {
             return false;
           }
@@ -6755,13 +7010,87 @@
     const trashIcon =
       '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8h2v10H7zm4 0h2v10h-2zm4 0h2v10h-2zM9 4h6l1 2h4v2H4V6h4l1-2zm-3 6h12v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V10z"/></svg>';
 
-    const updateSprintItem = async (itemId, payload) => {
-      try {
-        const updated = await putJson(`/sprint-items/${itemId}`, payload);
-        const idx = state.base.sprintItems.findIndex((item) => item.id === itemId);
-        if (idx >= 0) {
-          state.base.sprintItems[idx] = updated;
+    const resolveDailyItemRef = (rawId) => {
+      const idText = String(rawId ?? "").trim();
+      if (idText.startsWith("rel-")) {
+        const releaseId = Number(idText.slice(4));
+        return {
+          source: "release",
+          id: Number.isFinite(releaseId) ? releaseId : null,
+          idText,
+        };
+      }
+      const sprintId = Number(idText);
+      return {
+        source: "sprint",
+        id: Number.isFinite(sprintId) ? sprintId : null,
+        idText,
+      };
+    };
+
+    const upsertDailyItemLocal = (source, updated) => {
+      if (!state.base || !updated) return;
+      const targetKey = source === "release" ? "releaseItems" : "sprintItems";
+      const list = Array.isArray(state.base[targetKey]) ? [...state.base[targetKey]] : [];
+      const idx = list.findIndex((item) => String(item?.id) === String(updated?.id));
+      if (idx >= 0) list[idx] = updated;
+      else list.unshift(updated);
+      state.base[targetKey] = list;
+      state.dailyRealtimeSignature = buildDailyRealtimeSignature(
+        state.base.sprintItems || [],
+        state.base.releaseItems || []
+      );
+    };
+
+    const removeDailyItemLocal = (source, id) => {
+      if (!state.base) return;
+      const targetKey = source === "release" ? "releaseItems" : "sprintItems";
+      const list = Array.isArray(state.base[targetKey]) ? state.base[targetKey] : [];
+      state.base[targetKey] = list.filter((item) => String(item?.id) !== String(id));
+      state.dailyRealtimeSignature = buildDailyRealtimeSignature(
+        state.base.sprintItems || [],
+        state.base.releaseItems || []
+      );
+    };
+
+    const updateDailyItem = async (row, payload) => {
+      const ref = resolveDailyItemRef(row?.id);
+      if (!ref.id) {
+        if (status) {
+          status.textContent = "No se pudo identificar el item para actualizar.";
+          status.dataset.type = "error";
         }
+        return;
+      }
+      try {
+        const releaseAllowedKeys = new Set([
+          "status",
+          "release_tipo",
+          "tipo",
+          "quarter",
+          "start_date",
+          "end_date",
+          "due_date",
+        ]);
+        const requestPayload =
+          ref.source === "release"
+            ? Object.fromEntries(
+                Object.entries(payload || {}).filter(([key]) => releaseAllowedKeys.has(key))
+              )
+            : payload;
+        if (ref.source === "release" && !Object.keys(requestPayload || {}).length) {
+          if (status) {
+            status.textContent = "Este campo no se puede editar para items de Release en Daily.";
+            status.dataset.type = "error";
+          }
+          return;
+        }
+        const endpoint =
+          ref.source === "release"
+            ? `/release-items/${ref.id}`
+            : `/sprint-items/${ref.id}`;
+        const updated = await putJson(endpoint, requestPayload);
+        upsertDailyItemLocal(ref.source, updated);
         await renderDaily(state.base);
       } catch {
         if (status) {
@@ -6788,7 +7117,7 @@
         }
       });
       input.addEventListener("change", async () => {
-        await updateSprintItem(row.id, { [field]: input.value || null });
+        await updateDailyItem(row, { [field]: input.value || null });
       });
       return input;
     };
@@ -6824,7 +7153,7 @@
       applyStatusStyle(select, select.value);
       select.addEventListener("change", async () => {
         applyStatusStyle(select, select.value);
-        await updateSprintItem(row.id, { status: select.value });
+        await updateDailyItem(row, { status: select.value });
       });
       return select;
     };
@@ -6841,7 +7170,7 @@
       input.addEventListener("change", async () => {
         const raw = String(input.value || "").trim();
         const parsed = raw === "" ? null : Number(raw);
-        await updateSprintItem(row.id, {
+        await updateDailyItem(row, {
           story_points: Number.isFinite(parsed) ? parsed : null,
         });
       });
@@ -6923,6 +7252,7 @@
     );
 
     const itemsColumns = [
+        { key: "_index", label: "#", sortable: false },
         {
           key: "sprint_indicator",
           label: "Sprint",
@@ -7021,31 +7351,40 @@
         {
           label: "Editar",
           icon: editIcon,
-          onClick: (row) => {
-            if (!form) return;
+	          onClick: (row) => {
+	            if (!form) return;
             form.issue_type.value = row.issue_type || "Task";
             form.issue_key.value = row.issue_key || "";
             form.summary.value = row.summary || "";
             form.status.value = row.status || "To Do";
             form.story_points.value = row.story_points ?? "";
-            form.persona_id.value = row.persona_id ? String(row.persona_id) : "";
-            form.sprint_id.value = row.sprint_id ? String(row.sprint_id) : "";
-            setFormMode(form, "edit", row.id, "Actualizar item");
-            form.scrollIntoView({ behavior: "smooth", block: "center" });
-          },
-        },
+	            form.persona_id.value = row.persona_id ? String(row.persona_id) : "";
+	            form.sprint_id.value = row.sprint_id ? String(row.sprint_id) : "";
+            form.dataset.editSource = String(row?.id || "").startsWith("rel-")
+              ? "release"
+              : "sprint";
+	            setFormMode(form, "edit", row.id, "Actualizar item");
+	            form.scrollIntoView({ behavior: "smooth", block: "center" });
+	          },
+	        },
         {
           label: "Eliminar",
           icon: trashIcon,
-          onClick: async (row) => {
-            if (!confirm(`Eliminar item ${row.issue_key}?`)) return;
-            try {
-              const res = await fetchWithFallback(`/sprint-items/${row.id}`, { method: "DELETE" });
-              if (!res.ok) throw new Error("No se pudo eliminar");
-              state.base.sprintItems = state.base.sprintItems.filter((item) => item.id !== row.id);
-              await renderDaily(state.base);
-            } catch {
-              if (status) {
+	          onClick: async (row) => {
+	            if (!confirm(`Eliminar item ${row.issue_key}?`)) return;
+	            try {
+              const ref = resolveDailyItemRef(row?.id);
+              if (!ref.id) throw new Error("Item invalido");
+              const endpoint =
+                ref.source === "release"
+                  ? `/release-items/${ref.id}`
+                  : `/sprint-items/${ref.id}`;
+	              const res = await fetchWithFallback(endpoint, { method: "DELETE" });
+	              if (!res.ok) throw new Error("No se pudo eliminar");
+              removeDailyItemLocal(ref.source, ref.id);
+	              await renderDaily(state.base);
+	            } catch {
+	              if (status) {
                 status.textContent = "No se pudo eliminar el item.";
                 status.dataset.type = "error";
               }
@@ -7094,6 +7433,7 @@
       sprintSelect.addEventListener("change", async (event) => {
         const sprintId = event.target.value;
         state.selectedSprintId = sprintId ? String(sprintId) : "";
+        state.dailySprintManual = true;
         state.dailySelectedPersonaId = "";
         state.dailySelectedAssignee = "";
         state.dailyStatusFilters = [];
@@ -7130,8 +7470,25 @@
       if (!form) return;
       form.reset();
       resetFormMode(form, "Agregar item");
+      form.dataset.editSource = "";
       if (status && !keepStatus) status.textContent = "";
       renderDaily(state.base);
+    };
+
+    const ensureDailyItemVisible = (targetSprintId, targetStatus) => {
+      if (targetSprintId) {
+        state.selectedSprintId = String(targetSprintId);
+        state.dailySprintManual = true;
+      }
+      state.dailySelectedPersonaId = "";
+      state.dailySelectedAssignee = "";
+      state.dailyStoryPointsFilter = null;
+      if (targetStatus && Array.isArray(state.dailyStatusFilters) && state.dailyStatusFilters.length) {
+        const statusLabel = getStatusLabel(targetStatus) || targetStatus;
+        const next = new Set(state.dailyStatusFilters.filter(Boolean));
+        next.add(statusLabel);
+        state.dailyStatusFilters = Array.from(next);
+      }
     };
 
     if (clearBtn && !clearBtn.dataset.bound) {
@@ -7191,20 +7548,56 @@
               status: statusValue,
               story_points: Number.isNaN(storyPoints) ? null : storyPoints,
             };
-            await putJson(`/sprint-items/${editId}`, updatePayload);
+            const editSource =
+              form.dataset.editSource === "release" || String(editId).startsWith("rel-")
+                ? "release"
+                : "sprint";
+            const numericEditId = Number(String(editId).replace(/^rel-/, ""));
+            if (!Number.isFinite(numericEditId)) {
+              throw new Error("ID invalido");
+            }
+            const endpoint =
+              editSource === "release"
+                ? `/release-items/${numericEditId}`
+                : `/sprint-items/${numericEditId}`;
+            const requestPayload =
+              editSource === "release"
+                ? { status: statusValue }
+                : updatePayload;
+            const updated = await putJson(endpoint, requestPayload);
+            if (editSource === "release") {
+              state.base.releaseItems = (state.base.releaseItems || []).map((item) =>
+                String(item.id) === String(updated.id) ? updated : item
+              );
+            } else {
+              state.base.sprintItems = (state.base.sprintItems || []).map((item) =>
+                String(item.id) === String(updated.id) ? updated : item
+              );
+            }
+            state.dailyRealtimeSignature = buildDailyRealtimeSignature(
+              state.base.sprintItems || [],
+              state.base.releaseItems || []
+            );
             if (status) {
               status.textContent = "Item actualizado.";
               status.dataset.type = "ok";
             }
+            ensureDailyItemVisible(sprintId, statusValue);
           } else {
-            await postJson("/sprint-items", payload);
+            const created = await postJson("/sprint-items", payload);
+            state.base.sprintItems = [created, ...(state.base.sprintItems || [])];
+            state.dailyRealtimeSignature = buildDailyRealtimeSignature(
+              state.base.sprintItems || [],
+              state.base.releaseItems || []
+            );
             if (status) {
               status.textContent = "Item agregado.";
               status.dataset.type = "ok";
             }
+            ensureDailyItemVisible(sprintId, statusValue);
           }
           resetDailyForm(true);
-          await reloadAll();
+          void syncDailyRealtime({ forceRender: false, skipWhenEditing: true });
         } catch (err) {
           if (status) {
             status.textContent = "No se pudo crear el item.";
@@ -7215,6 +7608,16 @@
     }
 
     renderDaily(state.base);
+    state.dailyRealtimeSignature = buildDailyRealtimeSignature(
+      state.base.sprintItems || [],
+      state.base.releaseItems || []
+    );
+    if (!window.__dailyLivePoll) {
+      window.__dailyLivePoll = window.setInterval(() => {
+        if (document.hidden) return;
+        void syncDailyRealtime({ forceRender: false, skipWhenEditing: true });
+      }, 4000);
+    }
   }
 
   function initTasks() {
@@ -7248,6 +7651,10 @@
     const filterAssignee = qs("#tasks-filter-assignee");
     const filterDueFrom = qs("#tasks-filter-due-from");
     const filterDueTo = qs("#tasks-filter-due-to");
+    const dateTodayBtn = qs("#tasks-date-today");
+    const dateWeekBtn = qs("#tasks-date-week");
+    const dateMonthBtn = qs("#tasks-date-month");
+    const dateYearBtn = qs("#tasks-date-year");
     const filterHideSubtasks = qs("#tasks-filter-hide-subtasks");
     const filterClearBtn = qs("#tasks-filter-clear");
     const filterCloseBtn = qs("#tasks-filter-close");
@@ -7356,6 +7763,10 @@
       const raw = String(value || "").trim();
       return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : "";
     };
+    const normalizeDatePreset = (value) => {
+      const raw = String(value || "").trim().toLowerCase();
+      return ["today", "week", "month", "year"].includes(raw) ? raw : "";
+    };
     const normalizeTasksFiltersState = (raw) => {
       const viewRaw = String(raw?.view || "").trim().toLowerCase();
       const view = ["backlog", "board", "reports"].includes(viewRaw) ? viewRaw : "backlog";
@@ -7363,6 +7774,7 @@
       const search = String(raw?.search || "").slice(0, 300);
       const statusFilterRaw = String(raw?.statusFilter || "").trim().toLowerCase();
       const statusFilter = STATUS_ORDER.includes(statusFilterRaw) ? statusFilterRaw : "";
+      const datePreset = normalizeDatePreset(raw?.datePreset);
 
       const defaults = cloneDefaultTasksAdvancedFilters();
       const filtersRaw = raw?.filters && typeof raw.filters === "object" ? raw.filters : {};
@@ -7398,6 +7810,7 @@
         view,
         search,
         statusFilter,
+        datePreset,
         filters,
         backlogSort,
       };
@@ -7417,6 +7830,7 @@
           view: state.tasksView,
           search: state.tasksSearch,
           statusFilter: state.tasksStatusFilter,
+          datePreset: state.tasksDatePreset,
           filters: state.tasksFilters,
           backlogSort: state.tasksBacklogSort,
         });
@@ -7612,12 +8026,86 @@
       state.tasksView = savedTasksFiltersState.view;
       state.tasksSearch = savedTasksFiltersState.search;
       state.tasksStatusFilter = savedTasksFiltersState.statusFilter;
+      state.tasksDatePreset = savedTasksFiltersState.datePreset || "";
       state.tasksFilters = {
         ...cloneDefaultTasksAdvancedFilters(),
         ...savedTasksFiltersState.filters,
       };
       state.tasksBacklogSort = savedTasksFiltersState.backlogSort;
       saveTasksFiltersState();
+    }
+
+    const datePresetButtons = [
+      { key: "today", btn: dateTodayBtn },
+      { key: "week", btn: dateWeekBtn },
+      { key: "month", btn: dateMonthBtn },
+      { key: "year", btn: dateYearBtn },
+    ].filter((entry) => entry.btn);
+
+    const syncDatePresetButtons = () => {
+      datePresetButtons.forEach(({ key, btn }) => {
+        const active = String(state.tasksDatePreset || "") === key;
+        btn.classList.toggle("btn-primary", active);
+        btn.classList.toggle("btn-outline-secondary", !active);
+        btn.classList.toggle("active", active);
+      });
+    };
+
+    const getDatePresetRange = (preset) => {
+      const key = normalizeDatePreset(preset);
+      if (!key) return null;
+      const today = getToday();
+      const start = new Date(today.getTime());
+      const end = new Date(today.getTime());
+      start.setHours(0, 0, 0, 0);
+      end.setHours(0, 0, 0, 0);
+      if (key === "today") {
+        // same day range
+      } else if (key === "week") {
+        const day = start.getDay();
+        const diffToMonday = day === 0 ? -6 : 1 - day;
+        start.setDate(start.getDate() + diffToMonday);
+        end.setTime(start.getTime());
+        end.setDate(start.getDate() + 6);
+      } else if (key === "month") {
+        start.setDate(1);
+        end.setMonth(start.getMonth() + 1, 0);
+      } else if (key === "year") {
+        start.setMonth(0, 1);
+        end.setMonth(11, 31);
+      }
+      return { from: formatISO(start), to: formatISO(end) };
+    };
+
+    const applyDatePreset = (preset, options = {}) => {
+      const normalized = normalizeDatePreset(preset);
+      const toggle = Boolean(options?.toggle);
+      const nextPreset = toggle && normalized && state.tasksDatePreset === normalized ? "" : normalized;
+      state.tasksDatePreset = nextPreset;
+      if (nextPreset) {
+        const range = getDatePresetRange(nextPreset);
+        state.tasksFilters = {
+          ...state.tasksFilters,
+          dueFrom: range?.from || "",
+          dueTo: range?.to || "",
+        };
+      } else {
+        state.tasksFilters = {
+          ...state.tasksFilters,
+          dueFrom: "",
+          dueTo: "",
+        };
+      }
+      if (filterDueFrom) filterDueFrom.value = state.tasksFilters?.dueFrom || "";
+      if (filterDueTo) filterDueTo.value = state.tasksFilters?.dueTo || "";
+      syncDatePresetButtons();
+      saveTasksFiltersState();
+    };
+
+    if (state.tasksDatePreset) {
+      applyDatePreset(state.tasksDatePreset, { toggle: false });
+    } else {
+      syncDatePresetButtons();
     }
 
     const destroyBacklogDataTable = () => {
@@ -7691,9 +8179,16 @@
         if (!Number.isFinite(raw) || raw <= 0) return;
         const width = `${Math.round(raw)}px`;
         const $wrapper = $table.closest(".dataTables_wrapper");
+        $table.css("width", width);
+        $table.css("min-width", width);
+        $wrapper.find(".dataTables_scrollHeadInner").css("width", width);
         $wrapper.find(".dataTables_scrollHeadInner").css("min-width", width);
+        $wrapper.find(".dataTables_scrollHeadInner table").css("width", width);
         $wrapper.find(".dataTables_scrollHeadInner table").css("min-width", width);
+        $wrapper.find(".dataTables_scrollBody table").css("width", width);
         $wrapper.find(".dataTables_scrollBody table").css("min-width", width);
+        $wrapper.find(".dataTable").css("width", width);
+        $wrapper.find(".dataTable").css("min-width", width);
       };
       $table.on("draw.dt column-sizing.dt", applyBacklogTableMinWidth);
       applyBacklogTableMinWidth();
@@ -7763,16 +8258,31 @@
       };
 
       const resolveScrollable = () => {
-        let best = scroll;
-        let bestMax = measureMax(scroll);
-        getCandidates().forEach((candidate) => {
+        const canScrollX = (node) => {
+          if (!node) return false;
+          const max = measureMax(node);
+          if (max <= 0) return false;
+          if (node === scroll) return true;
+          try {
+            const overflowX = window.getComputedStyle(node).overflowX;
+            return overflowX === "auto" || overflowX === "scroll";
+          } catch {
+            return false;
+          }
+        };
+
+        const candidates = getCandidates();
+        let best = null;
+        let bestMax = 0;
+        candidates.forEach((candidate) => {
+          if (!canScrollX(candidate)) return;
           const candidateMax = measureMax(candidate);
           if (candidateMax > bestMax) {
             best = candidate;
             bestMax = candidateMax;
           }
         });
-        return best;
+        return best || scroll;
       };
 
       const syncRangeFromScrollable = () => {
@@ -8040,6 +8550,24 @@
       return Array.isArray(items) ? items : [];
     };
 
+    const updateTaskComment = async (taskId, commentId, texto) => {
+      const id = Number(taskId || 0);
+      const cid = Number(commentId || 0);
+      if (!id || !cid) return;
+      await putJson(`/tasks/${id}/comments/${cid}`, { texto });
+    };
+
+    const deleteTaskComment = async (taskId, commentId) => {
+      const id = Number(taskId || 0);
+      const cid = Number(commentId || 0);
+      if (!id || !cid) return;
+      const res = await fetchWithFallback(`/tasks/${id}/comments/${cid}`, { method: "DELETE" });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "No se pudo eliminar el comentario.");
+      }
+    };
+
     const flushTaskCommentCountQueue = async () => {
       if (taskCommentCountQueueRunning) return;
       taskCommentCountQueueRunning = true;
@@ -8121,10 +8649,20 @@
       }
       listEl.innerHTML = comments
         .map(
-          () => `
+          (comment) => `
             <div class="tasks-comment tasks-comment-compact">
+              <div class="tasks-comment-head mb-1">
+                <span class="text-muted small" data-role="comment-date"></span>
+                <span class="tasks-comment-actions">
+                  <button class="icon-btn" type="button" title="Editar comentario" aria-label="Editar comentario" data-action="edit-comment" data-comment-id="${comment?.id || ""}">
+                    <i class="bi bi-pencil" aria-hidden="true"></i>
+                  </button>
+                  <button class="icon-btn" type="button" title="Eliminar comentario" aria-label="Eliminar comentario" data-action="delete-comment" data-comment-id="${comment?.id || ""}">
+                    <i class="bi bi-trash" aria-hidden="true"></i>
+                  </button>
+                </span>
+              </div>
               <div class="tasks-comment-body" data-role="comment-text"></div>
-              <div class="tasks-comment-date text-muted small" data-role="comment-date"></div>
             </div>
           `
         )
@@ -8171,6 +8709,55 @@
       if (closeBtn && !closeBtn.dataset.bound) {
         closeBtn.dataset.bound = "true";
         closeBtn.addEventListener("click", () => closeAdminModal(false));
+      }
+      if (listEl && !listEl.dataset.bound) {
+        listEl.dataset.bound = "true";
+        listEl.addEventListener("click", async (event) => {
+          const btn = event.target.closest("button[data-action][data-comment-id]");
+          if (!btn) return;
+          const taskId = Number(form.dataset.taskId || 0);
+          const commentId = Number(btn.dataset.commentId || 0);
+          if (!taskId || !commentId) return;
+          const action = btn.dataset.action;
+          const row = btn.closest(".tasks-comment");
+          const body = row?.querySelector(".tasks-comment-body");
+          const currentText = String(body?.textContent || "").trim();
+          try {
+            btn.disabled = true;
+            if (action === "edit-comment") {
+              const nextText = window.prompt("Editar comentario", currentText);
+              if (nextText == null) return;
+              const cleanText = String(nextText).trim();
+              if (!cleanText) {
+                throw new Error("El comentario no puede quedar vacio.");
+              }
+              await updateTaskComment(taskId, commentId, cleanText);
+              if (statusEl) {
+                statusEl.textContent = "Comentario actualizado.";
+                statusEl.dataset.type = "ok";
+              }
+            } else if (action === "delete-comment") {
+              if (!window.confirm("Eliminar comentario?")) return;
+              await deleteTaskComment(taskId, commentId);
+              if (statusEl) {
+                statusEl.textContent = "Comentario eliminado.";
+                statusEl.dataset.type = "ok";
+              }
+            } else {
+              return;
+            }
+            const items = await fetchTaskComments(taskId);
+            renderTaskCommentsModalList(listEl, items);
+            setTaskCommentCount(taskId, items.length);
+          } catch (err) {
+            if (statusEl) {
+              statusEl.textContent = err.message || "No se pudo actualizar el comentario.";
+              statusEl.dataset.type = "error";
+            }
+          } finally {
+            btn.disabled = false;
+          }
+        });
       }
       if (submitBtn && !submitBtn.dataset.bound) {
         submitBtn.dataset.bound = "true";
@@ -8324,12 +8911,21 @@
 	          .map((c) => {
 	            const who = c?.usuario?.username || `Usuario ${c.usuario_id || ""}` || "Usuario";
 	            const when = c?.creado_en ? new Date(c.creado_en).toLocaleString() : "";
-	            const text = String(c?.texto || "");
 	            return `
 	              <div class="tasks-comment">
 	                <div class="tasks-comment-head">
-	                  <strong>${who}</strong>
-	                  <span class="text-muted small">${when}</span>
+	                  <span class="d-flex align-items-center gap-2">
+	                    <strong>${who}</strong>
+	                    <span class="text-muted small">${when}</span>
+	                  </span>
+	                  <span class="tasks-comment-actions">
+	                    <button class="icon-btn" type="button" title="Editar comentario" aria-label="Editar comentario" data-action="edit-comment" data-comment-id="${c?.id || ""}">
+	                      <i class="bi bi-pencil" aria-hidden="true"></i>
+	                    </button>
+	                    <button class="icon-btn" type="button" title="Eliminar comentario" aria-label="Eliminar comentario" data-action="delete-comment" data-comment-id="${c?.id || ""}">
+	                      <i class="bi bi-trash" aria-hidden="true"></i>
+	                    </button>
+	                  </span>
 	                </div>
 	                <div class="tasks-comment-body"></div>
 	              </div>
@@ -8573,6 +9169,46 @@
 	        });
 	      }
 
+	      if (commentsList && !commentsList.dataset.bound) {
+	        commentsList.dataset.bound = "true";
+	        commentsList.addEventListener("click", async (event) => {
+	          const btn = event.target.closest("button[data-action][data-comment-id]");
+	          if (!btn) return;
+	          const taskId = Number(form.dataset.currentTaskId || 0);
+	          const commentId = Number(btn.dataset.commentId || 0);
+	          if (!taskId || !commentId) return;
+	          const action = btn.dataset.action;
+	          const row = btn.closest(".tasks-comment");
+	          const body = row?.querySelector(".tasks-comment-body");
+	          const currentText = String(body?.textContent || "").trim();
+	          try {
+	            btn.disabled = true;
+	            if (action === "edit-comment") {
+	              const nextText = window.prompt("Editar comentario", currentText);
+	              if (nextText == null) return;
+	              const cleanText = String(nextText).trim();
+	              if (!cleanText) {
+	                throw new Error("El comentario no puede quedar vacio.");
+	              }
+	              await updateTaskComment(taskId, commentId, cleanText);
+	            } else if (action === "delete-comment") {
+	              if (!window.confirm("Eliminar comentario?")) return;
+	              await deleteTaskComment(taskId, commentId);
+	            } else {
+	              return;
+	            }
+	            await loadComments();
+	          } catch (err) {
+	            if (formStatus) {
+	              formStatus.textContent = err.message || "No se pudo actualizar el comentario.";
+	              formStatus.dataset.type = "error";
+	            }
+	          } finally {
+	            btn.disabled = false;
+	          }
+	        });
+	      }
+
 	      if (!form.dataset.bound) {
         form.dataset.bound = "true";
         form.addEventListener("submit", async (event) => {
@@ -8800,9 +9436,13 @@
       const wrap = document.createElement("div");
       wrap.className = "tasks-notion-wrap";
       wrap.style.maxWidth = "100%";
-      const scroll = document.createElement("div");
-      scroll.className = "tasks-notion-scroll";
-      const tableHost = scroll;
+      let scroll = null;
+      let tableHost = wrap;
+      if (!useBacklogDataTable) {
+        scroll = document.createElement("div");
+        scroll.className = "tasks-notion-scroll";
+        tableHost = scroll;
+      }
 
       const table = document.createElement("table");
       table.id = "tasks-backlog-table";
@@ -9285,11 +9925,19 @@
         const showHierarchyArrow = Boolean(task.parent_id || hasChildrenAny);
         titleBtn.textContent = `${showHierarchyArrow ? "↳ " : ""}${task.titulo || `Task #${task.id}`}`;
         main.appendChild(titleBtn);
-        if (task.descripcion) {
+        const descriptionText = String(task.descripcion || "").trim();
+        if (descriptionText) {
           const hint = document.createElement("div");
-          hint.className = "text-muted small";
-          hint.textContent = String(task.descripcion).slice(0, 120);
+          hint.className = "tasks-desc-preview is-collapsed text-muted small";
+          hint.textContent = descriptionText;
           main.appendChild(hint);
+          const toggleDesc = document.createElement("button");
+          toggleDesc.type = "button";
+          toggleDesc.className = "tasks-desc-toggle btn btn-link btn-sm p-0";
+          toggleDesc.dataset.action = "toggle-desc";
+          toggleDesc.setAttribute("aria-expanded", "false");
+          toggleDesc.textContent = "Ver más";
+          main.appendChild(toggleDesc);
         }
         if (hasChildrenAny) {
           const childDates = children
@@ -9312,21 +9960,87 @@
 
         const actions = document.createElement("div");
         actions.className = "tasks-row-actions";
-        actions.innerHTML = `
-          <button class="btn btn-outline-secondary btn-sm tasks-comments-trigger ${commentCount > 0 ? "" : "d-none"}" type="button" title="Comentarios" data-action="comments" data-comment-btn-task="${task.id}">
-            <i class="bi bi-chat-left-text"></i>
-            <span class="tasks-comment-count" data-comment-count-task="${task.id}">${commentCount}</span>
-          </button>
-          ${hasChildren ? `<button class="btn btn-outline-info btn-sm" type="button" title="${expanded ? "Ocultar subtareas" : "Mostrar subtareas"}" data-action="toggle-subtasks">
-            <span class="tasks-subtasks-arrow" aria-hidden="true">↳</span>
-          </button>` : ""}
-          <button class="btn btn-outline-primary btn-sm" type="button" title="Crear subtarea" data-action="subtask">
-            <i class="bi bi-node-plus"></i>
-          </button>
-          <button class="btn btn-outline-danger btn-sm" type="button" title="Eliminar" data-action="delete">
-            <i class="bi bi-trash"></i>
-          </button>
-        `;
+        const actionDefs = [];
+        const commentDef = {
+          key: "comments",
+          action: "comments",
+          title: "Comentarios",
+          className: "btn btn-outline-secondary btn-sm tasks-comments-trigger",
+          iconClass: "bi bi-chat-left-text",
+          commentCount,
+          hidden: commentCount <= 0,
+        };
+        actionDefs.push(commentDef);
+        actionDefs.push({
+          key: "subtask",
+          action: "subtask",
+          title: "Crear subtarea",
+          className: "btn btn-outline-primary btn-sm",
+          iconClass: "bi bi-node-plus",
+        });
+        actionDefs.push({
+          key: "delete",
+          action: "delete",
+          title: "Eliminar",
+          className: "btn btn-outline-danger btn-sm",
+          iconClass: "bi bi-trash",
+        });
+        if (hasChildren) {
+          actionDefs.push({
+            key: "toggle-subtasks",
+            action: "toggle-subtasks",
+            title: expanded ? "Ocultar subtareas" : "Mostrar subtareas",
+            className: "btn btn-outline-info btn-sm",
+            arrow: true,
+          });
+        }
+
+        const buildActionButton = (def) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = `${def.className}${def.hidden ? " d-none" : ""}`;
+          btn.title = def.title;
+          btn.dataset.action = def.action;
+          if (def.key === "comments") {
+            btn.dataset.commentBtnTask = String(task.id);
+          }
+          if (def.arrow) {
+            const arrow = document.createElement("span");
+            arrow.className = "tasks-subtasks-arrow";
+            arrow.setAttribute("aria-hidden", "true");
+            arrow.textContent = "↳";
+            btn.appendChild(arrow);
+          } else if (def.iconClass) {
+            const icon = document.createElement("i");
+            icon.className = def.iconClass;
+            btn.appendChild(icon);
+          }
+          if (def.key === "comments") {
+            const counter = document.createElement("span");
+            counter.className = "tasks-comment-count";
+            counter.dataset.commentCountTask = String(task.id);
+            counter.textContent = String(def.commentCount || 0);
+            btn.appendChild(counter);
+          }
+          return btn;
+        };
+
+        // Top-level actions in backlog row: only comments (when available) and "+".
+        actions.appendChild(buildActionButton(commentDef));
+
+        const moreBtn = document.createElement("button");
+        moreBtn.type = "button";
+        moreBtn.className = "btn btn-outline-secondary btn-sm tasks-actions-more-toggle";
+        moreBtn.title = "Más acciones";
+        moreBtn.dataset.action = "toggle-actions";
+        moreBtn.setAttribute("aria-expanded", "false");
+        moreBtn.textContent = "+";
+        actions.appendChild(moreBtn);
+
+        const moreWrap = document.createElement("div");
+        moreWrap.className = "tasks-row-actions-more";
+        actionDefs.forEach((def) => moreWrap.appendChild(buildActionButton(def)));
+        actions.appendChild(moreWrap);
         titleWrap.appendChild(actions);
         titleTd.appendChild(titleWrap);
           return titleTd;
@@ -9430,14 +10144,23 @@
 
       sortBacklogTasks(roots).forEach((t) => renderRow(t, 0));
       tableHost.appendChild(table);
-      wrap.appendChild(scroll);
+      if (scroll) wrap.appendChild(scroll);
 
-      backlogList.appendChild(wrap);
-      if (useBacklogDataTable) {
-        initBacklogDataTable(table, visibleColumns);
-      }
-      attachBacklogHorizontalBar(wrap, scroll, useBacklogDataTable);
-    };
+	      backlogList.appendChild(wrap);
+	      if (useBacklogDataTable) {
+	        initBacklogDataTable(table, visibleColumns);
+          if (typeof cleanupBacklogHorizontalBar === "function") {
+            try {
+              cleanupBacklogHorizontalBar();
+            } catch {
+              // ignore
+            }
+            cleanupBacklogHorizontalBar = null;
+          }
+	      } else {
+	        attachBacklogHorizontalBar(wrap, scroll, false);
+	      }
+	    };
 
     const renderBoard = (filtered, all) => {
       if (!board) return;
@@ -9589,9 +10312,15 @@
           const actions = document.createElement("div");
           actions.className = "task-card-actions";
           actions.innerHTML = `
-            <button class="btn btn-outline-secondary btn-sm" type="button" data-action="edit">Editar</button>
-            <button class="btn btn-outline-primary btn-sm" type="button" data-action="subtask">Subtarea</button>
-            <button class="btn btn-outline-danger btn-sm" type="button" data-action="delete">Eliminar</button>
+            <button class="btn btn-outline-secondary btn-sm px-2" type="button" title="Editar" aria-label="Editar" data-action="edit">
+              <i class="bi bi-pencil" aria-hidden="true"></i>
+            </button>
+            <button class="btn btn-outline-primary btn-sm px-2" type="button" title="Subtarea" aria-label="Subtarea" data-action="subtask">
+              <i class="bi bi-diagram-3" aria-hidden="true"></i>
+            </button>
+            <button class="btn btn-outline-danger btn-sm px-2" type="button" title="Eliminar" aria-label="Eliminar" data-action="delete">
+              <i class="bi bi-trash" aria-hidden="true"></i>
+            </button>
           `;
 
           card.appendChild(top);
@@ -9949,6 +10678,16 @@
         });
       });
 
+      datePresetButtons.forEach(({ key, btn }) => {
+        if (btn.dataset.bound) return;
+        btn.dataset.bound = "true";
+        btn.addEventListener("click", () => {
+          applyDatePreset(key, { toggle: true });
+          renderAll();
+          renderFilterChips();
+        });
+      });
+
       if (statusSelect && !statusSelect.dataset.bound) {
         statusSelect.dataset.bound = "true";
         statusSelect.addEventListener("change", () => {
@@ -10188,9 +10927,11 @@
         filterClearBtn.addEventListener("click", () => {
           state.tasksStatusFilter = "";
           if (statusSelect) statusSelect.value = "";
+          state.tasksDatePreset = "";
           state.tasksFilters = cloneDefaultTasksAdvancedFilters();
           if (filterDueFrom) filterDueFrom.value = "";
           if (filterDueTo) filterDueTo.value = "";
+          syncDatePresetButtons();
           if (filterHideSubtasks) filterHideSubtasks.checked = false;
           if (filterAssignee) Array.from(filterAssignee.options).forEach((o) => (o.selected = false));
           // status/prio checkboxes
@@ -10211,7 +10952,7 @@
           .filter((cb) => cb.checked)
           .map((cb) => cb.value);
 
-      const syncAdvancedFiltersFromUI = () => {
+      const syncAdvancedFiltersFromUI = (changedTarget = null) => {
         const statuses = readCheckboxGroup("#tasks-filter-statuses");
         const priorities = readCheckboxGroup("#tasks-filter-priorities");
         const assignees = filterAssignee
@@ -10226,6 +10967,10 @@
           dueTo: filterDueTo?.value || "",
           hideSubtasks: Boolean(filterHideSubtasks?.checked),
         };
+        if (changedTarget === filterDueFrom || changedTarget === filterDueTo) {
+          state.tasksDatePreset = "";
+          syncDatePresetButtons();
+        }
         saveTasksFiltersState();
       };
 
@@ -10277,8 +11022,8 @@
 
       if (filterPanel && !filterPanel.dataset.bound) {
         filterPanel.dataset.bound = "true";
-        filterPanel.addEventListener("change", () => {
-          syncAdvancedFiltersFromUI();
+        filterPanel.addEventListener("change", (event) => {
+          syncAdvancedFiltersFromUI(event.target);
           renderAll();
           renderFilterChips();
         });
@@ -10306,6 +11051,8 @@
           } else if (key === "due") {
             if (filterDueFrom) filterDueFrom.value = "";
             if (filterDueTo) filterDueTo.value = "";
+            state.tasksDatePreset = "";
+            syncDatePresetButtons();
           } else if (key === "hideSub") {
             if (filterHideSubtasks) filterHideSubtasks.checked = false;
           }
@@ -10321,7 +11068,7 @@
         backlogList.addEventListener(
           "wheel",
           (event) => {
-            const scroller = event.target.closest?.(".tasks-notion-scroll");
+            const scroller = event.target.closest?.(".tasks-notion-scroll, .dataTables_scrollBody");
             if (!scroller) return;
             const dx = Number(event.deltaX || 0);
             const dy = Number(event.deltaY || 0);
@@ -10593,6 +11340,22 @@
           const row = btn.closest("[data-task-id]");
           const taskId = Number(row?.dataset?.taskId || 0);
           const action = btn.dataset.action;
+          if (action === "toggle-desc") {
+            const preview = row?.querySelector(".tasks-desc-preview");
+            if (!preview) return;
+            const collapsed = preview.classList.toggle("is-collapsed");
+            btn.textContent = collapsed ? "Ver más" : "Ver menos";
+            btn.setAttribute("aria-expanded", String(!collapsed));
+            return;
+          }
+          if (action === "toggle-actions") {
+            const wrap = btn.closest(".tasks-row-actions");
+            if (!wrap) return;
+            const nextOpen = !wrap.classList.contains("is-open");
+            wrap.classList.toggle("is-open", nextOpen);
+            btn.setAttribute("aria-expanded", String(nextOpen));
+            return;
+          }
           if (action === "toggle-subtasks") {
             if (!taskId) return;
             state.tasksBacklogExpanded[String(taskId)] = !state.tasksBacklogExpanded[String(taskId)];
@@ -11076,13 +11839,26 @@
     };
     if (quarterFilterEl) {
       const prev = state.releaseQuarterFilter || "";
+      const todayForQuarter = getToday();
+      const currentQuarterLabel = `Q${Math.floor(todayForQuarter.getMonth() / 3) + 1} ${todayForQuarter.getFullYear()}`;
       quarterFilterEl.innerHTML = `
         <option value="">Todos</option>
         ${quarterOptions.map((label) => `<option value="${label}">${label}</option>`).join("")}
         <option value="__none__">Sin quarter</option>
       `;
-      const exists = Array.from(quarterFilterEl.options).some((opt) => opt.value === prev);
-      state.releaseQuarterFilter = exists ? prev : "";
+      const optionValues = Array.from(quarterFilterEl.options).map((opt) => opt.value);
+      const hasCurrentQuarterData = releasesFiltrados.some(
+        (item) => getQuarterFilterValue(item) === currentQuarterLabel
+      );
+      const prevHasData = prev
+        ? releasesFiltrados.some((item) => getQuarterFilterValue(item) === prev)
+        : false;
+      const exists = optionValues.includes(prev);
+      let nextQuarter = exists && prevHasData ? prev : "";
+      if (!nextQuarter && optionValues.includes(currentQuarterLabel)) {
+        nextQuarter = hasCurrentQuarterData ? currentQuarterLabel : "";
+      }
+      state.releaseQuarterFilter = nextQuarter;
       quarterFilterEl.value = state.releaseQuarterFilter || "";
       if (!quarterFilterEl.dataset.bound) {
         quarterFilterEl.dataset.bound = "true";
@@ -11358,7 +12134,6 @@
       }
     }
   }
-
   async function initRetrospective(options = {}) {
     const { skipPolling = false } = options;
     const panel = qs("#retro-page");
@@ -13916,10 +14691,67 @@
     // Listado unificado: tareas + releases en una sola tabla.
   }
 
+  function buildDailyRealtimeSignature(sprintItems = [], releaseItems = []) {
+    const pick = (rows) =>
+      (Array.isArray(rows) ? rows : [])
+        .map((row) =>
+          [
+            row?.id ?? "",
+            row?.sprint_id ?? "",
+            row?.persona_id ?? "",
+            row?.issue_key ?? "",
+            row?.status ?? "",
+            row?.story_points ?? "",
+            row?.start_date ?? "",
+            row?.end_date ?? "",
+            row?.due_date ?? "",
+          ].join("|")
+        )
+        .sort()
+        .join(";");
+    return `${pick(sprintItems)}||${pick(releaseItems)}`;
+  }
+
+  async function syncDailyRealtime(options = {}) {
+    const { forceRender = false, skipWhenEditing = true } = options;
+    if (!state.base || !qs("#daily-panel")) return;
+    if (skipWhenEditing) {
+      const active = document.activeElement;
+      if (active && active.closest?.("#daily-panel")) {
+        const editing =
+          active.matches?.("input,textarea,select") ||
+          active.closest?.("#daily-form") ||
+          active.closest?.("#daily-items-table");
+        if (editing) return;
+      }
+    }
+    try {
+      const [sprintItemsRows, releaseItemsRows] = await Promise.all([
+        fetchJson("/sprint-items").catch(() => null),
+        fetchJson("/release-items").catch(() => null),
+      ]);
+      if (!Array.isArray(sprintItemsRows) || !Array.isArray(releaseItemsRows)) return;
+      const nextSignature = buildDailyRealtimeSignature(sprintItemsRows, releaseItemsRows);
+      const changed = nextSignature !== state.dailyRealtimeSignature;
+      state.base.sprintItems = sprintItemsRows;
+      state.base.releaseItems = releaseItemsRows;
+      state.dailyRealtimeSignature = nextSignature;
+      if (changed || forceRender) {
+        await renderDaily(state.base);
+      }
+    } catch {
+      // ignore live sync errors
+    }
+  }
+
   async function reloadAll() {
     const base = await loadBase();
     state.base = base;
     state.dailyCapacityCache = {};
+    state.dailyRealtimeSignature = buildDailyRealtimeSignature(
+      base.sprintItems || [],
+      base.releaseItems || []
+    );
     initForms(base);
     renderAdmin(base);
     if (qs("#dashboard")) {
@@ -13956,6 +14788,10 @@
       const base = await loadBase();
       state.base = base;
       state.dailyCapacityCache = {};
+      state.dailyRealtimeSignature = buildDailyRealtimeSignature(
+        base.sprintItems || [],
+        base.releaseItems || []
+      );
       if (qs("#dashboard")) {
         const dashboard = await loadDashboardData(base, state.selectedCelulaId);
         renderDashboard(dashboard);

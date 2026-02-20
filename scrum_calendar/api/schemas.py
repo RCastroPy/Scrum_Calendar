@@ -505,6 +505,10 @@ class TaskCommentCreate(BaseModel):
     texto: str
 
 
+class TaskCommentUpdate(BaseModel):
+    texto: str
+
+
 class TaskCommentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -647,6 +651,7 @@ class ReleaseItemOut(BaseModel):
 
 class ReleaseItemUpdate(BaseModel):
     status: Optional[str] = None
+    release_tipo: Optional[str] = None
     tipo: Optional[str] = None
     quarter: Optional[str] = None
     start_date: Optional[date] = None

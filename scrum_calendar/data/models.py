@@ -396,7 +396,7 @@ class OneOnOneSession(Base):
     id = Column(Integer, primary_key=True)
     celula_id = Column(Integer, ForeignKey("celulas.id"), nullable=False)
     persona_id = Column(Integer, ForeignKey("personas.id"), nullable=False)
-    fecha = Column(Date, nullable=False, default=date.today)
+    fecha = Column(Date, nullable=False, default=lambda: now_py().date())
     checklist = Column(Text, nullable=True)
     agreements = Column(Text, nullable=True)
     mood = Column(String(20), nullable=True)
