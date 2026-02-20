@@ -9560,10 +9560,16 @@
         colgroup.appendChild(col);
       });
       // Fix table width to the sum of column widths so resizing doesn't force other columns to shrink.
+      // Enforce a minimum overflow room so horizontal scroll is always available in backlog.
       const tableWidth = visibleColumns.reduce((acc, key) => acc + resolveWidthPx(key), 0);
-      table.style.width = `${tableWidth}px`;
-      table.style.minWidth = `${tableWidth}px`;
-      table.dataset.minWidth = String(tableWidth);
+      const viewportWidth = Number(backlogList?.getBoundingClientRect?.().width || 0);
+      const enforcedMinWidth = Math.max(
+        tableWidth,
+        (Number.isFinite(viewportWidth) && viewportWidth > 0 ? Math.round(viewportWidth) : 0) + 320
+      );
+      table.style.width = `${enforcedMinWidth}px`;
+      table.style.minWidth = `${enforcedMinWidth}px`;
+      table.dataset.minWidth = String(enforcedMinWidth);
 
       const buildStatusSelect = (task) => {
         const pill = document.createElement("span");
