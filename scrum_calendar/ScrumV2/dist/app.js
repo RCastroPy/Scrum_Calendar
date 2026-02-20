@@ -9178,7 +9178,8 @@
 	    };
 
     const attachBacklogHorizontalBar = (wrap, scroll, useBacklogDataTable) => {
-      if (!wrap || !scroll) return;
+      if (!wrap) return;
+      const baseScroll = scroll || wrap;
       if (typeof cleanupBacklogHorizontalBar === "function") {
         try {
           cleanupBacklogHorizontalBar();
@@ -9223,7 +9224,7 @@
           if (dtScroll) list.push(dtScroll);
           if (dtWrapper) list.push(dtWrapper);
         }
-        list.push(scroll);
+        list.push(baseScroll);
         return [...new Set(list.filter(Boolean))];
       };
 
@@ -9260,7 +9261,7 @@
             bestMax = candidateMax;
           }
         });
-        return best || scroll;
+        return best || baseScroll;
       };
 
       const syncRangeFromScrollable = () => {
@@ -11128,14 +11129,7 @@
 	      backlogList.appendChild(wrap);
 	      if (useBacklogDataTable) {
 	        initBacklogDataTable(table, visibleColumns);
-          if (typeof cleanupBacklogHorizontalBar === "function") {
-            try {
-              cleanupBacklogHorizontalBar();
-            } catch {
-              // ignore
-            }
-            cleanupBacklogHorizontalBar = null;
-          }
+          attachBacklogHorizontalBar(wrap, null, true);
 	      } else {
 	        attachBacklogHorizontalBar(wrap, scroll, false);
 	      }
