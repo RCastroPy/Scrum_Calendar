@@ -520,6 +520,55 @@ class TaskCommentOut(BaseModel):
     usuario: Optional[UsuarioLite] = None
 
 
+class CompraCatalogNombreIn(BaseModel):
+    nombre: str
+
+
+class CompraCatalogRenameIn(BaseModel):
+    anterior: str
+    nuevo: str
+
+
+class CompraCatalogosOut(BaseModel):
+    productos: List[str] = Field(default_factory=list)
+    supermercados: List[str] = Field(default_factory=list)
+
+
+class CompraItemCreate(BaseModel):
+    producto: str
+    precio: int = Field(ge=0)
+    cantidad: float = Field(gt=0)
+
+
+class CompraCreate(BaseModel):
+    supermercado: str
+    items: List[CompraItemCreate] = Field(default_factory=list)
+
+
+class CompraItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    compra_id: int
+    producto: str
+    precio: int
+    cantidad: float
+    total_item: int
+    creado_en: datetime
+
+
+class CompraOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    usuario_id: int
+    supermercado: str
+    total_general: int
+    fecha: datetime
+    creado_en: datetime
+    items: List[CompraItemOut] = Field(default_factory=list)
+
+
 class EventoTipoOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

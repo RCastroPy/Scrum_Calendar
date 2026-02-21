@@ -352,6 +352,66 @@ class TaskComment(Base):
     usuario = relationship("Usuario")
 
 
+class CompraCatalogProducto(Base):
+    __tablename__ = "compras_catalogo_productos"
+    __table_args__ = (
+        UniqueConstraint("usuario_id", "nombre_key", name="uq_compra_cat_prod_usuario_nombre"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    nombre = Column(String(200), nullable=False)
+    nombre_key = Column(String(200), nullable=False)
+    creado_en = Column(DateTime, nullable=False, default=now_py)
+    actualizado_en = Column(DateTime, nullable=False, default=now_py, onupdate=now_py)
+
+    usuario = relationship("Usuario")
+
+
+class CompraCatalogSupermercado(Base):
+    __tablename__ = "compras_catalogo_supermercados"
+    __table_args__ = (
+        UniqueConstraint("usuario_id", "nombre_key", name="uq_compra_cat_super_usuario_nombre"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    nombre = Column(String(200), nullable=False)
+    nombre_key = Column(String(200), nullable=False)
+    creado_en = Column(DateTime, nullable=False, default=now_py)
+    actualizado_en = Column(DateTime, nullable=False, default=now_py, onupdate=now_py)
+
+    usuario = relationship("Usuario")
+
+
+class Compra(Base):
+    __tablename__ = "compras"
+
+    id = Column(Integer, primary_key=True)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    supermercado = Column(String(200), nullable=False)
+    total_general = Column(Integer, nullable=False, default=0)
+    fecha = Column(DateTime, nullable=False, default=now_py)
+    creado_en = Column(DateTime, nullable=False, default=now_py)
+
+    usuario = relationship("Usuario")
+    items = relationship("CompraItem", back_populates="compra", cascade="all, delete-orphan")
+
+
+class CompraItem(Base):
+    __tablename__ = "compra_items"
+
+    id = Column(Integer, primary_key=True)
+    compra_id = Column(Integer, ForeignKey("compras.id"), nullable=False)
+    producto = Column(String(200), nullable=False)
+    precio = Column(Integer, nullable=False, default=0)
+    cantidad = Column(Float, nullable=False, default=1.0)
+    total_item = Column(Integer, nullable=False, default=0)
+    creado_en = Column(DateTime, nullable=False, default=now_py)
+
+    compra = relationship("Compra", back_populates="items")
+
+
 class OneOnOneNote(Base):
     __tablename__ = "oneonone_notes"
     __table_args__ = (

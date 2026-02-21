@@ -694,10 +694,11 @@
     <script src="./app.js?v=20260221compras2"></script>
     <script>
       (() => {
-        const STORAGE = {
-          products: "catalogoProductos",
-          stores: "catalogoSupermercados",
-          history: "historicosCompras",
+        const API = {
+          catalogos: "/compras/catalogos",
+          productos: "/compras/catalogos/productos",
+          supermercados: "/compras/catalogos/supermercados",
+          historicos: "/compras/historicos",
         };
 
         const state = {
@@ -767,23 +768,25 @@
         const editModal = refs.editModalEl ? new bootstrap.Modal(refs.editModalEl) : null;
         const deleteModal = refs.deleteModalEl ? new bootstrap.Modal(refs.deleteModalEl) : null;
 
-        const readStorage = (key, fallback) => {
-          try {
-            const raw = localStorage.getItem(key);
-            if (!raw) return fallback;
-            const parsed = JSON.parse(raw);
-            return Array.isArray(parsed) ? parsed : fallback;
-          } catch {
-            return fallback;
+        const apiRequest = async (url, options = {}) => {
+          const config = {
+            method: options.method || "GET",
+            credentials: "include",
+            headers: { ...(options.headers || {}) },
+          };
+          if (options.body !== undefined) {
+            config.headers["Content-Type"] = "application/json";
+            config.body = JSON.stringify(options.body);
           }
-        };
-
-        const writeStorage = (key, value) => {
-          try {
-            localStorage.setItem(key, JSON.stringify(value));
-          } catch {
-            // ignore localStorage write errors
+          const response = await fetch(url, config);
+          if (response.status === 204) return null;
+          const raw = await response.text();
+          const data = raw ? JSON.parse(raw) : null;
+          if (!response.ok) {
+            const detail = data && data.detail ? String(data.detail) : `Error ${response.status}`;
+            throw new Error(detail);
           }
+          return data;
         };
 
         const normalizeText = (value) =>
@@ -797,14 +800,44 @@
           return catalog.find((entry) => normalizeText(entry).toLowerCase() === normalized) || "";
         };
 
-        const upsertCatalogValue = (catalog, value) => {
-          const clean = normalizeText(value);
-          if (!clean) return "";
-          const exists = findCatalogValue(catalog, clean);
-          if (exists) return exists;
-          catalog.push(clean);
-          catalog.sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
-          return clean;
+        const applyCatalogos = (payload) => {
+          const productos = Array.isArray(payload?.productos)
+            ? payload.productos.map((item) => normalizeText(item)).filter(Boolean)
+            : [];
+          const supermercados = Array.isArray(payload?.supermercados)
+            ? payload.supermercados.map((item) => normalizeText(item)).filter(Boolean)
+            : [];
+          productos.sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+          supermercados.sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+          state.catalogoProductos.splice(0, state.catalogoProductos.length, ...productos);
+          state.catalogoSupermercados.splice(0, state.catalogoSupermercados.length, ...supermercados);
+        };
+
+        const mapCompraFromApi = (entry) => ({
+          id: String(entry?.id ?? ""),
+          fecha: entry?.fecha || entry?.creado_en || new Date().toISOString(),
+          supermercado: normalizeText(entry?.supermercado || ""),
+          totalGeneral: Number(entry?.total_general ?? entry?.totalGeneral ?? 0) || 0,
+          items: Array.isArray(entry?.items)
+            ? entry.items.map((item) => ({
+                id: String(item?.id ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`),
+                producto: normalizeText(item?.producto || ""),
+                precio: Number(item?.precio || 0) || 0,
+                cantidad: Number(item?.cantidad || 1) || 1,
+                totalItem:
+                  Number(item?.total_item ?? item?.totalItem ?? 0) ||
+                  Math.round((Number(item?.precio || 0) || 0) * (Number(item?.cantidad || 1) || 1)),
+              }))
+            : [],
+        });
+
+        const syncRemoteData = async () => {
+          const [catalogos, historicos] = await Promise.all([
+            apiRequest(API.catalogos),
+            apiRequest(API.historicos),
+          ]);
+          applyCatalogos(catalogos || {});
+          state.historicosCompras = Array.isArray(historicos) ? historicos.map(mapCompraFromApi) : [];
         };
 
         const formatGs = (value) => {
@@ -930,24 +963,33 @@
           return catalog.filter((entry) => normalizeText(entry).toLowerCase().includes(q)).slice(0, 8);
         };
 
-        const confirmSupermercadoInput = () => {
+        const confirmSupermercadoInput = async () => {
           const value = normalizeText(refs.inputSupermercado.value);
           if (!value) {
             refs.supermercadoError.textContent = "Supermercado obligatorio.";
             return false;
           }
-          const selected = upsertCatalogValue(state.catalogoSupermercados, value);
-          writeStorage(STORAGE.stores, state.catalogoSupermercados);
-          setSupermercadoSeleccionado(selected);
-          refs.inputSupermercado.value = selected;
-          refs.supermercadoSuggestions.classList.add("d-none");
-          refs.supermercadoError.textContent = "";
-          return true;
+          try {
+            const payload = await apiRequest(API.supermercados, {
+              method: "POST",
+              body: { nombre: value },
+            });
+            applyCatalogos(payload || {});
+            const selected = findCatalogValue(state.catalogoSupermercados, value) || value;
+            setSupermercadoSeleccionado(selected);
+            refs.inputSupermercado.value = selected;
+            refs.supermercadoSuggestions.classList.add("d-none");
+            refs.supermercadoError.textContent = "";
+            return true;
+          } catch (error) {
+            refs.supermercadoError.textContent = error?.message || "No se pudo guardar el supermercado.";
+            return false;
+          }
         };
 
-        const ensureSupermercadoSeleccionado = () => {
+        const ensureSupermercadoSeleccionado = async () => {
           if (state.compraActual.supermercado) return true;
-          if (confirmSupermercadoInput()) return true;
+          if (await confirmSupermercadoInput()) return true;
           refs.supermercadoError.textContent = "Debes seleccionar un supermercado.";
           return false;
         };
@@ -1002,73 +1044,69 @@
             .join("");
         };
 
-        const addCatalogoProducto = () => {
+        const addCatalogoProducto = async () => {
           const value = normalizeText(refs.catalogoProductoInput.value);
           if (!value) {
             refs.catalogoProductoError.textContent = "Debes ingresar un producto.";
             return;
           }
-          const before = state.catalogoProductos.length;
-          upsertCatalogValue(state.catalogoProductos, value);
-          if (state.catalogoProductos.length === before) {
-            refs.catalogoProductoError.textContent = "Ese producto ya existe en el catalogo.";
-            return;
+          try {
+            const payload = await apiRequest(API.productos, {
+              method: "POST",
+              body: { nombre: value },
+            });
+            applyCatalogos(payload || {});
+            refs.catalogoProductoInput.value = "";
+            refs.catalogoProductoError.textContent = "";
+            renderCatalogoProductos();
+          } catch (error) {
+            refs.catalogoProductoError.textContent = error?.message || "No se pudo guardar el producto.";
           }
-          writeStorage(STORAGE.products, state.catalogoProductos);
-          refs.catalogoProductoInput.value = "";
-          refs.catalogoProductoError.textContent = "";
-          renderCatalogoProductos();
         };
 
-        const editCatalogoProducto = (currentProduct) => {
+        const editCatalogoProducto = async (currentProduct) => {
           const current = normalizeText(currentProduct);
           if (!current) return;
           const newValue = normalizeText(window.prompt("Editar producto", current) || "");
           if (!newValue || newValue.toLowerCase() === current.toLowerCase()) return;
-          const existing = findCatalogValue(state.catalogoProductos, newValue);
-          if (existing && existing.toLowerCase() !== current.toLowerCase()) {
-            refs.catalogoProductoError.textContent = "Ya existe un producto con ese nombre.";
-            return;
+          try {
+            const payload = await apiRequest(API.productos, {
+              method: "PUT",
+              body: { anterior: current, nuevo: newValue },
+            });
+            applyCatalogos(payload || {});
+            replaceProductInCurrentItems(current, newValue);
+            if (normalizeText(refs.inputProducto.value).toLowerCase() === current.toLowerCase()) {
+              refs.inputProducto.value = newValue;
+            }
+            if (normalizeText(refs.editProducto.value).toLowerCase() === current.toLowerCase()) {
+              refs.editProducto.value = newValue;
+            }
+            refs.catalogoProductoError.textContent = "";
+            renderItems();
+            renderCatalogoProductos();
+          } catch (error) {
+            refs.catalogoProductoError.textContent = error?.message || "No se pudo editar el producto.";
           }
-          state.catalogoProductos = state.catalogoProductos
-            .filter((item) => normalizeText(item).toLowerCase() !== current.toLowerCase())
-            .concat(newValue);
-          state.catalogoProductos.sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
-          writeStorage(STORAGE.products, state.catalogoProductos);
-          replaceProductInCurrentItems(current, newValue);
-          if (
-            normalizeText(refs.inputProducto.value).toLowerCase() ===
-            current.toLowerCase()
-          ) {
-            refs.inputProducto.value = newValue;
-          }
-          if (
-            normalizeText(refs.editProducto.value).toLowerCase() ===
-            current.toLowerCase()
-          ) {
-            refs.editProducto.value = newValue;
-          }
-          refs.catalogoProductoError.textContent = "";
-          renderItems();
-          renderCatalogoProductos();
         };
 
-        const deleteCatalogoProducto = (productToDelete) => {
+        const deleteCatalogoProducto = async (productToDelete) => {
           const product = normalizeText(productToDelete);
           if (!product) return;
           if (!window.confirm(`¿Eliminar "${product}" del catalogo?`)) return;
-          state.catalogoProductos = state.catalogoProductos.filter(
-            (item) => normalizeText(item).toLowerCase() !== product.toLowerCase()
-          );
-          writeStorage(STORAGE.products, state.catalogoProductos);
-          refs.catalogoProductoError.textContent = "";
-          if (
-            normalizeText(refs.inputProducto.value).toLowerCase() ===
-            product.toLowerCase()
-          ) {
-            refs.inputProducto.value = "";
+          try {
+            const payload = await apiRequest(`${API.productos}?nombre=${encodeURIComponent(product)}`, {
+              method: "DELETE",
+            });
+            applyCatalogos(payload || {});
+            refs.catalogoProductoError.textContent = "";
+            if (normalizeText(refs.inputProducto.value).toLowerCase() === product.toLowerCase()) {
+              refs.inputProducto.value = "";
+            }
+            renderCatalogoProductos();
+          } catch (error) {
+            refs.catalogoProductoError.textContent = error?.message || "No se pudo eliminar el producto.";
           }
-          renderCatalogoProductos();
         };
 
         const renderItems = () => {
@@ -1108,9 +1146,9 @@
           updateTotalHeader();
         };
 
-        const addItem = () => {
+        const addItem = async () => {
           refs.formItemError.textContent = "";
-          if (!ensureSupermercadoSeleccionado()) {
+          if (!(await ensureSupermercadoSeleccionado())) {
             refs.formItemError.textContent = "Completa el supermercado antes de agregar items.";
             return;
           }
@@ -1119,7 +1157,6 @@
             refs.formItemError.textContent = "Debes ingresar un producto.";
             return;
           }
-          const producto = upsertCatalogValue(state.catalogoProductos, productoInput);
           const precio = parseMoney(refs.inputPrecio.value);
           if (!precio || precio <= 0) {
             refs.formItemError.textContent = "Debes ingresar un precio mayor a 0.";
@@ -1135,7 +1172,17 @@
             refs.formItemError.textContent = "Cantidad invalida.";
             return;
           }
-          writeStorage(STORAGE.products, state.catalogoProductos);
+          try {
+            const payload = await apiRequest(API.productos, {
+              method: "POST",
+              body: { nombre: productoInput },
+            });
+            applyCatalogos(payload || {});
+          } catch (error) {
+            refs.formItemError.textContent = error?.message || "No se pudo guardar el producto.";
+            return;
+          }
+          const producto = findCatalogValue(state.catalogoProductos, productoInput) || productoInput;
           state.compraActual.items.push({
             id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
             producto,
@@ -1159,9 +1206,10 @@
           editModal.show();
         };
 
-        const saveEditedItem = () => {
+        const saveEditedItem = async () => {
           const item = state.compraActual.items.find((entry) => entry.id === state.editItemId);
           if (!item) return;
+          refs.editError.textContent = "";
           const productoInput = normalizeText(refs.editProducto.value);
           if (!productoInput) {
             refs.editError.textContent = "Debes ingresar un producto.";
@@ -1182,8 +1230,17 @@
             refs.editError.textContent = "Cantidad invalida.";
             return;
           }
-          const producto = upsertCatalogValue(state.catalogoProductos, productoInput);
-          writeStorage(STORAGE.products, state.catalogoProductos);
+          try {
+            const payload = await apiRequest(API.productos, {
+              method: "POST",
+              body: { nombre: productoInput },
+            });
+            applyCatalogos(payload || {});
+          } catch (error) {
+            refs.editError.textContent = error?.message || "No se pudo guardar el producto.";
+            return;
+          }
+          const producto = findCatalogValue(state.catalogoProductos, productoInput) || productoInput;
           item.producto = producto;
           item.precio = precio;
           item.cantidad = cantidad;
@@ -1203,22 +1260,32 @@
           if (deleteModal) deleteModal.hide();
         };
 
-        const finalizarCompra = () => {
-          if (!ensureSupermercadoSeleccionado()) return;
+        const finalizarCompra = async () => {
+          if (!(await ensureSupermercadoSeleccionado())) return;
           if (!state.compraActual.items.length) {
             refs.formItemError.textContent = "Debes agregar al menos un item para finalizar.";
             return;
           }
-          const compra = {
-            id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-            fecha: new Date().toISOString(),
-            supermercado: state.compraActual.supermercado,
-            items: state.compraActual.items.map((item) => ({ ...item })),
-            totalGeneral: totalGeneral(),
-          };
-          state.historicosCompras.unshift(compra);
-          writeStorage(STORAGE.history, state.historicosCompras);
-          state.highlightedHistoryId = compra.id;
+          try {
+            const payload = await apiRequest(API.historicos, {
+              method: "POST",
+              body: {
+                supermercado: state.compraActual.supermercado,
+                items: state.compraActual.items.map((item) => ({
+                  producto: item.producto,
+                  precio: Math.max(0, Math.round(Number(item.precio || 0))),
+                  cantidad: Number(item.cantidad || 1),
+                })),
+              },
+            });
+            const compra = mapCompraFromApi(payload || {});
+            state.historicosCompras.unshift(compra);
+            state.highlightedHistoryId = compra.id;
+            await syncRemoteData();
+          } catch (error) {
+            refs.formItemError.textContent = error?.message || "No se pudo finalizar la compra.";
+            return;
+          }
           state.compraActual = { supermercado: "", items: [] };
           refs.inputSupermercado.value = "";
           setSupermercadoSeleccionado("");
@@ -1229,15 +1296,33 @@
           switchView("historicos");
         };
 
-        const deleteHistory = (historyId) => {
-          state.historicosCompras = state.historicosCompras.filter((entry) => entry.id !== historyId);
-          writeStorage(STORAGE.history, state.historicosCompras);
+        const deleteHistory = async (historyId) => {
+          try {
+            await apiRequest(`${API.historicos}/${encodeURIComponent(historyId)}`, { method: "DELETE" });
+          } catch (error) {
+            refs.formItemError.textContent = error?.message || "No se pudo eliminar la compra.";
+            return;
+          }
+          state.historicosCompras = state.historicosCompras.filter((entry) => String(entry.id) !== String(historyId));
+          renderHistoricos();
+          renderInicioResumen();
+        };
+
+        const clearAllHistory = async () => {
+          try {
+            await apiRequest(API.historicos, { method: "DELETE" });
+          } catch (error) {
+            refs.formItemError.textContent = error?.message || "No se pudo limpiar el historico.";
+            return;
+          }
+          state.historicosCompras = [];
+          state.highlightedHistoryId = null;
           renderHistoricos();
           renderInicioResumen();
         };
 
         const repeatHistory = (historyId) => {
-          const entry = state.historicosCompras.find((item) => item.id === historyId);
+          const entry = state.historicosCompras.find((item) => String(item.id) === String(historyId));
           if (!entry) return;
           state.compraActual.supermercado = entry.supermercado;
           state.compraActual.items = (entry.items || []).map((item) => ({
@@ -1252,7 +1337,7 @@
 
         const openHistoryDetail = (historyId) => {
           state.selectedHistoryId = historyId;
-          const entry = state.historicosCompras.find((item) => item.id === historyId);
+          const entry = state.historicosCompras.find((item) => String(item.id) === String(historyId));
           if (!entry) {
             refs.detalleCompra.innerHTML = '<p class="text-muted mb-0">Compra no encontrada.</p>';
             switchView("detalle");
@@ -1338,12 +1423,8 @@
           });
         };
 
-        const bootstrapData = () => {
-          state.catalogoProductos = readStorage(STORAGE.products, []);
-          state.catalogoSupermercados = readStorage(STORAGE.stores, []);
-          state.historicosCompras = readStorage(STORAGE.history, []);
-          state.catalogoProductos.sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
-          state.catalogoSupermercados.sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+        const bootstrapData = async () => {
+          await syncRemoteData();
         };
 
         const bindEvents = () => {
@@ -1351,8 +1432,14 @@
             state.highlightedHistoryId = null;
             switchView("nueva");
           });
-          refs.btnHistoricos.addEventListener("click", () => {
-            renderHistoricos();
+          refs.btnHistoricos.addEventListener("click", async () => {
+            try {
+              await syncRemoteData();
+              renderHistoricos();
+              renderInicioResumen();
+            } catch (error) {
+              refs.formItemError.textContent = error?.message || "No se pudieron cargar los historicos.";
+            }
             switchView("historicos");
           });
           refs.btnProductos.addEventListener("click", () => {
@@ -1364,13 +1451,10 @@
           refs.btnVolverNuevaProductos.addEventListener("click", () => switchView("nueva"));
           refs.btnVolverInicioHistoricos.addEventListener("click", () => switchView("inicio"));
           refs.btnVolverHistoricos.addEventListener("click", () => switchView("historicos"));
-          refs.btnLimpiarHistorico.addEventListener("click", () => {
+          refs.btnLimpiarHistorico.addEventListener("click", async () => {
             if (!state.historicosCompras.length) return;
             if (!window.confirm("¿Eliminar todo el historico?")) return;
-            state.historicosCompras = [];
-            writeStorage(STORAGE.history, state.historicosCompras);
-            renderHistoricos();
-            renderInicioResumen();
+            await clearAllHistory();
           });
 
           bindAutocomplete(
@@ -1381,9 +1465,13 @@
               refs.inputSupermercado.value = value;
               setSupermercadoSeleccionado(value);
             },
-            confirmSupermercadoInput
+            () => {
+              void confirmSupermercadoInput();
+            }
           );
-          refs.btnUsarSupermercado.addEventListener("click", confirmSupermercadoInput);
+          refs.btnUsarSupermercado.addEventListener("click", async () => {
+            await confirmSupermercadoInput();
+          });
           refs.inputSupermercado.addEventListener("input", () => {
             refs.supermercadoError.textContent = "";
           });
@@ -1412,24 +1500,30 @@
           refs.inputCantidad.addEventListener("input", () => {
             refs.formItemError.textContent = "";
           });
-          refs.btnAgregarItem.addEventListener("click", addItem);
-          refs.btnFinalizar.addEventListener("click", finalizarCompra);
-          refs.catalogoProductoAgregar.addEventListener("click", addCatalogoProducto);
+          refs.btnAgregarItem.addEventListener("click", async () => {
+            await addItem();
+          });
+          refs.btnFinalizar.addEventListener("click", async () => {
+            await finalizarCompra();
+          });
+          refs.catalogoProductoAgregar.addEventListener("click", async () => {
+            await addCatalogoProducto();
+          });
           refs.catalogoProductoInput.addEventListener("keydown", (event) => {
             if (event.key === "Enter") {
               event.preventDefault();
-              addCatalogoProducto();
+              void addCatalogoProducto();
             }
           });
           refs.catalogoProductosLista.addEventListener("click", (event) => {
             const editBtn = event.target.closest(".js-edit-catalog-product");
             if (editBtn) {
-              editCatalogoProducto(decodeURIComponent(editBtn.dataset.product || ""));
+              void editCatalogoProducto(decodeURIComponent(editBtn.dataset.product || ""));
               return;
             }
             const deleteBtn = event.target.closest(".js-delete-catalog-product");
             if (deleteBtn) {
-              deleteCatalogoProducto(decodeURIComponent(deleteBtn.dataset.product || ""));
+              void deleteCatalogoProducto(decodeURIComponent(deleteBtn.dataset.product || ""));
             }
           });
 
@@ -1453,7 +1547,9 @@
               refs.editProducto.value = value;
               refs.editProductoSuggestions.classList.add("d-none");
             },
-            saveEditedItem
+            () => {
+              void saveEditedItem();
+            }
           );
           refs.editPrecio.addEventListener("input", () => {
             refs.editTotal.textContent = formatGs(parseMoney(refs.editPrecio.value) * parseQuantity(refs.editCantidad.value));
@@ -1461,7 +1557,9 @@
           refs.editCantidad.addEventListener("input", () => {
             refs.editTotal.textContent = formatGs(parseMoney(refs.editPrecio.value) * parseQuantity(refs.editCantidad.value));
           });
-          refs.btnGuardarEdicion.addEventListener("click", saveEditedItem);
+          refs.btnGuardarEdicion.addEventListener("click", async () => {
+            await saveEditedItem();
+          });
           refs.btnConfirmarEliminar.addEventListener("click", deleteItem);
 
           refs.historicosLista.addEventListener("click", (event) => {
@@ -1477,7 +1575,7 @@
             }
             const deleteBtn = event.target.closest(".js-eliminar-compra");
             if (deleteBtn && window.confirm("¿Eliminar esta compra del historico?")) {
-              deleteHistory(deleteBtn.dataset.id);
+              void deleteHistory(deleteBtn.dataset.id);
             }
           });
 
@@ -1490,8 +1588,12 @@
           });
         };
 
-        const init = () => {
-          bootstrapData();
+        const init = async () => {
+          try {
+            await bootstrapData();
+          } catch (error) {
+            refs.formItemError.textContent = error?.message || "No se pudieron cargar datos de compras.";
+          }
           bindEvents();
           renderInicioResumen();
           renderPreviewItemTotal();
@@ -1502,7 +1604,7 @@
           switchView("inicio");
         };
 
-        init();
+        void init();
       })();
     </script>
   </body>

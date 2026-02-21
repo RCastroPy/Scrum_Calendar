@@ -2,6 +2,7 @@ import csv
 import io
 import json
 import re
+import threading
 import unicodedata
 from datetime import date, datetime, timedelta
 import time
@@ -18,6 +19,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Request,
     Response,
     UploadFile,
     WebSocket,
@@ -94,6 +96,11 @@ from api.schemas import (
     TaskCommentCreate,
     TaskCommentUpdate,
     TaskCommentOut,
+    CompraCatalogNombreIn,
+    CompraCatalogRenameIn,
+    CompraCatalogosOut,
+    CompraCreate,
+    CompraOut,
     QuarterOptionCreate,
     QuarterOptionOut,
     QuarterOptionUpdate,
@@ -104,7 +111,9 @@ from api.schemas import (
 from core.calendar_engine import dias_habiles
 from core.metrics import porcentaje_capacidad
 from core.sprint_capacity import clasificar_estado
-from core.security import hash_password, new_session_token, verify_password
+from core.audit import log_security_event
+from core.security import hash_password, needs_password_rehash, new_session_token, verify_password
+from config.settings import settings
 from data.db import SessionLocal, get_db
 from data.models import (
     Celula,
@@ -113,6 +122,10 @@ from data.models import (
     Feriado,
     Task,
     TaskComment,
+    CompraCatalogProducto,
+    CompraCatalogSupermercado,
+    Compra,
+    CompraItem,
     OneOnOneEntry,
     OneOnOneNote,
     OneOnOneSession,
@@ -143,6 +156,112 @@ SESSION_COOKIE = "scrum_session"
 SESSION_DAYS = 14
 TASK_STATUSES = {"backlog", "todo", "doing", "done", "archived"}
 TASK_PRIORITIES = {"baja", "media", "alta", "urgente"}
+
+
+class LoginRateLimiter:
+    def __init__(self, max_attempts: int, window_seconds: int, block_seconds: int) -> None:
+        self.max_attempts = max(1, int(max_attempts or 1))
+        self.window_seconds = max(1, int(window_seconds or 1))
+        self.block_seconds = max(1, int(block_seconds or 1))
+        self._lock = threading.Lock()
+        self._state: dict[str, dict[str, object]] = {}
+
+    def _prune(self, attempts: list[float], now_ts: float) -> list[float]:
+        floor = now_ts - self.window_seconds
+        return [ts for ts in attempts if ts >= floor]
+
+    def check(self, key: str) -> tuple[bool, int]:
+        now_ts = time.time()
+        with self._lock:
+            row = self._state.get(key)
+            if not row:
+                return True, 0
+            blocked_until = float(row.get("blocked_until") or 0)
+            if blocked_until > now_ts:
+                return False, max(1, int(blocked_until - now_ts))
+            attempts = self._prune(list(row.get("attempts") or []), now_ts)
+            if attempts:
+                row["attempts"] = attempts
+                row["blocked_until"] = 0.0
+                self._state[key] = row
+            else:
+                self._state.pop(key, None)
+            return True, 0
+
+    def fail(self, key: str) -> None:
+        now_ts = time.time()
+        with self._lock:
+            row = self._state.get(key) or {"attempts": [], "blocked_until": 0.0}
+            attempts = self._prune(list(row.get("attempts") or []), now_ts)
+            attempts.append(now_ts)
+            if len(attempts) >= self.max_attempts:
+                row["attempts"] = []
+                row["blocked_until"] = now_ts + self.block_seconds
+            else:
+                row["attempts"] = attempts
+                row["blocked_until"] = 0.0
+            self._state[key] = row
+
+    def success(self, key: str) -> None:
+        with self._lock:
+            self._state.pop(key, None)
+
+
+LOGIN_RATE_LIMITER = LoginRateLimiter(
+    settings.login_rate_limit_max_attempts,
+    settings.login_rate_limit_window_seconds,
+    settings.login_rate_limit_block_seconds,
+)
+
+
+def _request_ip(request: Request) -> str:
+    forwarded = (request.headers.get("x-forwarded-for") or "").strip()
+    if forwarded:
+        first = forwarded.split(",")[0].strip()
+        if first:
+            return first
+    real_ip = (request.headers.get("x-real-ip") or "").strip()
+    if real_ip:
+        return real_ip
+    host = request.client.host if request.client else ""
+    return host or "unknown"
+
+
+def _login_rate_key(request: Request, username: str) -> str:
+    return f"{_request_ip(request)}::{(username or '').strip().lower()}"
+
+
+def _enforce_login_rate_limit(request: Request, username: str) -> str:
+    key = _login_rate_key(request, username)
+    if not settings.login_rate_limit_enabled:
+        return key
+    allowed, retry_after = LOGIN_RATE_LIMITER.check(key)
+    if allowed:
+        return key
+    log_security_event(
+        "login_rate_limited",
+        "WARNING",
+        username=(username or "").strip().lower(),
+        ip=_request_ip(request),
+        retry_after_seconds=retry_after,
+    )
+    raise HTTPException(
+        status_code=429,
+        detail="Demasiados intentos de login. Reintenta en unos minutos.",
+        headers={"Retry-After": str(retry_after)},
+    )
+
+
+def set_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        SESSION_COOKIE,
+        token,
+        httponly=True,
+        samesite="lax",
+        secure=settings.cookie_secure,
+        max_age=SESSION_DAYS * 24 * 3600,
+        path="/",
+    )
 
 
 def _task_tree_by_celula(db: Session, celula_id: Optional[int]):
@@ -260,6 +379,11 @@ def normalize_text(value: str) -> str:
     return cleaned.strip().lower()
 
 
+def clean_label(value: str) -> str:
+    cleaned = re.sub(r"\s+", " ", (value or "").strip())
+    return cleaned
+
+
 def normalize_quarter_label(value: str) -> str:
     raw = (value or "").strip().upper()
     if not raw:
@@ -312,6 +436,18 @@ def require_user(db: Session, token: Optional[str]) -> Usuario:
     user = get_user_from_token(db, token)
     if not user:
         raise HTTPException(status_code=401, detail="No autenticado")
+    return user
+
+
+def get_current_user(
+    scrum_session: Optional[str] = Cookie(default=None),
+    db: Session = Depends(get_db),
+) -> Usuario:
+    return require_user(db, scrum_session)
+
+
+def get_current_admin(user: Usuario = Depends(get_current_user)) -> Usuario:
+    require_admin(user)
     return user
 
 
@@ -476,34 +612,47 @@ def obtener_tiempo():
 
 
 @router.post("/auth/login", response_model=UsuarioOut)
-def login(payload: AuthRequest, response: Response, db: Session = Depends(get_db)):
+def login(payload: AuthRequest, response: Response, request: Request, db: Session = Depends(get_db)):
     username = (payload.username or "").strip().lower()
     if not username or not payload.password:
         raise HTTPException(status_code=400, detail="Credenciales invalidas")
+    rate_key = _enforce_login_rate_limit(request, username)
     user = db.query(Usuario).filter(Usuario.username == username).first()
     if not user or not verify_password(payload.password, user.password_hash):
+        if settings.login_rate_limit_enabled:
+            LOGIN_RATE_LIMITER.fail(rate_key)
+        log_security_event("login_failed", "WARNING", username=username, ip=_request_ip(request))
         raise HTTPException(status_code=401, detail="Credenciales invalidas")
     if not user.activo:
+        if settings.login_rate_limit_enabled:
+            LOGIN_RATE_LIMITER.fail(rate_key)
+        log_security_event(
+            "login_blocked_inactive_user",
+            "WARNING",
+            username=username,
+            user_id=user.id,
+            ip=_request_ip(request),
+        )
         raise HTTPException(status_code=403, detail="Usuario inactivo")
+    if settings.login_rate_limit_enabled:
+        LOGIN_RATE_LIMITER.success(rate_key)
+    if needs_password_rehash(user.password_hash):
+        user.password_hash = hash_password(payload.password)
+        log_security_event("password_rehashed", "INFO", username=username, user_id=user.id)
     token = new_session_token()
     expires_at = now_py() + timedelta(days=SESSION_DAYS)
     session = Sesion(usuario_id=user.id, token=token, expira_en=expires_at)
     db.add(session)
     db.commit()
-    response.set_cookie(
-        SESSION_COOKIE,
-        token,
-        httponly=True,
-        samesite="lax",
-        max_age=SESSION_DAYS * 24 * 3600,
-        path="/",
-    )
+    log_security_event("login_success", "INFO", username=username, user_id=user.id, ip=_request_ip(request))
+    set_session_cookie(response, token)
     return user
 
 
 @router.post("/auth/login-form")
 def login_form(
     response: Response,
+    request: Request,
     username: str = Form(...),
     password: str = Form(...),
     db: Session = Depends(get_db),
@@ -519,40 +668,61 @@ def login_form(
     if not normalized or not password:
         # Keep semantics similar to JSON login; UI will render login again.
         raise HTTPException(status_code=400, detail="Credenciales invalidas")
+    rate_key = _enforce_login_rate_limit(request, normalized)
     user = db.query(Usuario).filter(Usuario.username == normalized).first()
     if not user or not verify_password(password, user.password_hash):
+        if settings.login_rate_limit_enabled:
+            LOGIN_RATE_LIMITER.fail(rate_key)
+        log_security_event("login_failed", "WARNING", username=normalized, ip=_request_ip(request))
         raise HTTPException(status_code=401, detail="Credenciales invalidas")
     if not user.activo:
+        if settings.login_rate_limit_enabled:
+            LOGIN_RATE_LIMITER.fail(rate_key)
+        log_security_event(
+            "login_blocked_inactive_user",
+            "WARNING",
+            username=normalized,
+            user_id=user.id,
+            ip=_request_ip(request),
+        )
         raise HTTPException(status_code=403, detail="Usuario inactivo")
+    if settings.login_rate_limit_enabled:
+        LOGIN_RATE_LIMITER.success(rate_key)
+    if needs_password_rehash(user.password_hash):
+        user.password_hash = hash_password(password)
+        log_security_event("password_rehashed", "INFO", username=normalized, user_id=user.id)
 
     token = new_session_token()
     expires_at = now_py() + timedelta(days=SESSION_DAYS)
     session = Sesion(usuario_id=user.id, token=token, expira_en=expires_at)
     db.add(session)
     db.commit()
+    log_security_event("login_success", "INFO", username=normalized, user_id=user.id, ip=_request_ip(request))
 
     redirect = RedirectResponse(url="/ui/index.html", status_code=303)
-    redirect.set_cookie(
-        SESSION_COOKIE,
-        token,
-        httponly=True,
-        samesite="lax",
-        max_age=SESSION_DAYS * 24 * 3600,
-        path="/",
-    )
+    set_session_cookie(redirect, token)
     return redirect
 
 
 @router.post("/auth/logout")
 def logout(
     response: Response,
+    request: Request,
     scrum_session: Optional[str] = Cookie(default=None),
     db: Session = Depends(get_db),
 ):
+    user = get_user_from_token(db, scrum_session)
     if scrum_session:
         db.query(Sesion).filter(Sesion.token == scrum_session).delete(synchronize_session=False)
         db.commit()
     response.delete_cookie(SESSION_COOKIE, path="/")
+    log_security_event(
+        "logout",
+        "INFO",
+        user_id=user.id if user else None,
+        username=user.username if user else None,
+        ip=_request_ip(request),
+    )
     return {"ok": True}
 
 
@@ -565,9 +735,10 @@ def auth_me(scrum_session: Optional[str] = Cookie(default=None), db: Session = D
 
 
 @router.post("/auth/bootstrap", response_model=UsuarioOut)
-def bootstrap(payload: AuthRequest, response: Response, db: Session = Depends(get_db)):
+def bootstrap(payload: AuthRequest, response: Response, request: Request, db: Session = Depends(get_db)):
     exists = db.query(Usuario.id).limit(1).first()
     if exists:
+        log_security_event("bootstrap_rejected", "WARNING", reason="users_already_exist", ip=_request_ip(request))
         raise HTTPException(status_code=409, detail="Usuarios ya existen")
     username = (payload.username or "").strip().lower()
     if not username or not payload.password:
@@ -586,36 +757,22 @@ def bootstrap(payload: AuthRequest, response: Response, db: Session = Depends(ge
     session = Sesion(usuario_id=user.id, token=token, expira_en=expires_at)
     db.add(session)
     db.commit()
-    response.set_cookie(
-        SESSION_COOKIE,
-        token,
-        httponly=True,
-        samesite="lax",
-        max_age=SESSION_DAYS * 24 * 3600,
-        path="/",
-    )
+    log_security_event("bootstrap_success", "WARNING", username=username, user_id=user.id, ip=_request_ip(request))
+    set_session_cookie(response, token)
     return user
 
 
 @router.get("/usuarios", response_model=List[UsuarioOut])
-def listar_usuarios(scrum_session: Optional[str] = Cookie(default=None), db: Session = Depends(get_db)):
-    user = get_user_from_token(db, scrum_session)
-    if not user:
-        raise HTTPException(status_code=401, detail="No autenticado")
-    require_admin(user)
+def listar_usuarios(_: Usuario = Depends(get_current_admin), db: Session = Depends(get_db)):
     return db.query(Usuario).order_by(Usuario.id).all()
 
 
 @router.post("/usuarios", response_model=UsuarioOut, status_code=status.HTTP_201_CREATED)
 def crear_usuario(
     payload: UsuarioCreate,
-    scrum_session: Optional[str] = Cookie(default=None),
+    current_user: Usuario = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    user = get_user_from_token(db, scrum_session)
-    if not user:
-        raise HTTPException(status_code=401, detail="No autenticado")
-    require_admin(user)
     username = (payload.username or "").strip().lower()
     if not username or not payload.password:
         raise HTTPException(status_code=400, detail="Credenciales invalidas")
@@ -633,6 +790,15 @@ def crear_usuario(
     db.add(nuevo)
     db.commit()
     db.refresh(nuevo)
+    log_security_event(
+        "user_created",
+        "INFO",
+        by_user_id=current_user.id,
+        by_username=current_user.username,
+        target_user_id=nuevo.id,
+        target_username=nuevo.username,
+        target_role=nuevo.rol,
+    )
     return nuevo
 
 
@@ -640,13 +806,9 @@ def crear_usuario(
 def actualizar_usuario(
     user_id: int,
     payload: UsuarioUpdate,
-    scrum_session: Optional[str] = Cookie(default=None),
+    current_user: Usuario = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    user = get_user_from_token(db, scrum_session)
-    if not user:
-        raise HTTPException(status_code=401, detail="No autenticado")
-    require_admin(user)
     target = db.get(Usuario, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
@@ -679,6 +841,16 @@ def actualizar_usuario(
         target.password_hash = hash_password(payload.password)
     db.commit()
     db.refresh(target)
+    log_security_event(
+        "user_updated",
+        "INFO",
+        by_user_id=current_user.id,
+        by_username=current_user.username,
+        target_user_id=target.id,
+        target_username=target.username,
+        target_role=target.rol,
+        target_active=target.activo,
+    )
     return target
 
 
@@ -2766,7 +2938,11 @@ def listar_celulas_publicas(db: Session = Depends(get_db)):
 
 
 @router.post("/celulas", response_model=CelulaOut, status_code=status.HTTP_201_CREATED)
-def crear_celula(payload: CelulaCreate, db: Session = Depends(get_db)):
+def crear_celula(
+    payload: CelulaCreate,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     existente = db.query(Celula).filter(Celula.nombre == payload.nombre).first()
     if existente:
         raise HTTPException(status_code=409, detail="Celula ya existe")
@@ -2784,7 +2960,12 @@ def crear_celula(payload: CelulaCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/celulas/{celula_id}", response_model=CelulaOut)
-def actualizar_celula(celula_id: int, payload: CelulaUpdate, db: Session = Depends(get_db)):
+def actualizar_celula(
+    celula_id: int,
+    payload: CelulaUpdate,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     celula = db.get(Celula, celula_id)
     if not celula:
         raise HTTPException(status_code=404, detail="Celula no encontrada")
@@ -2810,7 +2991,11 @@ def actualizar_celula(celula_id: int, payload: CelulaUpdate, db: Session = Depen
 
 
 @router.delete("/celulas/{celula_id}", response_model=CelulaOut)
-def desactivar_celula(celula_id: int, db: Session = Depends(get_db)):
+def desactivar_celula(
+    celula_id: int,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     celula = db.get(Celula, celula_id)
     if not celula:
         raise HTTPException(status_code=404, detail="Celula no encontrada")
@@ -2834,7 +3019,11 @@ def listar_personas(db: Session = Depends(get_db)):
 
 
 @router.post("/personas", response_model=PersonaOut, status_code=status.HTTP_201_CREATED)
-def crear_persona(payload: PersonaCreate, db: Session = Depends(get_db)):
+def crear_persona(
+    payload: PersonaCreate,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     celulas = []
     if payload.celulas_ids is not None:
         if payload.celulas_ids:
@@ -2858,7 +3047,12 @@ def crear_persona(payload: PersonaCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/personas/{persona_id}", response_model=PersonaOut)
-def actualizar_persona(persona_id: int, payload: PersonaUpdate, db: Session = Depends(get_db)):
+def actualizar_persona(
+    persona_id: int,
+    payload: PersonaUpdate,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     persona = db.get(Persona, persona_id)
     if not persona:
         raise HTTPException(status_code=404, detail="Persona no encontrada")
@@ -2890,7 +3084,11 @@ def actualizar_persona(persona_id: int, payload: PersonaUpdate, db: Session = De
 
 
 @router.delete("/personas/{persona_id}", response_model=PersonaOut)
-def desactivar_persona(persona_id: int, db: Session = Depends(get_db)):
+def desactivar_persona(
+    persona_id: int,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     persona = db.get(Persona, persona_id)
     if not persona:
         raise HTTPException(status_code=404, detail="Persona no encontrada")
@@ -2909,7 +3107,11 @@ def listar_feriados(db: Session = Depends(get_db)):
 
 
 @router.post("/feriados", response_model=FeriadoOut, status_code=status.HTTP_201_CREATED)
-def crear_feriado(payload: FeriadoCreate, db: Session = Depends(get_db)):
+def crear_feriado(
+    payload: FeriadoCreate,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     existente = db.query(Feriado).filter(Feriado.fecha == payload.fecha).first()
     if existente:
         raise HTTPException(status_code=409, detail="Feriado ya existe")
@@ -2931,7 +3133,12 @@ def crear_feriado(payload: FeriadoCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/feriados/{feriado_id}", response_model=FeriadoOut)
-def actualizar_feriado(feriado_id: int, payload: FeriadoUpdate, db: Session = Depends(get_db)):
+def actualizar_feriado(
+    feriado_id: int,
+    payload: FeriadoUpdate,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     feriado = db.get(Feriado, feriado_id)
     if not feriado:
         raise HTTPException(status_code=404, detail="Feriado no encontrado")
@@ -2958,7 +3165,11 @@ def actualizar_feriado(feriado_id: int, payload: FeriadoUpdate, db: Session = De
 
 
 @router.delete("/feriados/{feriado_id}", response_model=FeriadoOut)
-def desactivar_feriado(feriado_id: int, db: Session = Depends(get_db)):
+def desactivar_feriado(
+    feriado_id: int,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     feriado = db.get(Feriado, feriado_id)
     if not feriado:
         raise HTTPException(status_code=404, detail="Feriado no encontrado")
@@ -2973,7 +3184,11 @@ def listar_sprints(db: Session = Depends(get_db)):
 
 
 @router.post("/sprints", response_model=SprintOut, status_code=status.HTTP_201_CREATED)
-def crear_sprint(payload: SprintCreate, db: Session = Depends(get_db)):
+def crear_sprint(
+    payload: SprintCreate,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     if payload.fecha_inicio > payload.fecha_fin:
         raise HTTPException(status_code=400, detail="Rango de fechas invalido")
     celula = db.get(Celula, payload.celula_id)
@@ -2992,7 +3207,12 @@ def crear_sprint(payload: SprintCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/sprints/{sprint_id}", response_model=SprintOut)
-def actualizar_sprint(sprint_id: int, payload: SprintUpdate, db: Session = Depends(get_db)):
+def actualizar_sprint(
+    sprint_id: int,
+    payload: SprintUpdate,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     sprint = db.get(Sprint, sprint_id)
     if not sprint:
         raise HTTPException(status_code=404, detail="Sprint no encontrado")
@@ -3015,7 +3235,11 @@ def actualizar_sprint(sprint_id: int, payload: SprintUpdate, db: Session = Depen
 
 
 @router.delete("/sprints/{sprint_id}", response_model=SprintOut)
-def eliminar_sprint(sprint_id: int, db: Session = Depends(get_db)):
+def eliminar_sprint(
+    sprint_id: int,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     sprint = db.get(Sprint, sprint_id)
     if not sprint:
         raise HTTPException(status_code=404, detail="Sprint no encontrado")
@@ -3039,7 +3263,11 @@ def listar_quarters(db: Session = Depends(get_db)):
 
 
 @router.post("/quarters", response_model=QuarterOptionOut, status_code=status.HTTP_201_CREATED)
-def crear_quarter(payload: QuarterOptionCreate, db: Session = Depends(get_db)):
+def crear_quarter(
+    payload: QuarterOptionCreate,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     label = normalize_quarter_label(payload.label)
     if not label:
         raise HTTPException(status_code=400, detail="Quarter invalido")
@@ -3054,7 +3282,12 @@ def crear_quarter(payload: QuarterOptionCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/quarters/{quarter_id}", response_model=QuarterOptionOut)
-def actualizar_quarter(quarter_id: int, payload: QuarterOptionUpdate, db: Session = Depends(get_db)):
+def actualizar_quarter(
+    quarter_id: int,
+    payload: QuarterOptionUpdate,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     item = db.get(QuarterOption, quarter_id)
     if not item:
         raise HTTPException(status_code=404, detail="Quarter no encontrado")
@@ -3075,7 +3308,11 @@ def actualizar_quarter(quarter_id: int, payload: QuarterOptionUpdate, db: Sessio
 
 
 @router.delete("/quarters/{quarter_id}", response_model=QuarterOptionOut)
-def eliminar_quarter(quarter_id: int, db: Session = Depends(get_db)):
+def eliminar_quarter(
+    quarter_id: int,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     item = db.get(QuarterOption, quarter_id)
     if not item:
         raise HTTPException(status_code=404, detail="Quarter no encontrado")
@@ -3095,7 +3332,11 @@ def listar_eventos_tipo(db: Session = Depends(get_db)):
 
 
 @router.post("/eventos-tipo", response_model=EventoTipoOut, status_code=status.HTTP_201_CREATED)
-def crear_evento_tipo(payload: EventoTipoCreate, db: Session = Depends(get_db)):
+def crear_evento_tipo(
+    payload: EventoTipoCreate,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     nombre = payload.nombre.strip()
     existente = db.query(EventoTipo).filter(func.lower(EventoTipo.nombre) == nombre.lower()).first()
     if existente:
@@ -3115,7 +3356,10 @@ def crear_evento_tipo(payload: EventoTipoCreate, db: Session = Depends(get_db)):
 
 @router.put("/eventos-tipo/{tipo_id}", response_model=EventoTipoOut)
 def actualizar_evento_tipo(
-    tipo_id: int, payload: EventoTipoUpdate, db: Session = Depends(get_db)
+    tipo_id: int,
+    payload: EventoTipoUpdate,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
 ):
     tipo = db.get(EventoTipo, tipo_id)
     if not tipo:
@@ -3144,7 +3388,11 @@ def actualizar_evento_tipo(
 
 
 @router.delete("/eventos-tipo/{tipo_id}", response_model=EventoTipoOut)
-def eliminar_evento_tipo(tipo_id: int, db: Session = Depends(get_db)):
+def eliminar_evento_tipo(
+    tipo_id: int,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     tipo = db.get(EventoTipo, tipo_id)
     if not tipo:
         raise HTTPException(status_code=404, detail="Tipo de evento no encontrado")
@@ -3200,7 +3448,11 @@ def listar_import_sprint_items(
 
 
 @router.post("/sprint-items", response_model=SprintItemOut, status_code=status.HTTP_201_CREATED)
-def crear_sprint_item(payload: SprintItemCreate, db: Session = Depends(get_db)):
+def crear_sprint_item(
+    payload: SprintItemCreate,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     celula = db.get(Celula, payload.celula_id)
     if not celula:
         raise HTTPException(status_code=404, detail="Celula no encontrada")
@@ -3244,7 +3496,10 @@ def crear_sprint_item(payload: SprintItemCreate, db: Session = Depends(get_db)):
 
 @router.put("/sprint-items/{item_id}", response_model=SprintItemOut)
 def actualizar_sprint_item(
-    item_id: int, payload: SprintItemUpdate, db: Session = Depends(get_db)
+    item_id: int,
+    payload: SprintItemUpdate,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
 ):
     item = db.get(ReleaseItem, item_id)
     if not item:
@@ -3292,7 +3547,11 @@ def actualizar_sprint_item(
 
 
 @router.delete("/sprint-items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
-def eliminar_sprint_item(item_id: int, db: Session = Depends(get_db)):
+def eliminar_sprint_item(
+    item_id: int,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     item = db.get(ReleaseItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Item no encontrado")
@@ -3306,7 +3565,11 @@ def eliminar_sprint_item(item_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/import-sprint-items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
-def eliminar_import_sprint_item(item_id: int, db: Session = Depends(get_db)):
+def eliminar_import_sprint_item(
+    item_id: int,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     item = db.get(ReleaseImportItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Item no encontrado")
@@ -3323,6 +3586,7 @@ def eliminar_import_sprint_item(item_id: int, db: Session = Depends(get_db)):
 async def importar_sprint_items(
     celula_id: Optional[int] = Form(None),
     file: UploadFile = File(...),
+    _: Usuario = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
     content = await file.read()
@@ -3793,6 +4057,7 @@ async def importar_sprint_items(
 @router.delete("/sprint-items")
 def eliminar_sprint_items(
     celula_id: int,
+    _: Usuario = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
     total = (
@@ -3845,6 +4110,7 @@ def listar_import_release_items(
 def actualizar_release_item(
     item_id: int,
     payload: ReleaseItemUpdate,
+    _: Usuario = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
     item = db.get(ReleaseItem, item_id)
@@ -3863,6 +4129,7 @@ async def importar_release_items(
     celula_id: Optional[int] = Form(None),
     tipo_release: str = Form(...),
     file: UploadFile = File(...),
+    _: Usuario = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
     tipo_release = normalize_text(tipo_release)
@@ -4315,6 +4582,7 @@ async def importar_release_items(
 @router.delete("/release-items")
 def eliminar_release_items(
     celula_id: int,
+    _: Usuario = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
     total = db.query(ReleaseItem).filter(ReleaseItem.celula_id == celula_id).count()
@@ -4331,6 +4599,7 @@ def eliminar_release_items(
 @router.delete("/release-items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 def eliminar_release_item(
     item_id: int,
+    _: Usuario = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
     item = db.get(ReleaseItem, item_id)
@@ -4348,6 +4617,7 @@ def eliminar_release_item(
 @router.delete("/import-release-items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 def eliminar_import_release_item(
     item_id: int,
+    _: Usuario = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
     item = db.get(ReleaseImportItem, item_id)
@@ -4363,7 +4633,11 @@ def eliminar_import_release_item(
 
 
 @router.post("/eventos", response_model=EventoOut, status_code=status.HTTP_201_CREATED)
-def crear_evento(payload: EventoCreate, db: Session = Depends(get_db)):
+def crear_evento(
+    payload: EventoCreate,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     if payload.fecha_inicio > payload.fecha_fin:
         raise HTTPException(status_code=400, detail="Rango de fechas invalido")
     if payload.jornada not in {"completo", "am", "pm"}:
@@ -4415,7 +4689,12 @@ def crear_evento(payload: EventoCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/eventos/{evento_id}", response_model=EventoOut)
-def actualizar_evento(evento_id: int, payload: EventoUpdate, db: Session = Depends(get_db)):
+def actualizar_evento(
+    evento_id: int,
+    payload: EventoUpdate,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     evento = db.get(Evento, evento_id)
     if not evento:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
@@ -4474,7 +4753,11 @@ def actualizar_evento(evento_id: int, payload: EventoUpdate, db: Session = Depen
 
 
 @router.delete("/eventos/{evento_id}", status_code=status.HTTP_204_NO_CONTENT)
-def eliminar_evento(evento_id: int, db: Session = Depends(get_db)):
+def eliminar_evento(
+    evento_id: int,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     evento = db.get(Evento, evento_id)
     if not evento:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
@@ -4773,6 +5056,263 @@ def eliminar_task_comment(
     if user.rol != "admin" and comment.usuario_id != user.id:
         raise HTTPException(status_code=403, detail="Sin permisos")
     db.delete(comment)
+    db.commit()
+    return None
+
+
+def _catalog_sorted_names(db: Session, model, usuario_id: int) -> list[str]:
+    rows = (
+        db.query(model)
+        .filter(model.usuario_id == usuario_id)
+        .order_by(func.lower(model.nombre).asc(), model.id.asc())
+        .all()
+    )
+    return [r.nombre for r in rows]
+
+
+def _upsert_catalog_name(db: Session, model, usuario_id: int, nombre: str) -> str:
+    clean = clean_label(nombre)
+    if not clean:
+        raise HTTPException(status_code=400, detail="Nombre requerido")
+    key = normalize_text(clean)
+    row = (
+        db.query(model)
+        .filter(model.usuario_id == usuario_id, model.nombre_key == key)
+        .first()
+    )
+    if row:
+        if row.nombre != clean:
+            row.nombre = clean
+            db.flush()
+        return row.nombre
+    row = model(usuario_id=usuario_id, nombre=clean, nombre_key=key)
+    db.add(row)
+    db.flush()
+    return row.nombre
+
+
+@router.get("/compras/catalogos", response_model=CompraCatalogosOut)
+def compras_catalogos(
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    user = require_user(db, scrum_session)
+    return CompraCatalogosOut(
+        productos=_catalog_sorted_names(db, CompraCatalogProducto, user.id),
+        supermercados=_catalog_sorted_names(db, CompraCatalogSupermercado, user.id),
+    )
+
+
+@router.post("/compras/catalogos/productos", response_model=CompraCatalogosOut)
+def compras_catalogo_producto_upsert(
+    payload: CompraCatalogNombreIn,
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    user = require_user(db, scrum_session)
+    _upsert_catalog_name(db, CompraCatalogProducto, user.id, payload.nombre)
+    db.commit()
+    return CompraCatalogosOut(
+        productos=_catalog_sorted_names(db, CompraCatalogProducto, user.id),
+        supermercados=_catalog_sorted_names(db, CompraCatalogSupermercado, user.id),
+    )
+
+
+@router.put("/compras/catalogos/productos", response_model=CompraCatalogosOut)
+def compras_catalogo_producto_rename(
+    payload: CompraCatalogRenameIn,
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    user = require_user(db, scrum_session)
+    old_name = clean_label(payload.anterior)
+    new_name = clean_label(payload.nuevo)
+    if not old_name or not new_name:
+        raise HTTPException(status_code=400, detail="Nombre requerido")
+    old_key = normalize_text(old_name)
+    new_key = normalize_text(new_name)
+    current = (
+        db.query(CompraCatalogProducto)
+        .filter(
+            CompraCatalogProducto.usuario_id == user.id,
+            CompraCatalogProducto.nombre_key == old_key,
+        )
+        .first()
+    )
+    if not current:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    duplicate = (
+        db.query(CompraCatalogProducto)
+        .filter(
+            CompraCatalogProducto.usuario_id == user.id,
+            CompraCatalogProducto.nombre_key == new_key,
+            CompraCatalogProducto.id != current.id,
+        )
+        .first()
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Ya existe un producto con ese nombre")
+    current.nombre = new_name
+    current.nombre_key = new_key
+    user_items = (
+        db.query(CompraItem)
+        .join(Compra, Compra.id == CompraItem.compra_id)
+        .filter(Compra.usuario_id == user.id)
+        .all()
+    )
+    for item in user_items:
+        if normalize_text(clean_label(item.producto)) == old_key:
+            item.producto = new_name
+    db.commit()
+    return CompraCatalogosOut(
+        productos=_catalog_sorted_names(db, CompraCatalogProducto, user.id),
+        supermercados=_catalog_sorted_names(db, CompraCatalogSupermercado, user.id),
+    )
+
+
+@router.delete("/compras/catalogos/productos", response_model=CompraCatalogosOut)
+def compras_catalogo_producto_delete(
+    nombre: str,
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    user = require_user(db, scrum_session)
+    key = normalize_text(clean_label(nombre))
+    if not key:
+        raise HTTPException(status_code=400, detail="Nombre requerido")
+    current = (
+        db.query(CompraCatalogProducto)
+        .filter(
+            CompraCatalogProducto.usuario_id == user.id,
+            CompraCatalogProducto.nombre_key == key,
+        )
+        .first()
+    )
+    if current:
+        db.delete(current)
+        db.commit()
+    return CompraCatalogosOut(
+        productos=_catalog_sorted_names(db, CompraCatalogProducto, user.id),
+        supermercados=_catalog_sorted_names(db, CompraCatalogSupermercado, user.id),
+    )
+
+
+@router.post("/compras/catalogos/supermercados", response_model=CompraCatalogosOut)
+def compras_catalogo_supermercado_upsert(
+    payload: CompraCatalogNombreIn,
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    user = require_user(db, scrum_session)
+    _upsert_catalog_name(db, CompraCatalogSupermercado, user.id, payload.nombre)
+    db.commit()
+    return CompraCatalogosOut(
+        productos=_catalog_sorted_names(db, CompraCatalogProducto, user.id),
+        supermercados=_catalog_sorted_names(db, CompraCatalogSupermercado, user.id),
+    )
+
+
+@router.get("/compras/historicos", response_model=List[CompraOut])
+def compras_historicos(
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    user = require_user(db, scrum_session)
+    rows = (
+        db.query(Compra)
+        .options(joinedload(Compra.items))
+        .filter(Compra.usuario_id == user.id)
+        .order_by(Compra.fecha.desc(), Compra.id.desc())
+        .all()
+    )
+    return rows
+
+
+@router.post("/compras/historicos", response_model=CompraOut, status_code=status.HTTP_201_CREATED)
+def compras_historico_crear(
+    payload: CompraCreate,
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    user = require_user(db, scrum_session)
+    supermercado = clean_label(payload.supermercado)
+    if not supermercado:
+        raise HTTPException(status_code=400, detail="Supermercado requerido")
+    if not payload.items:
+        raise HTTPException(status_code=400, detail="Items requeridos")
+
+    _upsert_catalog_name(db, CompraCatalogSupermercado, user.id, supermercado)
+    compra = Compra(
+        usuario_id=user.id,
+        supermercado=supermercado,
+        fecha=now_py(),
+        creado_en=now_py(),
+        total_general=0,
+    )
+    db.add(compra)
+    db.flush()
+
+    total_general = 0
+    for raw_item in payload.items:
+        producto = clean_label(raw_item.producto)
+        if not producto:
+            raise HTTPException(status_code=400, detail="Producto requerido")
+        precio = int(round(float(raw_item.precio or 0)))
+        cantidad = float(raw_item.cantidad or 0)
+        if precio <= 0:
+            raise HTTPException(status_code=400, detail="Precio invalido")
+        if cantidad <= 0:
+            raise HTTPException(status_code=400, detail="Cantidad invalida")
+        total_item = int(round(precio * cantidad))
+        total_general += total_item
+        _upsert_catalog_name(db, CompraCatalogProducto, user.id, producto)
+        db.add(
+            CompraItem(
+                compra_id=compra.id,
+                producto=producto,
+                precio=precio,
+                cantidad=cantidad,
+                total_item=total_item,
+            )
+        )
+
+    compra.total_general = int(round(total_general))
+    db.commit()
+    db.refresh(compra)
+    return (
+        db.query(Compra)
+        .options(joinedload(Compra.items))
+        .filter(Compra.id == compra.id)
+        .first()
+    )
+
+
+@router.delete("/compras/historicos/{compra_id}", status_code=status.HTTP_204_NO_CONTENT)
+def compras_historico_delete(
+    compra_id: int,
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    user = require_user(db, scrum_session)
+    compra = db.get(Compra, compra_id)
+    if not compra or compra.usuario_id != user.id:
+        raise HTTPException(status_code=404, detail="Compra no encontrada")
+    db.delete(compra)
+    db.commit()
+    return None
+
+
+@router.delete("/compras/historicos", status_code=status.HTTP_204_NO_CONTENT)
+def compras_historico_delete_all(
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    user = require_user(db, scrum_session)
+    rows = db.query(Compra.id).filter(Compra.usuario_id == user.id).all()
+    compra_ids = [int(row[0]) for row in rows]
+    if compra_ids:
+        db.query(CompraItem).filter(CompraItem.compra_id.in_(compra_ids)).delete(synchronize_session=False)
+        db.query(Compra).filter(Compra.id.in_(compra_ids)).delete(synchronize_session=False)
     db.commit()
     return None
 
