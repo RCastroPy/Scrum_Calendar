@@ -420,7 +420,12 @@
                 <div class="card-body">
                   <div class="d-flex justify-content-between align-items-center mb-2">
                     <h3 class="h6 mb-0">Supermercado</h3>
-                    <span class="badge text-bg-light" id="supermercado-seleccionado">Sin seleccionar</span>
+                    <div class="d-flex align-items-center gap-2">
+                      <span class="badge text-bg-light" id="supermercado-seleccionado">Sin seleccionar</span>
+                      <button class="btn btn-outline-secondary btn-sm" id="go-supermercados" type="button">
+                        <i class="bi bi-pencil-square me-1"></i>Editar supermercados
+                      </button>
+                    </div>
                   </div>
                   <div class="input-group">
                     <div class="autocomplete-wrap flex-fill">
@@ -526,7 +531,7 @@
             <section id="view-productos" class="compras-view d-none">
               <div class="card mb-3">
                 <div class="card-body">
-                  <h2 class="h5 mb-3">Editar productos del autocomplete</h2>
+                  <h2 class="h5 mb-3">Editar catalogos del autocomplete</h2>
                   <div class="input-group mb-3">
                     <input
                       type="text"
@@ -541,6 +546,25 @@
                   </div>
                   <small class="text-danger d-block mb-2" id="catalogo-producto-error"></small>
                   <div id="catalogo-productos-lista" class="catalogo-productos-lista"></div>
+                </div>
+              </div>
+              <div class="card mb-3">
+                <div class="card-body">
+                  <h2 class="h5 mb-3">Editar supermercados del autocomplete</h2>
+                  <div class="input-group mb-3">
+                    <input
+                      type="text"
+                      id="catalogo-supermercado-input"
+                      class="form-control"
+                      placeholder="Nuevo supermercado"
+                      autocomplete="off"
+                    />
+                    <button class="btn btn-primary" id="catalogo-supermercado-agregar" type="button">
+                      Agregar
+                    </button>
+                  </div>
+                  <small class="text-danger d-block mb-2" id="catalogo-supermercado-error"></small>
+                  <div id="catalogo-supermercados-lista" class="catalogo-productos-lista"></div>
                 </div>
               </div>
               <div class="d-flex mt-3">
@@ -724,6 +748,7 @@
           btnNueva: document.getElementById("go-nueva-compra"),
           btnHistoricos: document.getElementById("go-historicos"),
           btnProductos: document.getElementById("go-productos"),
+          btnSupermercados: document.getElementById("go-supermercados"),
           btnVolverInicio: document.getElementById("volver-inicio"),
           btnVolverNuevaProductos: document.getElementById("volver-nueva-desde-productos"),
           btnVolverInicioHistoricos: document.getElementById("volver-inicio-desde-historicos"),
@@ -750,6 +775,10 @@
           catalogoProductoError: document.getElementById("catalogo-producto-error"),
           catalogoProductoAgregar: document.getElementById("catalogo-producto-agregar"),
           catalogoProductosLista: document.getElementById("catalogo-productos-lista"),
+          catalogoSupermercadoInput: document.getElementById("catalogo-supermercado-input"),
+          catalogoSupermercadoError: document.getElementById("catalogo-supermercado-error"),
+          catalogoSupermercadoAgregar: document.getElementById("catalogo-supermercado-agregar"),
+          catalogoSupermercadosLista: document.getElementById("catalogo-supermercados-lista"),
           btnFinalizar: document.getElementById("finalizar-compra"),
           historicosLista: document.getElementById("historicos-lista"),
           detalleCompra: document.getElementById("detalle-compra"),
@@ -827,6 +856,7 @@
                 totalItem:
                   Number(item?.total_item ?? item?.totalItem ?? 0) ||
                   Math.round((Number(item?.precio || 0) || 0) * (Number(item?.cantidad || 1) || 1)),
+                ticketValidado: Boolean(item?.ticket_validado ?? item?.ticketValidado ?? false),
               }))
             : [],
         });
@@ -1109,6 +1139,97 @@
           }
         };
 
+        const renderCatalogoSupermercados = () => {
+          if (!refs.catalogoSupermercadosLista) return;
+          if (!state.catalogoSupermercados.length) {
+            refs.catalogoSupermercadosLista.innerHTML =
+              '<div class="compras-list-empty">No hay supermercados en el catalogo.</div>';
+            return;
+          }
+          refs.catalogoSupermercadosLista.innerHTML = state.catalogoSupermercados
+            .map(
+              (store, idx) => `
+                <div class="catalogo-producto-item d-flex justify-content-between align-items-center gap-2 mb-2">
+                  <span class="text-truncate">${idx + 1}. ${store}</span>
+                  <div class="d-flex gap-1">
+                    <button type="button" class="btn btn-outline-secondary btn-sm js-edit-catalog-supermarket" data-store="${encodeURIComponent(store)}" aria-label="Editar">
+                      <i class="bi bi-pencil"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-danger btn-sm js-delete-catalog-supermarket" data-store="${encodeURIComponent(store)}" aria-label="Eliminar">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </div>
+                </div>
+              `
+            )
+            .join("");
+        };
+
+        const addCatalogoSupermercado = async () => {
+          const value = normalizeText(refs.catalogoSupermercadoInput.value);
+          if (!value) {
+            refs.catalogoSupermercadoError.textContent = "Debes ingresar un supermercado.";
+            return;
+          }
+          try {
+            const payload = await apiRequest(API.supermercados, {
+              method: "POST",
+              body: { nombre: value },
+            });
+            applyCatalogos(payload || {});
+            refs.catalogoSupermercadoInput.value = "";
+            refs.catalogoSupermercadoError.textContent = "";
+            renderCatalogoSupermercados();
+          } catch (error) {
+            refs.catalogoSupermercadoError.textContent =
+              error?.message || "No se pudo guardar el supermercado.";
+          }
+        };
+
+        const editCatalogoSupermercado = async (currentStore) => {
+          const current = normalizeText(currentStore);
+          if (!current) return;
+          const newValue = normalizeText(window.prompt("Editar supermercado", current) || "");
+          if (!newValue || newValue.toLowerCase() === current.toLowerCase()) return;
+          try {
+            const payload = await apiRequest(API.supermercados, {
+              method: "PUT",
+              body: { anterior: current, nuevo: newValue },
+            });
+            applyCatalogos(payload || {});
+            if (normalizeText(refs.inputSupermercado.value).toLowerCase() === current.toLowerCase()) {
+              refs.inputSupermercado.value = newValue;
+              setSupermercadoSeleccionado(newValue);
+            }
+            refs.catalogoSupermercadoError.textContent = "";
+            renderCatalogoSupermercados();
+          } catch (error) {
+            refs.catalogoSupermercadoError.textContent =
+              error?.message || "No se pudo editar el supermercado.";
+          }
+        };
+
+        const deleteCatalogoSupermercado = async (storeToDelete) => {
+          const store = normalizeText(storeToDelete);
+          if (!store) return;
+          if (!window.confirm(`¿Eliminar "${store}" del catalogo?`)) return;
+          try {
+            const payload = await apiRequest(`${API.supermercados}?nombre=${encodeURIComponent(store)}`, {
+              method: "DELETE",
+            });
+            applyCatalogos(payload || {});
+            refs.catalogoSupermercadoError.textContent = "";
+            if (normalizeText(refs.inputSupermercado.value).toLowerCase() === store.toLowerCase()) {
+              refs.inputSupermercado.value = "";
+              setSupermercadoSeleccionado("");
+            }
+            renderCatalogoSupermercados();
+          } catch (error) {
+            refs.catalogoSupermercadoError.textContent =
+              error?.message || "No se pudo eliminar el supermercado.";
+          }
+        };
+
         const renderItems = () => {
           const items = state.compraActual.items;
           refs.itemsCount.textContent = String(items.length);
@@ -1335,6 +1456,35 @@
           switchView("nueva");
         };
 
+        const replaceHistoryEntry = (updatedEntry) => {
+          const mapped = mapCompraFromApi(updatedEntry || {});
+          const idx = state.historicosCompras.findIndex((item) => String(item.id) === String(mapped.id));
+          if (idx >= 0) {
+            state.historicosCompras[idx] = mapped;
+          } else {
+            state.historicosCompras.unshift(mapped);
+          }
+        };
+
+        const updateHistoryItemCheck = async (historyId, itemId, checked) => {
+          try {
+            const updated = await apiRequest(
+              `${API.historicos}/${encodeURIComponent(historyId)}/items/${encodeURIComponent(itemId)}/check`,
+              {
+                method: "PUT",
+                body: { ticket_validado: Boolean(checked) },
+              }
+            );
+            replaceHistoryEntry(updated);
+            renderHistoricos();
+            if (state.view === "detalle" && String(state.selectedHistoryId) === String(historyId)) {
+              openHistoryDetail(historyId);
+            }
+          } catch (error) {
+            refs.formItemError.textContent = error?.message || "No se pudo actualizar el check del item.";
+          }
+        };
+
         const openHistoryDetail = (historyId) => {
           state.selectedHistoryId = historyId;
           const entry = state.historicosCompras.find((item) => String(item.id) === String(historyId));
@@ -1352,6 +1502,7 @@
                   <tr>
                     <th>Producto</th>
                     <th class="text-end">Detalle</th>
+                    <th class="text-center">Check ticket</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1361,6 +1512,20 @@
                         <tr>
                           <td>${item.producto}</td>
                           <td class="text-end">${formatGs(item.precio)} x ${formatQuantity(item.cantidad)} = ${formatGs(itemTotal(item))}</td>
+                          <td class="text-center">
+                            <div class="form-check d-inline-flex align-items-center gap-1">
+                              <input
+                                class="form-check-input js-check-ticket-item"
+                                type="checkbox"
+                                data-history-id="${entry.id}"
+                                data-item-id="${item.id}"
+                                ${item.ticketValidado ? "checked" : ""}
+                              />
+                              <span class="badge ${item.ticketValidado ? "text-bg-success" : "text-bg-secondary"}">
+                                ${item.ticketValidado ? "OK" : "Pend."}
+                              </span>
+                            </div>
+                          </td>
                         </tr>
                       `
                     )
@@ -1380,12 +1545,24 @@
           }
           refs.historicosLista.innerHTML = state.historicosCompras
             .map(
-              (entry) => `
+              (entry) => {
+                const totalItems = Array.isArray(entry.items) ? entry.items.length : 0;
+                const checkedItems = Array.isArray(entry.items)
+                  ? entry.items.filter((item) => Boolean(item.ticketValidado)).length
+                  : 0;
+                const isAllChecked = totalItems > 0 && checkedItems === totalItems;
+                const statusClass = isAllChecked ? "text-success" : "text-warning";
+                const statusIcon = isAllChecked ? "bi-check-circle-fill" : "bi-hourglass-split";
+                const statusText = isAllChecked ? "Validado" : "Pendiente";
+                return `
                 <div class="compras-history-card mb-2 ${state.highlightedHistoryId === entry.id ? "is-latest" : ""}">
                   <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
                     <div>
                       <h3 class="h6 mb-1">${entry.supermercado}</h3>
                       <p class="text-muted mb-0">${formatDateTime(entry.fecha)}</p>
+                      <small class="${statusClass}">
+                        <i class="bi ${statusIcon} me-1"></i>${statusText} ${checkedItems}/${totalItems}
+                      </small>
                     </div>
                     <div class="text-end">
                       <small class="text-muted d-block">Total</small>
@@ -1402,7 +1579,8 @@
                     </button>
                   </div>
                 </div>
-              `
+              `;
+              }
             )
             .join("");
         };
@@ -1444,8 +1622,18 @@
           });
           refs.btnProductos.addEventListener("click", () => {
             refs.catalogoProductoError.textContent = "";
+            refs.catalogoSupermercadoError.textContent = "";
             renderCatalogoProductos();
+            renderCatalogoSupermercados();
             switchView("productos");
+          });
+          refs.btnSupermercados.addEventListener("click", () => {
+            refs.catalogoProductoError.textContent = "";
+            refs.catalogoSupermercadoError.textContent = "";
+            renderCatalogoProductos();
+            renderCatalogoSupermercados();
+            switchView("productos");
+            refs.catalogoSupermercadoInput?.focus();
           });
           refs.btnVolverInicio.addEventListener("click", () => switchView("inicio"));
           refs.btnVolverNuevaProductos.addEventListener("click", () => switchView("nueva"));
@@ -1526,6 +1714,26 @@
               void deleteCatalogoProducto(decodeURIComponent(deleteBtn.dataset.product || ""));
             }
           });
+          refs.catalogoSupermercadoAgregar.addEventListener("click", async () => {
+            await addCatalogoSupermercado();
+          });
+          refs.catalogoSupermercadoInput.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void addCatalogoSupermercado();
+            }
+          });
+          refs.catalogoSupermercadosLista.addEventListener("click", (event) => {
+            const editBtn = event.target.closest(".js-edit-catalog-supermarket");
+            if (editBtn) {
+              void editCatalogoSupermercado(decodeURIComponent(editBtn.dataset.store || ""));
+              return;
+            }
+            const deleteBtn = event.target.closest(".js-delete-catalog-supermarket");
+            if (deleteBtn) {
+              void deleteCatalogoSupermercado(decodeURIComponent(deleteBtn.dataset.store || ""));
+            }
+          });
 
           refs.listaItems.addEventListener("click", (event) => {
             const editBtn = event.target.closest(".js-edit-item");
@@ -1579,6 +1787,15 @@
             }
           });
 
+          refs.detalleCompra.addEventListener("change", (event) => {
+            const checkbox = event.target.closest(".js-check-ticket-item");
+            if (!checkbox) return;
+            const historyId = checkbox.dataset.historyId;
+            const itemId = checkbox.dataset.itemId;
+            if (!historyId || !itemId) return;
+            void updateHistoryItemCheck(historyId, itemId, checkbox.checked);
+          });
+
           document.addEventListener("click", (event) => {
             if (!event.target.closest(".autocomplete-wrap")) {
               refs.supermercadoSuggestions.classList.add("d-none");
@@ -1599,6 +1816,7 @@
           renderPreviewItemTotal();
           renderItems();
           renderCatalogoProductos();
+          renderCatalogoSupermercados();
           renderHistoricos();
           setSupermercadoSeleccionado("");
           switchView("inicio");

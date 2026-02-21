@@ -554,7 +554,12 @@ class CompraItemOut(BaseModel):
     precio: int
     cantidad: float
     total_item: int
+    ticket_validado: bool
     creado_en: datetime
+
+
+class CompraItemCheckUpdate(BaseModel):
+    ticket_validado: bool
 
 
 class CompraOut(BaseModel):

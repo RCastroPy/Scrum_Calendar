@@ -100,6 +100,7 @@ from api.schemas import (
     CompraCatalogRenameIn,
     CompraCatalogosOut,
     CompraCreate,
+    CompraItemCheckUpdate,
     CompraOut,
     QuarterOptionCreate,
     QuarterOptionOut,
@@ -5212,6 +5213,80 @@ def compras_catalogo_supermercado_upsert(
     )
 
 
+@router.put("/compras/catalogos/supermercados", response_model=CompraCatalogosOut)
+def compras_catalogo_supermercado_rename(
+    payload: CompraCatalogRenameIn,
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    user = require_user(db, scrum_session)
+    old_name = clean_label(payload.anterior)
+    new_name = clean_label(payload.nuevo)
+    if not old_name or not new_name:
+        raise HTTPException(status_code=400, detail="Nombre requerido")
+    old_key = normalize_text(old_name)
+    new_key = normalize_text(new_name)
+    current = (
+        db.query(CompraCatalogSupermercado)
+        .filter(
+            CompraCatalogSupermercado.usuario_id == user.id,
+            CompraCatalogSupermercado.nombre_key == old_key,
+        )
+        .first()
+    )
+    if not current:
+        raise HTTPException(status_code=404, detail="Supermercado no encontrado")
+    duplicate = (
+        db.query(CompraCatalogSupermercado)
+        .filter(
+            CompraCatalogSupermercado.usuario_id == user.id,
+            CompraCatalogSupermercado.nombre_key == new_key,
+            CompraCatalogSupermercado.id != current.id,
+        )
+        .first()
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Ya existe un supermercado con ese nombre")
+    current.nombre = new_name
+    current.nombre_key = new_key
+    user_compras = db.query(Compra).filter(Compra.usuario_id == user.id).all()
+    for compra in user_compras:
+        if normalize_text(clean_label(compra.supermercado)) == old_key:
+            compra.supermercado = new_name
+    db.commit()
+    return CompraCatalogosOut(
+        productos=_catalog_sorted_names(db, CompraCatalogProducto, user.id),
+        supermercados=_catalog_sorted_names(db, CompraCatalogSupermercado, user.id),
+    )
+
+
+@router.delete("/compras/catalogos/supermercados", response_model=CompraCatalogosOut)
+def compras_catalogo_supermercado_delete(
+    nombre: str,
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    user = require_user(db, scrum_session)
+    key = normalize_text(clean_label(nombre))
+    if not key:
+        raise HTTPException(status_code=400, detail="Nombre requerido")
+    current = (
+        db.query(CompraCatalogSupermercado)
+        .filter(
+            CompraCatalogSupermercado.usuario_id == user.id,
+            CompraCatalogSupermercado.nombre_key == key,
+        )
+        .first()
+    )
+    if current:
+        db.delete(current)
+        db.commit()
+    return CompraCatalogosOut(
+        productos=_catalog_sorted_names(db, CompraCatalogProducto, user.id),
+        supermercados=_catalog_sorted_names(db, CompraCatalogSupermercado, user.id),
+    )
+
+
 @router.get("/compras/historicos", response_model=List[CompraOut])
 def compras_historicos(
     db: Session = Depends(get_db),
@@ -5283,6 +5358,37 @@ def compras_historico_crear(
         db.query(Compra)
         .options(joinedload(Compra.items))
         .filter(Compra.id == compra.id)
+        .first()
+    )
+
+
+@router.put("/compras/historicos/{compra_id}/items/{item_id}/check", response_model=CompraOut)
+def compras_historico_item_check(
+    compra_id: int,
+    item_id: int,
+    payload: CompraItemCheckUpdate,
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    user = require_user(db, scrum_session)
+    compra = (
+        db.query(Compra)
+        .options(joinedload(Compra.items))
+        .filter(Compra.id == compra_id, Compra.usuario_id == user.id)
+        .first()
+    )
+    if not compra:
+        raise HTTPException(status_code=404, detail="Compra no encontrada")
+    item = next((it for it in (compra.items or []) if int(it.id) == int(item_id)), None)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item no encontrado")
+    item.ticket_validado = bool(payload.ticket_validado)
+    db.commit()
+    db.refresh(compra)
+    return (
+        db.query(Compra)
+        .options(joinedload(Compra.items))
+        .filter(Compra.id == compra_id)
         .first()
     )
 
