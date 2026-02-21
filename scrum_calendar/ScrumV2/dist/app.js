@@ -150,6 +150,8 @@
 	    },
 	    tasksBacklogExpanded: {},
 	    tasksColumnsConfig: null,
+	    tasksColumnsPanelDirty: false,
+	    tasksColumnsPanelNeedsRender: false,
 	    tasksBacklogSort: { key: "fecha_vencimiento", dir: "asc" },
 	    tasksCommentCounts: {},
 	    retroCommitmentFilter: "pendiente",
@@ -8685,7 +8687,7 @@
       { id: "chore", nombre: "Chore" },
     ];
 
-    const TASK_COLUMNS_KEY = "scrum_calendar_tasks_columns_v2";
+    const TASK_COLUMNS_KEY = "scrum_calendar_tasks_columns_v3";
     const DEFAULT_COLUMNS = [
       "titulo",
       "estado",
@@ -9196,11 +9198,12 @@
 	      bar.innerHTML = `<input class="tasks-horizontal-range" type="range" min="0" max="0" step="1" value="0" aria-label="Scroll horizontal de tabla" />`;
 	      wrap.appendChild(bar);
 
-	      const range = bar.querySelector(".tasks-horizontal-range");
-	      if (!range) return;
+      const range = bar.querySelector(".tasks-horizontal-range");
+      if (!range) return;
 
       let currentScrollable = null;
       let currentOnScroll = null;
+      let fallbackShift = 0;
 
       const getTableMinWidth = () => {
         const table =
@@ -9214,15 +9217,16 @@
         return Number.isFinite(rectW) && rectW > 0 ? rectW : 0;
       };
 
+      const getViewportWidth = () => {
+        const w = Number(wrap.getBoundingClientRect?.().width || wrap.clientWidth || 0);
+        return Number.isFinite(w) && w > 0 ? w : 0;
+      };
+
       const getCandidates = () => {
         const list = [];
         if (useBacklogDataTable) {
           const dtBody = wrap.querySelector(".dataTables_scrollBody");
-          const dtScroll = wrap.querySelector(".dataTables_scroll");
-          const dtWrapper = wrap.querySelector(".dataTables_wrapper");
           if (dtBody) list.push(dtBody);
-          if (dtScroll) list.push(dtScroll);
-          if (dtWrapper) list.push(dtWrapper);
         }
         list.push(baseScroll);
         return [...new Set(list.filter(Boolean))];
@@ -9232,8 +9236,28 @@
         if (!target) return 0;
         const natural = Math.max(0, target.scrollWidth - target.clientWidth);
         const tableMin = getTableMinWidth();
-        const fallback = tableMin > 0 ? Math.max(0, Math.round(tableMin - target.clientWidth)) : 0;
+        const viewport = Number(target.clientWidth || getViewportWidth() || 0);
+        const fallback = tableMin > 0 && viewport > 0 ? Math.max(0, Math.round(tableMin - viewport)) : 0;
         return Math.max(natural, fallback);
+      };
+
+      const computeHardMax = () => {
+        const tableMin = getTableMinWidth();
+        const viewport = getViewportWidth();
+        if (!tableMin || !viewport) return 0;
+        return Math.max(0, Math.round(tableMin - viewport));
+      };
+
+      const applyTransformFallback = (shiftPx) => {
+        fallbackShift = Math.max(0, Math.round(shiftPx || 0));
+        const value = fallbackShift > 0 ? `translateX(${-fallbackShift}px)` : "";
+        const targets = wrap.querySelectorAll(
+          "#tasks-backlog-table, .dataTables_scrollHeadInner table, .dataTables_scrollBody table"
+        );
+        targets.forEach((node) => {
+          node.style.transform = value;
+          if (value) node.style.transformOrigin = "left center";
+        });
       };
 
       const resolveScrollable = () => {
@@ -9267,18 +9291,21 @@
       const syncRangeFromScrollable = () => {
         const target = resolveScrollable();
         if (!target) return;
-        const max = measureMax(target);
+        const max = Math.max(measureMax(target), computeHardMax());
         if (max <= 0) {
           bar.classList.add("hidden");
           range.disabled = true;
           range.max = "0";
           range.value = "0";
+          applyTransformFallback(0);
           return;
         }
         bar.classList.remove("hidden");
         range.disabled = false;
         range.max = String(max);
-        range.value = String(Math.min(max, Math.round(target.scrollLeft)));
+        const currentLeft = Number(target.scrollLeft || 0);
+        const activeLeft = currentLeft > 0 ? currentLeft : fallbackShift;
+        range.value = String(Math.min(max, Math.round(activeLeft)));
       };
 
       const bindScrollable = () => {
@@ -9288,24 +9315,37 @@
 	        if (currentScrollable && currentOnScroll) {
 	          currentScrollable.removeEventListener("scroll", currentOnScroll);
 	        }
-	        currentScrollable = nextScrollable;
-	        currentOnScroll = () => {
-	          const max = Math.max(0, currentScrollable.scrollWidth - currentScrollable.clientWidth);
-	          range.max = String(max);
-	          range.value = String(Math.min(max, Math.round(currentScrollable.scrollLeft)));
-	        };
-	        currentScrollable.addEventListener("scroll", currentOnScroll, { passive: true });
-	      };
+        currentScrollable = nextScrollable;
+        currentOnScroll = () => {
+          const max = Math.max(measureMax(currentScrollable), computeHardMax());
+          range.max = String(max);
+          range.value = String(Math.min(max, Math.round(currentScrollable.scrollLeft)));
+          if (currentScrollable.scrollLeft > 0 && fallbackShift) {
+            applyTransformFallback(0);
+          }
+        };
+        currentScrollable.addEventListener("scroll", currentOnScroll, { passive: true });
+      };
 
       range.addEventListener("input", () => {
         const next = Number(range.value || 0);
+        let moved = false;
         const targets = getCandidates();
         targets.forEach((target) => {
-          const max = measureMax(target);
+          const max = Math.max(measureMax(target), computeHardMax());
           if (max > 0) {
+            const before = Number(target.scrollLeft || 0);
             target.scrollLeft = Math.min(max, next);
+            if (Math.round(target.scrollLeft) !== Math.round(before) || target.scrollLeft > 0) {
+              moved = true;
+            }
           }
         });
+        if (!moved && next > 0) {
+          applyTransformFallback(next);
+        } else {
+          applyTransformFallback(0);
+        }
       });
 
       bindScrollable();
@@ -9338,6 +9378,7 @@
           currentScrollable.removeEventListener("scroll", currentOnScroll);
         }
         window.removeEventListener("resize", onResize);
+        applyTransformFallback(0);
       };
     };
 
@@ -10415,7 +10456,9 @@
 
       const wrap = document.createElement("div");
       wrap.className = "tasks-notion-wrap";
+      wrap.style.width = "100%";
       wrap.style.maxWidth = "100%";
+      wrap.style.minWidth = "0";
       let scroll = null;
       let tableHost = wrap;
       if (!useBacklogDataTable) {
@@ -11535,7 +11578,30 @@
       }
     };
 
-    const updateTaskLocal = async (taskId, payload, okMessage) => {
+    const syncInlineEstadoPill = (selectEl) => {
+      const pill = selectEl?.closest?.(".tasks-notion-pill.pill-estado");
+      if (!pill) return;
+      const key = STATUS_ORDER.includes(selectEl.value) ? selectEl.value : "backlog";
+      pill.classList.remove("is-backlog", "is-todo", "is-doing", "is-done", "is-archived");
+      pill.classList.add(`is-${key}`);
+    };
+
+    const syncInlinePrioridadPill = (selectEl) => {
+      const pill = selectEl?.closest?.(".tasks-notion-pill.pill-prioridad");
+      if (!pill) return;
+      const key = ["baja", "media", "alta", "urgente"].includes(selectEl.value) ? selectEl.value : "media";
+      pill.classList.remove("is-baja", "is-media", "is-alta", "is-urgente");
+      pill.classList.add(`is-${key}`);
+      const icon = pill.querySelector(".tasks-pill-icon");
+      if (!icon) return;
+      if (key === "urgente") {
+        icon.className = "tasks-pill-icon tasks-siren";
+      } else {
+        icon.className = "tasks-pill-icon bi bi-circle-fill";
+      }
+    };
+
+    const updateTaskLocal = async (taskId, payload, okMessage, options = {}) => {
       try {
         const updated = await putJson(`/tasks/${taskId}`, payload);
         const idx = (state.tasksCache || []).findIndex((t) => t.id === taskId);
@@ -11547,7 +11613,14 @@
         if (okMessage) {
           setTasksStatus(okMessage, "ok");
         }
-        renderAll();
+        const rerender = String(options?.rerender || "none").toLowerCase();
+        if (rerender === "all") {
+          renderAll();
+        } else if (rerender === "none") {
+          // Keep current DOM as-is (inline edit without redraw).
+        } else {
+          renderBacklogPreservingViewport();
+        }
         return updated;
       } catch (err) {
         setTasksStatus(err.message || "No se pudo actualizar la tarea.", "error");
@@ -11606,6 +11679,142 @@
       renderBacklog(filtered, state.tasksCache || []);
       renderBoard(filtered, state.tasksCache || []);
       renderReports(filtered);
+    };
+
+    const renderBacklogPreservingViewport = () => {
+      const candidateNodes = [
+        document.scrollingElement,
+        document.documentElement,
+        document.body,
+        qs(".app-main"),
+        qs(".app-content"),
+        qs(".content-wrapper"),
+      ].filter(Boolean);
+      const seen = new Set();
+      const snapshots = [];
+      candidateNodes.forEach((node) => {
+        if (!node || seen.has(node)) return;
+        seen.add(node);
+        snapshots.push({
+          node,
+          top: Number(node.scrollTop || 0),
+          left: Number(node.scrollLeft || 0),
+        });
+      });
+      const pageX =
+        window.pageXOffset ??
+        document.documentElement?.scrollLeft ??
+        document.body?.scrollLeft ??
+        0;
+      const pageY =
+        window.pageYOffset ??
+        document.documentElement?.scrollTop ??
+        document.body?.scrollTop ??
+        0;
+      const dtBodyBefore = backlogList?.querySelector(".dataTables_scrollBody");
+      const backlogScrollLeft = Number(dtBodyBefore?.scrollLeft || 0);
+      const backlogScrollTop = Number(dtBodyBefore?.scrollTop || 0);
+      const filtered = applyFilters(state.tasksCache || []);
+      renderBacklog(filtered, state.tasksCache || []);
+
+      const restore = () => {
+        try {
+          window.scrollTo(pageX, pageY);
+        } catch {
+          // ignore
+        }
+        snapshots.forEach(({ node, top, left }) => {
+          try {
+            node.scrollTop = top;
+            node.scrollLeft = left;
+          } catch {
+            // ignore
+          }
+        });
+        try {
+          if (document.documentElement) document.documentElement.scrollTop = pageY;
+          if (document.body) document.body.scrollTop = pageY;
+        } catch {
+          // ignore
+        }
+        const dtBodyAfter = backlogList?.querySelector(".dataTables_scrollBody");
+        if (dtBodyAfter) {
+          dtBodyAfter.scrollLeft = backlogScrollLeft;
+          dtBodyAfter.scrollTop = backlogScrollTop;
+        }
+      };
+      restore();
+      try {
+        window.requestAnimationFrame(() => {
+          restore();
+          window.requestAnimationFrame(restore);
+        });
+        window.setTimeout(restore, 0);
+        window.setTimeout(restore, 60);
+        window.setTimeout(restore, 180);
+        window.setTimeout(restore, 400);
+        window.setTimeout(restore, 800);
+        window.setTimeout(restore, 1200);
+        window.setTimeout(restore, 1800);
+      } catch {
+        restore();
+      }
+    };
+
+    const applyBacklogColumnOrderInPlace = () => {
+      if (!backlogList) return false;
+      const cfg = loadColumnsConfig();
+      const order = Array.isArray(cfg.order) ? cfg.order.slice() : [...DEFAULT_COLUMNS];
+      const hidden = cfg.hidden || {};
+      const visibleOrder = order.filter((key) => !hidden[key]);
+      if (!visibleOrder.length) return false;
+
+      const tables = Array.from(
+        backlogList.querySelectorAll(".dataTables_scrollHead table, .dataTables_scrollBody table, table.tasks-notion-table")
+      );
+      if (!tables.length) return false;
+
+      const reorderNodes = (parent, nodes, resolveKey) => {
+        if (!parent || !nodes.length) return;
+        const byKey = new Map();
+        nodes.forEach((node) => {
+          const key = resolveKey(node);
+          if (key && !byKey.has(key)) byKey.set(key, node);
+        });
+        if (!byKey.size) return;
+        const used = new Set();
+        const next = [];
+        visibleOrder.forEach((key) => {
+          const node = byKey.get(key);
+          if (node) {
+            used.add(node);
+            next.push(node);
+          }
+        });
+        nodes.forEach((node) => {
+          if (!used.has(node)) next.push(node);
+        });
+        next.forEach((node) => parent.appendChild(node));
+      };
+
+      tables.forEach((table) => {
+        const colgroup = table.querySelector("colgroup");
+        if (colgroup) {
+          const cols = Array.from(colgroup.children);
+          reorderNodes(colgroup, cols, (node) => String(node?.dataset?.colKey || "").trim());
+        }
+        table.querySelectorAll("thead tr, tbody tr").forEach((tr) => {
+          const cells = Array.from(tr.children);
+          reorderNodes(tr, cells, (node) => String(node?.dataset?.colKey || "").trim());
+        });
+      });
+
+      try {
+        backlogDataTable?.columns?.adjust?.();
+      } catch {
+        // ignore
+      }
+      return true;
     };
 
     const loadAndRender = async () => {
@@ -11724,7 +11933,18 @@
       const toggleColumnsPanel = (open) => {
         if (!columnsPanel) return;
         const next = open ?? columnsPanel.classList.contains("hidden");
+        const wasOpen = !columnsPanel.classList.contains("hidden");
         columnsPanel.classList.toggle("hidden", !next);
+        if (wasOpen && !next && state.tasksColumnsPanelDirty) {
+          const needsRender = Boolean(state.tasksColumnsPanelNeedsRender);
+          state.tasksColumnsPanelDirty = false;
+          state.tasksColumnsPanelNeedsRender = false;
+          if (needsRender) {
+            renderBacklogPreservingViewport();
+          } else if (!applyBacklogColumnOrderInPlace()) {
+            renderBacklogPreservingViewport();
+          }
+        }
         if (!next) return;
         // Position as a Notion-style popover anchored to the "Columnas" button.
         if (!columnsBtn) return;
@@ -11807,8 +12027,9 @@
         columnsResetBtn.addEventListener("click", () => {
           state.tasksColumnsConfig = { order: [...DEFAULT_COLUMNS], hidden: {}, widths: {} };
           saveColumnsConfig();
+          state.tasksColumnsPanelDirty = true;
+          state.tasksColumnsPanelNeedsRender = true;
           renderColumnsManager();
-          renderAll();
         });
       }
       if (columnsPanel && !columnsPanel.dataset.boundInside) {
@@ -11867,8 +12088,9 @@
           order.splice(safeIdx, 0, fromKey);
           state.tasksColumnsConfig = { ...cfg, order };
           saveColumnsConfig();
+          state.tasksColumnsPanelDirty = true;
+          applyBacklogColumnOrderInPlace();
           renderColumnsManager();
-          renderAll();
         });
         columnsList.addEventListener("dragend", () => {
           dragKey = "";
@@ -11900,8 +12122,9 @@
           }
           state.tasksColumnsConfig = { ...cfg, order };
           saveColumnsConfig();
+          state.tasksColumnsPanelDirty = true;
+          applyBacklogColumnOrderInPlace();
           renderColumnsManager();
-          renderAll();
         });
         columnsList.addEventListener("change", (event) => {
           event.stopPropagation();
@@ -11915,7 +12138,8 @@
           hidden[key] = !cb.checked;
           state.tasksColumnsConfig = { ...cfg, hidden };
           saveColumnsConfig();
-          renderAll();
+          state.tasksColumnsPanelDirty = true;
+          state.tasksColumnsPanelNeedsRender = true;
         });
       }
 
@@ -12214,7 +12438,7 @@
             document.removeEventListener("pointerup", onUp, true);
             if (!isDragging) {
               toggleTasksBacklogSort(key);
-              renderAll();
+              renderBacklogPreservingViewport();
               return;
             }
             clearMarks();
@@ -12228,7 +12452,9 @@
             order.splice(toIdx, 0, key);
             state.tasksColumnsConfig = { ...cfg, order };
             saveColumnsConfig();
-            renderAll();
+            if (!applyBacklogColumnOrderInPlace()) {
+              renderBacklogPreservingViewport();
+            }
             if (columnsList && !columnsPanel?.classList?.contains("hidden")) {
               const ev = new Event("tasks:columns-updated");
               window.dispatchEvent(ev);
@@ -12270,7 +12496,9 @@
           order.splice(toIdx, 0, fromKey);
           state.tasksColumnsConfig = { ...cfg, order };
           saveColumnsConfig();
-          renderAll();
+          if (!applyBacklogColumnOrderInPlace()) {
+            renderBacklogPreservingViewport();
+          }
           if (columnsList && !columnsPanel?.classList?.contains("hidden")) {
             // keep manager UI in sync if open
             const ev = new Event("tasks:columns-updated");
@@ -12290,61 +12518,93 @@
 
           try {
             if (field === "estado") {
-              await updateTaskLocal(taskId, { estado: String(el.value || "").trim().toLowerCase() }, "Actualizado.");
-              // Estado/start_date puede afectar a padres (subtareas). Recargar para reflejar cascade.
-              await root.__tasksApi?.loadAndRender?.();
+              syncInlineEstadoPill(el);
+              await updateTaskLocal(
+                taskId,
+                { estado: String(el.value || "").trim().toLowerCase() },
+                "Actualizado.",
+                { rerender: "none" }
+              );
               return;
             }
             if (field === "prioridad") {
+              syncInlinePrioridadPill(el);
               await updateTaskLocal(
                 taskId,
                 { prioridad: String(el.value || "").trim().toLowerCase() },
-                "Actualizado."
+                "Actualizado.",
+                { rerender: "none" }
               );
               return;
             }
             if (field === "tipo") {
-              await updateTaskLocal(taskId, { tipo: String(el.value || "").trim().toLowerCase() || null }, "Actualizado.");
+              await updateTaskLocal(
+                taskId,
+                { tipo: String(el.value || "").trim().toLowerCase() || null },
+                "Actualizado.",
+                { rerender: "none" }
+              );
               return;
             }
             if (field === "etiquetas") {
-              await updateTaskLocal(taskId, { etiquetas: String(el.value || "").trim() || null }, "Actualizado.");
+              await updateTaskLocal(
+                taskId,
+                { etiquetas: String(el.value || "").trim() || null },
+                "Actualizado.",
+                { rerender: "none" }
+              );
               return;
             }
             if (field === "assignee_persona_id") {
               const v = String(el.value || "");
-              await updateTaskLocal(taskId, { assignee_persona_id: v ? Number(v) : null }, "Actualizado.");
+              await updateTaskLocal(
+                taskId,
+                { assignee_persona_id: v ? Number(v) : null },
+                "Actualizado.",
+                { rerender: "none" }
+              );
               return;
             }
             if (field === "sprint_id") {
               const v = String(el.value || "");
-              await updateTaskLocal(taskId, { sprint_id: v ? Number(v) : null }, "Actualizado.");
+              await updateTaskLocal(taskId, { sprint_id: v ? Number(v) : null }, "Actualizado.", {
+                rerender: "none",
+              });
               return;
             }
             if (field === "start_date") {
               const v = String(el.value || "");
-              await updateTaskLocal(taskId, { start_date: v || null }, "Actualizado.");
-              await root.__tasksApi?.loadAndRender?.();
+              await updateTaskLocal(taskId, { start_date: v || null }, "Actualizado.", {
+                rerender: "none",
+              });
               return;
             }
             if (field === "end_date") {
               const v = String(el.value || "");
-              await updateTaskLocal(taskId, { end_date: v || null }, "Actualizado.");
+              await updateTaskLocal(taskId, { end_date: v || null }, "Actualizado.", {
+                rerender: "none",
+              });
               return;
             }
             if (field === "fecha_vencimiento") {
               const v = String(el.value || "");
-              await updateTaskLocal(taskId, { fecha_vencimiento: v || null }, "Actualizado.");
+              await updateTaskLocal(taskId, { fecha_vencimiento: v || null }, "Actualizado.", {
+                rerender: "none",
+              });
               return;
             }
             if (field === "puntos" || field === "horas_estimadas") {
               const raw = String(el.value || "").trim();
               const value = raw ? Number(raw) : null;
-              await updateTaskLocal(taskId, { [field]: Number.isNaN(value) ? null : value }, "Actualizado.");
+              await updateTaskLocal(taskId, { [field]: Number.isNaN(value) ? null : value }, "Actualizado.", {
+                rerender: "none",
+              });
               return;
             }
             if (field === "importante") {
-              await updateTaskLocal(taskId, { importante: Boolean(el.checked) }, "Actualizado.");
+              await updateTaskLocal(taskId, { importante: Boolean(el.checked) }, "Actualizado.", {
+                rerender: "none",
+              });
               return;
             }
           } catch {
