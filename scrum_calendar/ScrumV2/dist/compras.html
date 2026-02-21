@@ -58,6 +58,9 @@
         top: 0;
         z-index: 1030;
         border-radius: 0.75rem;
+        border: 0;
+        background: var(--bs-danger);
+        color: #fff;
         box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
       }
 
@@ -66,8 +69,9 @@
         letter-spacing: 0.2px;
       }
 
+      .compras-total-sticky .text-muted,
       .compras-total-sticky #total-general {
-        color: var(--bs-danger);
+        color: #fff !important;
       }
 
       .autocomplete-wrap {
@@ -121,6 +125,12 @@
         padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
         background: color-mix(in srgb, var(--bs-body-bg) 93%, transparent);
         backdrop-filter: blur(8px);
+      }
+
+      #finalizar-compra {
+        background: var(--bs-success);
+        border-color: var(--bs-success);
+        color: #fff;
       }
 
       .compras-list-empty {
@@ -458,6 +468,7 @@
                     <h3 class="h6 mb-0">Items cargados</h3>
                     <span class="badge text-bg-secondary" id="items-count">0</span>
                   </div>
+                  <small class="text-muted d-block mb-2" id="last-item-loaded">Ultimo producto: -</small>
                   <div id="lista-items"></div>
                 </div>
               </div>
@@ -662,6 +673,7 @@
           btnAgregarItem: document.getElementById("agregar-item"),
           listaItems: document.getElementById("lista-items"),
           itemsCount: document.getElementById("items-count"),
+          lastItemLoaded: document.getElementById("last-item-loaded"),
           btnFinalizar: document.getElementById("finalizar-compra"),
           historicosLista: document.getElementById("historicos-lista"),
           detalleCompra: document.getElementById("detalle-compra"),
@@ -869,11 +881,15 @@
           const items = state.compraActual.items;
           refs.itemsCount.textContent = String(items.length);
           if (!items.length) {
+            refs.lastItemLoaded.textContent = "Ultimo producto: -";
             refs.listaItems.innerHTML = '<div class="compras-list-empty">Aun no agregaste productos.</div>';
             updateTotalHeader();
             return;
           }
-          refs.listaItems.innerHTML = items
+          const lastItem = items[items.length - 1];
+          refs.lastItemLoaded.textContent = `Ultimo producto: ${lastItem?.producto || "-"}`;
+          refs.listaItems.innerHTML = [...items]
+            .reverse()
             .map(
               (item) => `
                 <div class="compras-item-card mb-2">
