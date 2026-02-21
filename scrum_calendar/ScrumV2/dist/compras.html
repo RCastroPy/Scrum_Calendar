@@ -163,6 +163,25 @@
         padding: 0.6rem 0.75rem;
       }
 
+      /* Override local for Bootstrap modals: global styles.css defines .modal z-index:999 */
+      #modal-editar-item.modal,
+      #modal-eliminar-item.modal {
+        z-index: 1060 !important;
+        background: transparent;
+        padding: 0;
+      }
+
+      #modal-editar-item .modal-content,
+      #modal-eliminar-item .modal-content {
+        width: auto;
+        background: var(--bs-modal-bg, var(--bs-body-bg));
+        border: var(--bs-modal-border-width, 1px) solid var(--bs-modal-border-color, var(--bs-border-color));
+        border-radius: var(--bs-modal-border-radius, 0.5rem);
+        padding: 0;
+        display: block;
+        color: inherit;
+      }
+
     </style>
   </head>
   <body class="layout-fixed sidebar-expand-lg bg-body-tertiary adminlte-base" data-page="compras">
@@ -411,11 +430,13 @@
                         class="form-control"
                         placeholder="Supermercado"
                         autocomplete="off"
+                        required
                       />
                       <div id="supermercado-suggestions" class="autocomplete-list d-none"></div>
                     </div>
                     <button class="btn btn-outline-primary" id="usar-supermercado" type="button">Usar</button>
                   </div>
+                  <small class="text-danger d-block mt-2" id="supermercado-error"></small>
                 </div>
               </div>
 
@@ -436,6 +457,7 @@
                         class="form-control"
                         placeholder="Agregar producto..."
                         autocomplete="off"
+                        required
                       />
                       <div id="producto-suggestions" class="autocomplete-list d-none"></div>
                     </div>
@@ -451,6 +473,7 @@
                         step="1"
                         inputmode="numeric"
                         placeholder="Precio (Gs.)"
+                        required
                       />
                     </div>
                     <div class="col-6">
@@ -462,6 +485,7 @@
                         inputmode="decimal"
                         value="1"
                         placeholder="Cantidad (ej: 1,234)"
+                        required
                       />
                     </div>
                   </div>
@@ -706,6 +730,7 @@
           btnLimpiarHistorico: document.getElementById("limpiar-historico"),
           resumenUltimaCompra: document.getElementById("resumen-ultima-compra"),
           inputSupermercado: document.getElementById("input-supermercado"),
+          supermercadoError: document.getElementById("supermercado-error"),
           supermercadoSuggestions: document.getElementById("supermercado-suggestions"),
           supermercadoSeleccionado: document.getElementById("supermercado-seleccionado"),
           btnUsarSupermercado: document.getElementById("usar-supermercado"),
@@ -872,6 +897,9 @@
         const setSupermercadoSeleccionado = (value) => {
           state.compraActual.supermercado = normalizeText(value);
           refs.supermercadoSeleccionado.textContent = state.compraActual.supermercado || "Sin seleccionar";
+          if (state.compraActual.supermercado) {
+            refs.supermercadoError.textContent = "";
+          }
           updateTotalHeader();
         };
 
@@ -904,12 +932,24 @@
 
         const confirmSupermercadoInput = () => {
           const value = normalizeText(refs.inputSupermercado.value);
-          if (!value) return;
+          if (!value) {
+            refs.supermercadoError.textContent = "Supermercado obligatorio.";
+            return false;
+          }
           const selected = upsertCatalogValue(state.catalogoSupermercados, value);
           writeStorage(STORAGE.stores, state.catalogoSupermercados);
           setSupermercadoSeleccionado(selected);
           refs.inputSupermercado.value = selected;
           refs.supermercadoSuggestions.classList.add("d-none");
+          refs.supermercadoError.textContent = "";
+          return true;
+        };
+
+        const ensureSupermercadoSeleccionado = () => {
+          if (state.compraActual.supermercado) return true;
+          if (confirmSupermercadoInput()) return true;
+          refs.supermercadoError.textContent = "Debes seleccionar un supermercado.";
+          return false;
         };
 
         const renderPreviewItemTotal = () => {
@@ -1069,6 +1109,11 @@
         };
 
         const addItem = () => {
+          refs.formItemError.textContent = "";
+          if (!ensureSupermercadoSeleccionado()) {
+            refs.formItemError.textContent = "Completa el supermercado antes de agregar items.";
+            return;
+          }
           const productoInput = normalizeText(refs.inputProducto.value);
           if (!productoInput) {
             refs.formItemError.textContent = "Debes ingresar un producto.";
@@ -1076,7 +1121,20 @@
           }
           const producto = upsertCatalogValue(state.catalogoProductos, productoInput);
           const precio = parseMoney(refs.inputPrecio.value);
+          if (!precio || precio <= 0) {
+            refs.formItemError.textContent = "Debes ingresar un precio mayor a 0.";
+            return;
+          }
+          const cantidadRaw = normalizeText(refs.inputCantidad.value);
+          if (!cantidadRaw) {
+            refs.formItemError.textContent = "Debes ingresar una cantidad.";
+            return;
+          }
           const cantidad = parseQuantity(refs.inputCantidad.value);
+          if (!cantidad || cantidad <= 0) {
+            refs.formItemError.textContent = "Cantidad invalida.";
+            return;
+          }
           writeStorage(STORAGE.products, state.catalogoProductos);
           state.compraActual.items.push({
             id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -1109,11 +1167,26 @@
             refs.editError.textContent = "Debes ingresar un producto.";
             return;
           }
+          const precio = parseMoney(refs.editPrecio.value);
+          if (!precio || precio <= 0) {
+            refs.editError.textContent = "Debes ingresar un precio mayor a 0.";
+            return;
+          }
+          const cantidadRaw = normalizeText(refs.editCantidad.value);
+          if (!cantidadRaw) {
+            refs.editError.textContent = "Debes ingresar una cantidad.";
+            return;
+          }
+          const cantidad = parseQuantity(refs.editCantidad.value);
+          if (!cantidad || cantidad <= 0) {
+            refs.editError.textContent = "Cantidad invalida.";
+            return;
+          }
           const producto = upsertCatalogValue(state.catalogoProductos, productoInput);
           writeStorage(STORAGE.products, state.catalogoProductos);
           item.producto = producto;
-          item.precio = parseMoney(refs.editPrecio.value);
-          item.cantidad = parseQuantity(refs.editCantidad.value);
+          item.precio = precio;
+          item.cantidad = cantidad;
           renderItems();
           editModal.hide();
         };
@@ -1131,7 +1204,11 @@
         };
 
         const finalizarCompra = () => {
-          if (!state.compraActual.supermercado || !state.compraActual.items.length) return;
+          if (!ensureSupermercadoSeleccionado()) return;
+          if (!state.compraActual.items.length) {
+            refs.formItemError.textContent = "Debes agregar al menos un item para finalizar.";
+            return;
+          }
           const compra = {
             id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
             fecha: new Date().toISOString(),
@@ -1307,6 +1384,9 @@
             confirmSupermercadoInput
           );
           refs.btnUsarSupermercado.addEventListener("click", confirmSupermercadoInput);
+          refs.inputSupermercado.addEventListener("input", () => {
+            refs.supermercadoError.textContent = "";
+          });
 
           bindAutocomplete(
             refs.inputProducto,
@@ -1322,6 +1402,15 @@
           refs.inputPrecio.addEventListener("input", renderPreviewItemTotal);
           refs.inputCantidad.addEventListener("input", () => {
             renderPreviewItemTotal();
+          });
+          refs.inputProducto.addEventListener("input", () => {
+            refs.formItemError.textContent = "";
+          });
+          refs.inputPrecio.addEventListener("input", () => {
+            refs.formItemError.textContent = "";
+          });
+          refs.inputCantidad.addEventListener("input", () => {
+            refs.formItemError.textContent = "";
           });
           refs.btnAgregarItem.addEventListener("click", addItem);
           refs.btnFinalizar.addEventListener("click", finalizarCompra);
