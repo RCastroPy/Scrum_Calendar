@@ -152,6 +152,17 @@
         box-shadow: 0 0 0 2px color-mix(in srgb, var(--bs-primary) 15%, transparent);
       }
 
+      .catalogo-productos-lista {
+        max-height: 320px;
+        overflow: auto;
+      }
+
+      .catalogo-producto-item {
+        border: 1px solid var(--bs-border-color);
+        border-radius: 0.65rem;
+        padding: 0.6rem 0.75rem;
+      }
+
     </style>
   </head>
   <body class="layout-fixed sidebar-expand-lg bg-body-tertiary adminlte-base" data-page="compras">
@@ -410,7 +421,12 @@
 
               <div class="card mb-3">
                 <div class="card-body">
-                  <h3 class="h6 mb-3">Agregar producto</h3>
+                  <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h3 class="h6 mb-0">Agregar producto</h3>
+                    <button class="btn btn-outline-secondary btn-sm" id="go-productos" type="button">
+                      <i class="bi bi-pencil-square me-1"></i>Editar productos
+                    </button>
+                  </div>
                   <div class="mb-2">
                     <label for="input-producto" class="form-label mb-1">Producto</label>
                     <div class="autocomplete-wrap">
@@ -480,6 +496,33 @@
                   </button>
                   <button class="btn btn-outline-secondary" id="volver-inicio" type="button">Volver</button>
                 </div>
+              </div>
+            </section>
+
+            <section id="view-productos" class="compras-view d-none">
+              <div class="card mb-3">
+                <div class="card-body">
+                  <h2 class="h5 mb-3">Editar productos del autocomplete</h2>
+                  <div class="input-group mb-3">
+                    <input
+                      type="text"
+                      id="catalogo-producto-input"
+                      class="form-control"
+                      placeholder="Nuevo producto"
+                      autocomplete="off"
+                    />
+                    <button class="btn btn-primary" id="catalogo-producto-agregar" type="button">
+                      Agregar
+                    </button>
+                  </div>
+                  <small class="text-danger d-block mb-2" id="catalogo-producto-error"></small>
+                  <div id="catalogo-productos-lista" class="catalogo-productos-lista"></div>
+                </div>
+              </div>
+              <div class="d-flex mt-3">
+                <button class="btn btn-outline-secondary btn-sm" id="volver-nueva-desde-productos" type="button">
+                  Volver a nueva compra
+                </button>
               </div>
             </section>
 
@@ -649,12 +692,15 @@
           views: {
             inicio: document.getElementById("view-inicio"),
             nueva: document.getElementById("view-nueva"),
+            productos: document.getElementById("view-productos"),
             historicos: document.getElementById("view-historicos"),
             detalle: document.getElementById("view-detalle"),
           },
           btnNueva: document.getElementById("go-nueva-compra"),
           btnHistoricos: document.getElementById("go-historicos"),
+          btnProductos: document.getElementById("go-productos"),
           btnVolverInicio: document.getElementById("volver-inicio"),
+          btnVolverNuevaProductos: document.getElementById("volver-nueva-desde-productos"),
           btnVolverInicioHistoricos: document.getElementById("volver-inicio-desde-historicos"),
           btnVolverHistoricos: document.getElementById("volver-historicos"),
           btnLimpiarHistorico: document.getElementById("limpiar-historico"),
@@ -674,6 +720,10 @@
           listaItems: document.getElementById("lista-items"),
           itemsCount: document.getElementById("items-count"),
           lastItemLoaded: document.getElementById("last-item-loaded"),
+          catalogoProductoInput: document.getElementById("catalogo-producto-input"),
+          catalogoProductoError: document.getElementById("catalogo-producto-error"),
+          catalogoProductoAgregar: document.getElementById("catalogo-producto-agregar"),
+          catalogoProductosLista: document.getElementById("catalogo-productos-lista"),
           btnFinalizar: document.getElementById("finalizar-compra"),
           historicosLista: document.getElementById("historicos-lista"),
           detalleCompra: document.getElementById("detalle-compra"),
@@ -875,6 +925,110 @@
           refs.formItemError.textContent = "";
           refs.productoSuggestions.classList.add("d-none");
           renderPreviewItemTotal();
+        };
+
+        const replaceProductInCurrentItems = (fromName, toName) => {
+          state.compraActual.items = state.compraActual.items.map((item) => {
+            if (normalizeText(item.producto).toLowerCase() === normalizeText(fromName).toLowerCase()) {
+              return { ...item, producto: toName };
+            }
+            return item;
+          });
+        };
+
+        const renderCatalogoProductos = () => {
+          if (!refs.catalogoProductosLista) return;
+          if (!state.catalogoProductos.length) {
+            refs.catalogoProductosLista.innerHTML =
+              '<div class="compras-list-empty">No hay productos en el catalogo.</div>';
+            return;
+          }
+          refs.catalogoProductosLista.innerHTML = state.catalogoProductos
+            .map(
+              (product, idx) => `
+                <div class="catalogo-producto-item d-flex justify-content-between align-items-center gap-2 mb-2">
+                  <span class="text-truncate">${idx + 1}. ${product}</span>
+                  <div class="d-flex gap-1">
+                    <button type="button" class="btn btn-outline-secondary btn-sm js-edit-catalog-product" data-product="${encodeURIComponent(product)}" aria-label="Editar">
+                      <i class="bi bi-pencil"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-danger btn-sm js-delete-catalog-product" data-product="${encodeURIComponent(product)}" aria-label="Eliminar">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </div>
+                </div>
+              `
+            )
+            .join("");
+        };
+
+        const addCatalogoProducto = () => {
+          const value = normalizeText(refs.catalogoProductoInput.value);
+          if (!value) {
+            refs.catalogoProductoError.textContent = "Debes ingresar un producto.";
+            return;
+          }
+          const before = state.catalogoProductos.length;
+          upsertCatalogValue(state.catalogoProductos, value);
+          if (state.catalogoProductos.length === before) {
+            refs.catalogoProductoError.textContent = "Ese producto ya existe en el catalogo.";
+            return;
+          }
+          writeStorage(STORAGE.products, state.catalogoProductos);
+          refs.catalogoProductoInput.value = "";
+          refs.catalogoProductoError.textContent = "";
+          renderCatalogoProductos();
+        };
+
+        const editCatalogoProducto = (currentProduct) => {
+          const current = normalizeText(currentProduct);
+          if (!current) return;
+          const newValue = normalizeText(window.prompt("Editar producto", current) || "");
+          if (!newValue || newValue.toLowerCase() === current.toLowerCase()) return;
+          const existing = findCatalogValue(state.catalogoProductos, newValue);
+          if (existing && existing.toLowerCase() !== current.toLowerCase()) {
+            refs.catalogoProductoError.textContent = "Ya existe un producto con ese nombre.";
+            return;
+          }
+          state.catalogoProductos = state.catalogoProductos
+            .filter((item) => normalizeText(item).toLowerCase() !== current.toLowerCase())
+            .concat(newValue);
+          state.catalogoProductos.sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+          writeStorage(STORAGE.products, state.catalogoProductos);
+          replaceProductInCurrentItems(current, newValue);
+          if (
+            normalizeText(refs.inputProducto.value).toLowerCase() ===
+            current.toLowerCase()
+          ) {
+            refs.inputProducto.value = newValue;
+          }
+          if (
+            normalizeText(refs.editProducto.value).toLowerCase() ===
+            current.toLowerCase()
+          ) {
+            refs.editProducto.value = newValue;
+          }
+          refs.catalogoProductoError.textContent = "";
+          renderItems();
+          renderCatalogoProductos();
+        };
+
+        const deleteCatalogoProducto = (productToDelete) => {
+          const product = normalizeText(productToDelete);
+          if (!product) return;
+          if (!window.confirm(`¿Eliminar "${product}" del catalogo?`)) return;
+          state.catalogoProductos = state.catalogoProductos.filter(
+            (item) => normalizeText(item).toLowerCase() !== product.toLowerCase()
+          );
+          writeStorage(STORAGE.products, state.catalogoProductos);
+          refs.catalogoProductoError.textContent = "";
+          if (
+            normalizeText(refs.inputProducto.value).toLowerCase() ===
+            product.toLowerCase()
+          ) {
+            refs.inputProducto.value = "";
+          }
+          renderCatalogoProductos();
         };
 
         const renderItems = () => {
@@ -1124,7 +1278,13 @@
             renderHistoricos();
             switchView("historicos");
           });
+          refs.btnProductos.addEventListener("click", () => {
+            refs.catalogoProductoError.textContent = "";
+            renderCatalogoProductos();
+            switchView("productos");
+          });
           refs.btnVolverInicio.addEventListener("click", () => switchView("inicio"));
+          refs.btnVolverNuevaProductos.addEventListener("click", () => switchView("nueva"));
           refs.btnVolverInicioHistoricos.addEventListener("click", () => switchView("inicio"));
           refs.btnVolverHistoricos.addEventListener("click", () => switchView("historicos"));
           refs.btnLimpiarHistorico.addEventListener("click", () => {
@@ -1165,6 +1325,24 @@
           });
           refs.btnAgregarItem.addEventListener("click", addItem);
           refs.btnFinalizar.addEventListener("click", finalizarCompra);
+          refs.catalogoProductoAgregar.addEventListener("click", addCatalogoProducto);
+          refs.catalogoProductoInput.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              addCatalogoProducto();
+            }
+          });
+          refs.catalogoProductosLista.addEventListener("click", (event) => {
+            const editBtn = event.target.closest(".js-edit-catalog-product");
+            if (editBtn) {
+              editCatalogoProducto(decodeURIComponent(editBtn.dataset.product || ""));
+              return;
+            }
+            const deleteBtn = event.target.closest(".js-delete-catalog-product");
+            if (deleteBtn) {
+              deleteCatalogoProducto(decodeURIComponent(deleteBtn.dataset.product || ""));
+            }
+          });
 
           refs.listaItems.addEventListener("click", (event) => {
             const editBtn = event.target.closest(".js-edit-item");
@@ -1229,6 +1407,7 @@
           renderInicioResumen();
           renderPreviewItemTotal();
           renderItems();
+          renderCatalogoProductos();
           renderHistoricos();
           setSupermercadoSeleccionado("");
           switchView("inicio");
