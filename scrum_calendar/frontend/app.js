@@ -15034,6 +15034,7 @@
     initDayModal();
     customizeNavbar();
     ensureTaskMenu();
+    ensureComprasMenu();
     try {
       if (isPublicRetroView()) {
         await initRetroPublic();
@@ -15948,6 +15949,58 @@
       </a>
     `;
     dailyItem.insertAdjacentElement("afterend", li);
+  }
+
+  function ensureComprasMenu() {
+    const nav = qs("#navigation");
+    if (!nav) return;
+    const isComprasPage =
+      document.body?.dataset?.page === "compras" ||
+      String(window.location.pathname || "").endsWith("/compras.html") ||
+      String(window.location.href || "").includes("compras.html");
+    const compraItems = Array.from(nav.querySelectorAll("a.nav-link"))
+      .filter((link) => (link.textContent || "").trim() === "Compras")
+      .map((link) => link.closest("li"))
+      .filter(Boolean);
+    if (compraItems.length > 1) {
+      compraItems.slice(1).forEach((item) => item.remove());
+    }
+    const existing = compraItems[0]?.querySelector("a.nav-link");
+    if (existing) {
+      existing.classList.toggle("active", isComprasPage);
+      if (isComprasPage) {
+        const tasksLink = Array.from(nav.querySelectorAll("a.nav-link"))
+          .find((link) => (link.textContent || "").trim() === "Tareas");
+        if (tasksLink) tasksLink.classList.remove("active");
+      }
+      return;
+    }
+
+    const targetItem =
+      Array.from(nav.querySelectorAll("a.nav-link"))
+        .find((link) => (link.textContent || "").trim() === "Tareas")
+        ?.closest("li") ||
+      Array.from(nav.querySelectorAll("a.nav-link"))
+        .find((link) => (link.textContent || "").trim() === "Daily")
+        ?.closest("li");
+    if (!targetItem) return;
+
+    const li = document.createElement("li");
+    li.className = "nav-item";
+    li.dataset.key = "compras-menu";
+    li.dataset.role = "admin";
+    li.innerHTML = `
+      <a href="compras.html" class="nav-link ${isComprasPage ? "active" : ""}">
+        <i class="nav-icon bi bi-cart3"></i>
+        <p>Compras</p>
+      </a>
+    `;
+    targetItem.insertAdjacentElement("afterend", li);
+    if (isComprasPage) {
+      const tasksLink = Array.from(nav.querySelectorAll("a.nav-link"))
+        .find((link) => (link.textContent || "").trim() === "Tareas");
+      if (tasksLink) tasksLink.classList.remove("active");
+    }
   }
 
   init();

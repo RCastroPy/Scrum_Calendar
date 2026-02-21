@@ -1,0 +1,1219 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>ScrumIA | Compras</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#007bff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1a1a1a" media="(prefers-color-scheme: dark)" />
+    <script id="theme-preload">(function(){try{var k="scrum_calendar_theme";var s=localStorage.getItem(k);var m=s?(s==="dark"?"dark":"light"):((window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light");document.documentElement.setAttribute("data-bs-theme",m);}catch(e){}})();</script>
+    <meta name="title" content="ScrumIA | Compras" />
+    <link rel="preload" href="./css/adminlte.css" as="style" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@fontsource/source-sans-3@5.0.12/index.css"
+      integrity="sha256-tXJfXfp6Ewt1ilPzLDtQnJV4hclT9XuaZUKyUvmyr+Q="
+      crossorigin="anonymous"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/overlayscrollbars@2.11.0/styles/overlayscrollbars.min.css"
+      crossorigin="anonymous"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css"
+      crossorigin="anonymous"
+    />
+    <link rel="stylesheet" href="./css/adminlte.css" />
+    <link rel="stylesheet" href="./styles.css?v=20260221compras2" />
+    <style>
+      .compras-shell {
+        max-width: 560px;
+        margin: 0 auto;
+      }
+
+      .compras-view {
+        padding-bottom: 1rem;
+      }
+
+      .compras-actions-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+      }
+
+      .compras-action {
+        min-height: 86px;
+      }
+
+      .compras-total-sticky {
+        position: sticky;
+        top: 0;
+        z-index: 1030;
+        border-radius: 0.75rem;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+      }
+
+      .compras-total-sticky .display-6 {
+        font-weight: 800;
+        letter-spacing: 0.2px;
+      }
+
+      .autocomplete-wrap {
+        position: relative;
+      }
+
+      .autocomplete-list {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: calc(100% + 4px);
+        z-index: 1055;
+        max-height: 180px;
+        overflow: auto;
+        border: 1px solid var(--bs-border-color);
+        border-radius: 0.5rem;
+        background: var(--bs-body-bg);
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14);
+      }
+
+      .autocomplete-item {
+        width: 100%;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        text-align: left;
+        padding: 0.55rem 0.75rem;
+      }
+
+      .autocomplete-item:hover,
+      .autocomplete-item:focus {
+        background: var(--bs-primary-bg-subtle);
+      }
+
+      .compras-item-card {
+        border: 1px solid var(--bs-border-color);
+        border-radius: 0.75rem;
+        padding: 0.75rem;
+      }
+
+      .compras-item-title {
+        font-weight: 700;
+        margin: 0;
+      }
+
+      .compras-footer-sticky {
+        position: sticky;
+        bottom: 0;
+        z-index: 1030;
+        padding-top: 0.5rem;
+        padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+        background: color-mix(in srgb, var(--bs-body-bg) 93%, transparent);
+        backdrop-filter: blur(8px);
+      }
+
+      .compras-list-empty {
+        border: 1px dashed var(--bs-border-color);
+        border-radius: 0.75rem;
+        padding: 1rem;
+        text-align: center;
+        color: var(--bs-secondary-color);
+      }
+
+      .compras-history-card {
+        border: 1px solid var(--bs-border-color);
+        border-radius: 0.75rem;
+        padding: 0.75rem;
+      }
+
+      .compras-history-card.is-latest {
+        border-color: var(--bs-primary);
+        box-shadow: 0 0 0 2px color-mix(in srgb, var(--bs-primary) 15%, transparent);
+      }
+
+      @media (min-width: 768px) {
+        .compras-actions-grid {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body class="layout-fixed sidebar-expand-lg bg-body-tertiary adminlte-base" data-page="compras">
+    <div class="app-wrapper">
+      <nav class="app-header navbar navbar-expand bg-body">
+        <div class="container-fluid">
+          <ul class="navbar-nav">
+            <li class="nav-item">
+              <a class="nav-link" data-lte-toggle="sidebar" href="#" role="button">
+                <i class="bi bi-list"></i>
+              </a>
+            </li>
+            <li class="nav-item d-flex align-items-center ms-2">
+              <span class="me-2 small text-muted">Celula</span>
+              <select id="cell-filter" class="form-select form-select-sm">
+                <option value="">Todas</option>
+              </select>
+            </li>
+          </ul>
+          <ul class="navbar-nav ms-auto">
+            <li class="nav-item">
+              <a class="nav-link" data-widget="navbar-search" href="#" role="button">
+                <i class="bi bi-search"></i>
+              </a>
+            </li>
+          </ul>
+        </div>
+      </nav>
+
+      <aside class="app-sidebar bg-body-secondary shadow" data-bs-theme="dark">
+        <div class="sidebar-brand">
+          <a href="index.html" class="brand-link">
+            <img src="./assets/img/AdminLTELogo.png" alt="ScrumIA" class="brand-image opacity-75 shadow" />
+            <span class="brand-text fw-light">ScrumIA</span>
+          </a>
+        </div>
+        <div class="sidebar-wrapper">
+          <nav class="mt-2">
+            <ul
+              class="nav sidebar-menu flex-column"
+              data-lte-toggle="treeview"
+              role="navigation"
+              aria-label="Main navigation"
+              data-accordion="false"
+              id="navigation"
+            >
+              <li class="nav-header">SCRUM</li>
+              <li class="nav-item">
+                <a href="index.html" class="nav-link">
+                  <i class="nav-icon bi bi-speedometer"></i>
+                  <p>Dashboard</p>
+                </a>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="daily.html" class="nav-link">
+                  <i class="nav-icon bi bi-calendar3"></i>
+                  <p>Daily</p>
+                </a>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="tasks.html" class="nav-link">
+                  <i class="nav-icon bi bi-list-check"></i>
+                  <p>Tareas</p>
+                </a>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="compras.html" class="nav-link active">
+                  <i class="nav-icon bi bi-cart3"></i>
+                  <p>Compras</p>
+                </a>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="#" class="nav-link">
+                  <i class="nav-icon bi bi-box-seam"></i>
+                  <p>
+                    Releases
+                    <i class="nav-arrow bi bi-chevron-right"></i>
+                  </p>
+                </a>
+                <ul class="nav nav-treeview">
+                  <li class="nav-item">
+                    <a href="releases-gantt.html" class="nav-link">
+                      <i class="nav-icon bi bi-circle"></i>
+                      <p>Gantt</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="releases-table.html" class="nav-link">
+                      <i class="nav-icon bi bi-circle"></i>
+                      <p>Tabla de Releases</p>
+                    </a>
+                  </li>
+                </ul>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="one-to-one.html" class="nav-link">
+                  <i class="nav-icon bi bi-person-badge"></i>
+                  <p>1:1</p>
+                </a>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="retrospective.html" class="nav-link">
+                  <i class="nav-icon bi bi-arrow-repeat"></i>
+                  <p>Retrospectiva</p>
+                </a>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="poker-planning.html" class="nav-link">
+                  <i class="nav-icon bi bi-suit-spade-fill"></i>
+                  <p>Poker Planning</p>
+                </a>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="#" class="nav-link">
+                  <i class="nav-icon bi bi-database-fill"></i>
+                  <p>
+                    Carga de datos
+                    <i class="nav-arrow bi bi-chevron-right"></i>
+                  </p>
+                </a>
+                <ul class="nav nav-treeview">
+                  <li class="nav-item">
+                    <a href="data-entry.html#celulas" class="nav-link">
+                      <i class="nav-icon bi bi-circle"></i>
+                      <p>Celulas</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="data-entry.html#personas" class="nav-link">
+                      <i class="nav-icon bi bi-circle"></i>
+                      <p>Personas</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="data-entry.html#sprints" class="nav-link">
+                      <i class="nav-icon bi bi-circle"></i>
+                      <p>Sprints</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="data-entry.html#feriados" class="nav-link">
+                      <i class="nav-icon bi bi-circle"></i>
+                      <p>Feriados</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="data-entry.html#tipos-evento" class="nav-link">
+                      <i class="nav-icon bi bi-circle"></i>
+                      <p>Tipos de evento</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="data-entry.html#eventos" class="nav-link">
+                      <i class="nav-icon bi bi-circle"></i>
+                      <p>Eventos</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="data-entry.html#importacion" class="nav-link">
+                      <i class="nav-icon bi bi-circle"></i>
+                      <p>Importacion CSV</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="data-entry.html#quarters" class="nav-link">
+                      <i class="nav-icon bi bi-circle"></i>
+                      <p>Quarter</p>
+                    </a>
+                  </li>
+                </ul>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="admin.html" class="nav-link">
+                  <i class="nav-icon bi bi-gear"></i>
+                  <p>Administracion</p>
+                </a>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="connect.html" class="nav-link">
+                  <i class="nav-icon bi bi-plug"></i>
+                  <p>Conectar API</p>
+                </a>
+              </li>
+            </ul>
+          </nav>
+        </div>
+      </aside>
+
+      <main class="app-main">
+        <div class="content-header">
+          <div class="container-fluid">
+            <div class="row mb-2">
+              <div class="col-sm-6">
+                <h1 class="m-0">Compras</h1>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <section class="content">
+          <div class="container-fluid compras-shell" id="compras-app">
+            <section id="view-inicio" class="compras-view">
+              <div class="card mb-3">
+                <div class="card-body">
+                  <h2 class="h4 mb-1">Compras</h2>
+                  <p class="text-muted mb-0">Registra y consulta compras del supermercado.</p>
+                </div>
+              </div>
+
+              <div class="compras-actions-grid mb-3">
+                <button class="btn btn-primary compras-action" id="go-nueva-compra" type="button">
+                  <i class="bi bi-plus-circle me-2"></i>Nueva compra
+                </button>
+                <button class="btn btn-outline-primary compras-action" id="go-historicos" type="button">
+                  <i class="bi bi-clock-history me-2"></i>Historicos
+                </button>
+              </div>
+
+              <div class="card" id="resumen-ultima-compra">
+                <div class="card-body">
+                  <h3 class="h6 mb-2">Ultima compra</h3>
+                  <p class="text-muted mb-0">Aun no hay compras registradas.</p>
+                </div>
+              </div>
+            </section>
+
+            <section id="view-nueva" class="compras-view d-none">
+              <div class="card compras-total-sticky mb-3">
+                <div class="card-body py-2">
+                  <small class="text-muted d-block">Total general</small>
+                  <div class="display-6 mb-0">Total: <span id="total-general">Gs. 0</span></div>
+                </div>
+              </div>
+
+              <div class="card mb-3">
+                <div class="card-body">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h3 class="h6 mb-0">Supermercado</h3>
+                    <span class="badge text-bg-light" id="supermercado-seleccionado">Sin seleccionar</span>
+                  </div>
+                  <div class="input-group">
+                    <div class="autocomplete-wrap flex-fill">
+                      <input
+                        type="text"
+                        id="input-supermercado"
+                        class="form-control"
+                        placeholder="Supermercado"
+                        autocomplete="off"
+                      />
+                      <div id="supermercado-suggestions" class="autocomplete-list d-none"></div>
+                    </div>
+                    <button class="btn btn-outline-primary" id="usar-supermercado" type="button">Usar</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card mb-3">
+                <div class="card-body">
+                  <h3 class="h6 mb-3">Agregar producto</h3>
+                  <div class="mb-2">
+                    <label for="input-producto" class="form-label mb-1">Producto</label>
+                    <div class="autocomplete-wrap">
+                      <input
+                        type="text"
+                        id="input-producto"
+                        class="form-control"
+                        placeholder="Agregar producto..."
+                        autocomplete="off"
+                      />
+                      <div id="producto-suggestions" class="autocomplete-list d-none"></div>
+                    </div>
+                  </div>
+                  <div class="row g-2">
+                    <div class="col-6">
+                      <label for="input-precio" class="form-label mb-1">Precio (Gs.)</label>
+                      <input
+                        type="number"
+                        id="input-precio"
+                        class="form-control"
+                        min="0"
+                        step="1"
+                        inputmode="numeric"
+                        placeholder="Precio (Gs.)"
+                      />
+                    </div>
+                    <div class="col-6">
+                      <label for="input-cantidad" class="form-label mb-1">Cantidad</label>
+                      <input
+                        type="text"
+                        id="input-cantidad"
+                        class="form-control"
+                        inputmode="decimal"
+                        value="1"
+                        placeholder="Cantidad (ej: 1,234)"
+                      />
+                    </div>
+                  </div>
+                  <div class="mt-2 d-flex justify-content-between align-items-center">
+                    <small class="text-muted">Total item</small>
+                    <strong id="total-item-preview">Gs. 0</strong>
+                  </div>
+                  <div class="d-grid mt-3">
+                    <button class="btn btn-primary" id="agregar-item" type="button">
+                      <i class="bi bi-plus-lg me-1"></i>Agregar
+                    </button>
+                  </div>
+                  <small class="text-danger d-block mt-2" id="form-item-error"></small>
+                </div>
+              </div>
+
+              <div class="card mb-3">
+                <div class="card-body">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h3 class="h6 mb-0">Items cargados</h3>
+                    <span class="badge text-bg-secondary" id="items-count">0</span>
+                  </div>
+                  <div id="lista-items"></div>
+                </div>
+              </div>
+
+              <div class="compras-footer-sticky">
+                <div class="d-grid gap-2">
+                  <button class="btn btn-success btn-lg" id="finalizar-compra" type="button" disabled>
+                    Finalizar compra
+                  </button>
+                  <button class="btn btn-outline-secondary" id="volver-inicio" type="button">Volver</button>
+                </div>
+              </div>
+            </section>
+
+            <section id="view-historicos" class="compras-view d-none">
+              <div class="card mb-3">
+                <div class="card-body d-flex justify-content-between align-items-center">
+                  <h2 class="h5 mb-0">Historicos</h2>
+                  <button class="btn btn-outline-danger btn-sm" id="limpiar-historico" type="button">
+                    Eliminar todo
+                  </button>
+                </div>
+              </div>
+              <div id="historicos-lista"></div>
+              <div class="d-grid mt-3">
+                <button class="btn btn-outline-secondary" id="volver-inicio-desde-historicos" type="button">
+                  Volver
+                </button>
+              </div>
+            </section>
+
+            <section id="view-detalle" class="compras-view d-none">
+              <div class="card mb-3">
+                <div class="card-body">
+                  <h2 class="h5 mb-3">Detalle de compra</h2>
+                  <div id="detalle-compra"></div>
+                </div>
+              </div>
+              <div class="d-grid">
+                <button class="btn btn-outline-secondary" id="volver-historicos" type="button">Volver</button>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
+
+      <footer class="app-footer hidden">
+        <div class="float-end d-none d-sm-inline">Anything you want</div>
+        <strong>
+          Copyright &copy; 2014-2025
+          <a href="https://adminlte.io">AdminLTE.io</a>.
+        </strong>
+        All rights reserved.
+      </footer>
+    </div>
+
+    <div class="modal fade" id="modal-editar-item" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Editar item</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-2">
+              <label for="edit-producto" class="form-label mb-1">Producto</label>
+              <div class="autocomplete-wrap">
+                <input type="text" id="edit-producto" class="form-control" autocomplete="off" />
+                <div id="edit-producto-suggestions" class="autocomplete-list d-none"></div>
+              </div>
+            </div>
+            <div class="row g-2">
+              <div class="col-6">
+                <label for="edit-precio" class="form-label mb-1">Precio (Gs.)</label>
+                <input
+                  type="number"
+                  id="edit-precio"
+                  class="form-control"
+                  min="0"
+                  step="1"
+                  inputmode="numeric"
+                />
+              </div>
+              <div class="col-6">
+                <label for="edit-cantidad" class="form-label mb-1">Cantidad</label>
+                <input
+                  type="text"
+                  id="edit-cantidad"
+                  class="form-control"
+                  inputmode="decimal"
+                  placeholder="Cantidad (ej: 1,234)"
+                />
+              </div>
+            </div>
+            <div class="mt-2 d-flex justify-content-between align-items-center">
+              <small class="text-muted">Total item</small>
+              <strong id="edit-total-item">Gs. 0</strong>
+            </div>
+            <small class="text-danger d-block mt-2" id="edit-item-error"></small>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-primary" id="guardar-edicion-item">Guardar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="modal-eliminar-item" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Eliminar item</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p class="mb-0">¿Eliminar este item de la compra?</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-danger" id="confirmar-eliminar-item">Eliminar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/overlayscrollbars@2.11.0/browser/overlayscrollbars.browser.es6.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.min.js" crossorigin="anonymous"></script>
+    <script src="./js/adminlte.js"></script>
+    <script>
+      const SELECTOR_SIDEBAR_WRAPPER = '.sidebar-wrapper';
+      const Default = {
+        scrollbarTheme: 'os-theme-light',
+        scrollbarAutoHide: 'leave',
+        scrollbarClickScroll: true,
+      };
+      document.addEventListener('DOMContentLoaded', function () {
+        const sidebarWrapper = document.querySelector(SELECTOR_SIDEBAR_WRAPPER);
+        const isMobile = window.innerWidth <= 992;
+        if (
+          sidebarWrapper &&
+          OverlayScrollbarsGlobal?.OverlayScrollbars !== undefined &&
+          !isMobile
+        ) {
+          OverlayScrollbarsGlobal.OverlayScrollbars(sidebarWrapper, {
+            scrollbars: {
+              theme: Default.scrollbarTheme,
+              autoHide: Default.scrollbarAutoHide,
+              clickScroll: Default.scrollbarClickScroll,
+            },
+          });
+        }
+      });
+    </script>
+    <script src="./app.js?v=20260221compras2"></script>
+    <script>
+      (() => {
+        const STORAGE = {
+          products: "catalogoProductos",
+          stores: "catalogoSupermercados",
+          history: "historicosCompras",
+        };
+
+        const state = {
+          view: "inicio",
+          catalogoProductos: [],
+          catalogoSupermercados: [],
+          historicosCompras: [],
+          compraActual: { supermercado: "", items: [] },
+          editItemId: null,
+          deleteItemId: null,
+          selectedHistoryId: null,
+          highlightedHistoryId: null,
+        };
+
+        const refs = {
+          views: {
+            inicio: document.getElementById("view-inicio"),
+            nueva: document.getElementById("view-nueva"),
+            historicos: document.getElementById("view-historicos"),
+            detalle: document.getElementById("view-detalle"),
+          },
+          btnNueva: document.getElementById("go-nueva-compra"),
+          btnHistoricos: document.getElementById("go-historicos"),
+          btnVolverInicio: document.getElementById("volver-inicio"),
+          btnVolverInicioHistoricos: document.getElementById("volver-inicio-desde-historicos"),
+          btnVolverHistoricos: document.getElementById("volver-historicos"),
+          btnLimpiarHistorico: document.getElementById("limpiar-historico"),
+          resumenUltimaCompra: document.getElementById("resumen-ultima-compra"),
+          inputSupermercado: document.getElementById("input-supermercado"),
+          supermercadoSuggestions: document.getElementById("supermercado-suggestions"),
+          supermercadoSeleccionado: document.getElementById("supermercado-seleccionado"),
+          btnUsarSupermercado: document.getElementById("usar-supermercado"),
+          inputProducto: document.getElementById("input-producto"),
+          productoSuggestions: document.getElementById("producto-suggestions"),
+          inputPrecio: document.getElementById("input-precio"),
+          inputCantidad: document.getElementById("input-cantidad"),
+          totalItemPreview: document.getElementById("total-item-preview"),
+          totalGeneral: document.getElementById("total-general"),
+          formItemError: document.getElementById("form-item-error"),
+          btnAgregarItem: document.getElementById("agregar-item"),
+          listaItems: document.getElementById("lista-items"),
+          itemsCount: document.getElementById("items-count"),
+          btnFinalizar: document.getElementById("finalizar-compra"),
+          historicosLista: document.getElementById("historicos-lista"),
+          detalleCompra: document.getElementById("detalle-compra"),
+          editModalEl: document.getElementById("modal-editar-item"),
+          editProducto: document.getElementById("edit-producto"),
+          editProductoSuggestions: document.getElementById("edit-producto-suggestions"),
+          editPrecio: document.getElementById("edit-precio"),
+          editCantidad: document.getElementById("edit-cantidad"),
+          editTotal: document.getElementById("edit-total-item"),
+          editError: document.getElementById("edit-item-error"),
+          btnGuardarEdicion: document.getElementById("guardar-edicion-item"),
+          deleteModalEl: document.getElementById("modal-eliminar-item"),
+          btnConfirmarEliminar: document.getElementById("confirmar-eliminar-item"),
+        };
+
+        const editModal = refs.editModalEl ? new bootstrap.Modal(refs.editModalEl) : null;
+        const deleteModal = refs.deleteModalEl ? new bootstrap.Modal(refs.deleteModalEl) : null;
+
+        const readStorage = (key, fallback) => {
+          try {
+            const raw = localStorage.getItem(key);
+            if (!raw) return fallback;
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed : fallback;
+          } catch {
+            return fallback;
+          }
+        };
+
+        const writeStorage = (key, value) => {
+          try {
+            localStorage.setItem(key, JSON.stringify(value));
+          } catch {
+            // ignore localStorage write errors
+          }
+        };
+
+        const normalizeText = (value) =>
+          String(value || "")
+            .trim()
+            .replace(/\s+/g, " ");
+
+        const findCatalogValue = (catalog, value) => {
+          const normalized = normalizeText(value).toLowerCase();
+          if (!normalized) return "";
+          return catalog.find((entry) => normalizeText(entry).toLowerCase() === normalized) || "";
+        };
+
+        const upsertCatalogValue = (catalog, value) => {
+          const clean = normalizeText(value);
+          if (!clean) return "";
+          const exists = findCatalogValue(catalog, clean);
+          if (exists) return exists;
+          catalog.push(clean);
+          catalog.sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+          return clean;
+        };
+
+        const formatGs = (value) => {
+          const amount = Number.isFinite(Number(value)) ? Math.max(0, Math.round(Number(value))) : 0;
+          return `Gs. ${new Intl.NumberFormat("es-PY", { maximumFractionDigits: 0 }).format(amount)}`;
+        };
+
+        const parseMoney = (value) => {
+          const clean = String(value || "").replace(/[^\d]/g, "");
+          return clean ? Number(clean) : 0;
+        };
+
+        const parseQuantity = (value) => {
+          const raw = String(value || "").trim();
+          if (!raw) return 1;
+          const safe = raw.replace(/\s+/g, "").replace(/[^0-9,.\-]/g, "");
+          const lastComma = safe.lastIndexOf(",");
+          const lastDot = safe.lastIndexOf(".");
+          let normalized = safe;
+          if (lastComma !== -1 || lastDot !== -1) {
+            const sepIndex = Math.max(lastComma, lastDot);
+            const whole = safe.slice(0, sepIndex).replace(/[.,]/g, "");
+            const decimal = safe.slice(sepIndex + 1).replace(/[.,]/g, "");
+            normalized = `${whole}.${decimal}`;
+          } else {
+            normalized = safe.replace(/[.,]/g, "");
+          }
+          const n = Number(normalized);
+          return Number.isFinite(n) && n > 0 ? n : 1;
+        };
+
+        const formatQuantity = (value) =>
+          new Intl.NumberFormat("es-PY", {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 3,
+          }).format(Number.isFinite(Number(value)) ? Number(value) : 0);
+
+        const itemTotal = (item) =>
+          Math.round(Math.max(0, Number(item.precio || 0)) * Math.max(0, Number(item.cantidad || 0)));
+        const totalGeneral = () => state.compraActual.items.reduce((sum, item) => sum + itemTotal(item), 0);
+
+        const formatDateTime = (iso) => {
+          const dt = new Date(iso);
+          if (Number.isNaN(dt.getTime())) return "-";
+          return dt.toLocaleString("es-PY", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          });
+        };
+
+        const updateTotalHeader = () => {
+          refs.totalGeneral.textContent = formatGs(totalGeneral());
+          refs.btnFinalizar.disabled = !(state.compraActual.supermercado && state.compraActual.items.length > 0);
+        };
+
+        const switchView = (viewName) => {
+          state.view = viewName;
+          Object.entries(refs.views).forEach(([key, el]) => {
+            if (!el) return;
+            el.classList.toggle("d-none", key !== viewName);
+          });
+        };
+
+        const renderInicioResumen = () => {
+          if (!refs.resumenUltimaCompra) return;
+          const last = state.historicosCompras[0];
+          if (!last) {
+            refs.resumenUltimaCompra.innerHTML = `
+              <div class="card-body">
+                <h3 class="h6 mb-2">Ultima compra</h3>
+                <p class="text-muted mb-0">Aun no hay compras registradas.</p>
+              </div>
+            `;
+            return;
+          }
+          refs.resumenUltimaCompra.innerHTML = `
+            <div class="card-body">
+              <h3 class="h6 mb-2">Ultima compra</h3>
+              <p class="mb-1"><strong>${last.supermercado}</strong></p>
+              <p class="mb-1 text-muted">${formatDateTime(last.fecha)}</p>
+              <p class="mb-0 fw-semibold">${formatGs(last.totalGeneral || 0)}</p>
+            </div>
+          `;
+        };
+
+        const setSupermercadoSeleccionado = (value) => {
+          state.compraActual.supermercado = normalizeText(value);
+          refs.supermercadoSeleccionado.textContent = state.compraActual.supermercado || "Sin seleccionar";
+          updateTotalHeader();
+        };
+
+        const renderSuggestions = (container, items, onPick) => {
+          if (!container) return;
+          container.innerHTML = "";
+          if (!items.length) {
+            container.classList.add("d-none");
+            return;
+          }
+          items.slice(0, 8).forEach((item) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "autocomplete-item";
+            button.textContent = item;
+            button.addEventListener("click", () => {
+              onPick(item);
+              container.classList.add("d-none");
+            });
+            container.appendChild(button);
+          });
+          container.classList.remove("d-none");
+        };
+
+        const filteredSuggestions = (catalog, term) => {
+          const q = normalizeText(term).toLowerCase();
+          if (!q) return catalog.slice(0, 8);
+          return catalog.filter((entry) => normalizeText(entry).toLowerCase().includes(q)).slice(0, 8);
+        };
+
+        const confirmSupermercadoInput = () => {
+          const value = normalizeText(refs.inputSupermercado.value);
+          if (!value) return;
+          const selected = upsertCatalogValue(state.catalogoSupermercados, value);
+          writeStorage(STORAGE.stores, state.catalogoSupermercados);
+          setSupermercadoSeleccionado(selected);
+          refs.inputSupermercado.value = selected;
+          refs.supermercadoSuggestions.classList.add("d-none");
+        };
+
+        const renderPreviewItemTotal = () => {
+          const precio = parseMoney(refs.inputPrecio.value);
+          const cantidad = parseQuantity(refs.inputCantidad.value);
+          refs.totalItemPreview.textContent = formatGs(precio * cantidad);
+        };
+
+        const clearItemForm = () => {
+          refs.inputProducto.value = "";
+          refs.inputPrecio.value = "";
+          refs.inputCantidad.value = "1";
+          refs.formItemError.textContent = "";
+          refs.productoSuggestions.classList.add("d-none");
+          renderPreviewItemTotal();
+        };
+
+        const renderItems = () => {
+          const items = state.compraActual.items;
+          refs.itemsCount.textContent = String(items.length);
+          if (!items.length) {
+            refs.listaItems.innerHTML = '<div class="compras-list-empty">Aun no agregaste productos.</div>';
+            updateTotalHeader();
+            return;
+          }
+          refs.listaItems.innerHTML = items
+            .map(
+              (item) => `
+                <div class="compras-item-card mb-2">
+                  <div class="d-flex justify-content-between gap-2">
+                    <div>
+                      <p class="compras-item-title">${item.producto}</p>
+                      <small class="text-muted">${formatGs(item.precio)} x ${formatQuantity(item.cantidad)} = ${formatGs(itemTotal(item))}</small>
+                    </div>
+                    <div class="d-flex align-items-start gap-1">
+                      <button type="button" class="btn btn-outline-secondary btn-sm js-edit-item" data-id="${item.id}" aria-label="Editar">
+                        <i class="bi bi-pencil"></i>
+                      </button>
+                      <button type="button" class="btn btn-outline-danger btn-sm js-delete-item" data-id="${item.id}" aria-label="Eliminar">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              `
+            )
+            .join("");
+          updateTotalHeader();
+        };
+
+        const addItem = () => {
+          const productoInput = normalizeText(refs.inputProducto.value);
+          if (!productoInput) {
+            refs.formItemError.textContent = "Debes ingresar un producto.";
+            return;
+          }
+          const producto = upsertCatalogValue(state.catalogoProductos, productoInput);
+          const precio = parseMoney(refs.inputPrecio.value);
+          const cantidad = parseQuantity(refs.inputCantidad.value);
+          writeStorage(STORAGE.products, state.catalogoProductos);
+          state.compraActual.items.push({
+            id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            producto,
+            precio,
+            cantidad,
+          });
+          clearItemForm();
+          renderItems();
+        };
+
+        const openEditItem = (itemId) => {
+          const item = state.compraActual.items.find((entry) => entry.id === itemId);
+          if (!item || !editModal) return;
+          state.editItemId = item.id;
+          refs.editProducto.value = item.producto;
+          refs.editPrecio.value = String(item.precio);
+          refs.editCantidad.value = String(item.cantidad);
+          refs.editError.textContent = "";
+          refs.editTotal.textContent = formatGs(itemTotal(item));
+          refs.editProductoSuggestions.classList.add("d-none");
+          editModal.show();
+        };
+
+        const saveEditedItem = () => {
+          const item = state.compraActual.items.find((entry) => entry.id === state.editItemId);
+          if (!item) return;
+          const productoInput = normalizeText(refs.editProducto.value);
+          if (!productoInput) {
+            refs.editError.textContent = "Debes ingresar un producto.";
+            return;
+          }
+          const producto = upsertCatalogValue(state.catalogoProductos, productoInput);
+          writeStorage(STORAGE.products, state.catalogoProductos);
+          item.producto = producto;
+          item.precio = parseMoney(refs.editPrecio.value);
+          item.cantidad = parseQuantity(refs.editCantidad.value);
+          renderItems();
+          editModal.hide();
+        };
+
+        const openDeleteItem = (itemId) => {
+          state.deleteItemId = itemId;
+          if (deleteModal) deleteModal.show();
+        };
+
+        const deleteItem = () => {
+          state.compraActual.items = state.compraActual.items.filter((item) => item.id !== state.deleteItemId);
+          state.deleteItemId = null;
+          renderItems();
+          if (deleteModal) deleteModal.hide();
+        };
+
+        const finalizarCompra = () => {
+          if (!state.compraActual.supermercado || !state.compraActual.items.length) return;
+          const compra = {
+            id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            fecha: new Date().toISOString(),
+            supermercado: state.compraActual.supermercado,
+            items: state.compraActual.items.map((item) => ({ ...item })),
+            totalGeneral: totalGeneral(),
+          };
+          state.historicosCompras.unshift(compra);
+          writeStorage(STORAGE.history, state.historicosCompras);
+          state.highlightedHistoryId = compra.id;
+          state.compraActual = { supermercado: "", items: [] };
+          refs.inputSupermercado.value = "";
+          setSupermercadoSeleccionado("");
+          clearItemForm();
+          renderItems();
+          renderHistoricos();
+          renderInicioResumen();
+          switchView("historicos");
+        };
+
+        const deleteHistory = (historyId) => {
+          state.historicosCompras = state.historicosCompras.filter((entry) => entry.id !== historyId);
+          writeStorage(STORAGE.history, state.historicosCompras);
+          renderHistoricos();
+          renderInicioResumen();
+        };
+
+        const repeatHistory = (historyId) => {
+          const entry = state.historicosCompras.find((item) => item.id === historyId);
+          if (!entry) return;
+          state.compraActual.supermercado = entry.supermercado;
+          state.compraActual.items = (entry.items || []).map((item) => ({
+            ...item,
+            id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          }));
+          refs.inputSupermercado.value = entry.supermercado;
+          setSupermercadoSeleccionado(entry.supermercado);
+          renderItems();
+          switchView("nueva");
+        };
+
+        const openHistoryDetail = (historyId) => {
+          state.selectedHistoryId = historyId;
+          const entry = state.historicosCompras.find((item) => item.id === historyId);
+          if (!entry) {
+            refs.detalleCompra.innerHTML = '<p class="text-muted mb-0">Compra no encontrada.</p>';
+            switchView("detalle");
+            return;
+          }
+          refs.detalleCompra.innerHTML = `
+            <p class="mb-1"><strong>Supermercado:</strong> ${entry.supermercado}</p>
+            <p class="mb-3 text-muted"><strong>Fecha:</strong> ${formatDateTime(entry.fecha)}</p>
+            <div class="table-responsive mb-3">
+              <table class="table table-sm align-middle">
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th class="text-end">Detalle</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${(entry.items || [])
+                    .map(
+                      (item) => `
+                        <tr>
+                          <td>${item.producto}</td>
+                          <td class="text-end">${formatGs(item.precio)} x ${formatQuantity(item.cantidad)} = ${formatGs(itemTotal(item))}</td>
+                        </tr>
+                      `
+                    )
+                    .join("")}
+                </tbody>
+              </table>
+            </div>
+            <h4 class="h6 mb-0">Total: ${formatGs(entry.totalGeneral || 0)}</h4>
+          `;
+          switchView("detalle");
+        };
+
+        const renderHistoricos = () => {
+          if (!state.historicosCompras.length) {
+            refs.historicosLista.innerHTML = '<div class="compras-list-empty">No hay compras registradas.</div>';
+            return;
+          }
+          refs.historicosLista.innerHTML = state.historicosCompras
+            .map(
+              (entry) => `
+                <div class="compras-history-card mb-2 ${state.highlightedHistoryId === entry.id ? "is-latest" : ""}">
+                  <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                    <div>
+                      <h3 class="h6 mb-1">${entry.supermercado}</h3>
+                      <p class="text-muted mb-0">${formatDateTime(entry.fecha)}</p>
+                    </div>
+                    <div class="text-end">
+                      <small class="text-muted d-block">Total</small>
+                      <strong>${formatGs(entry.totalGeneral || 0)}</strong>
+                    </div>
+                  </div>
+                  <div class="d-flex flex-wrap gap-2">
+                    <button class="btn btn-outline-primary btn-sm js-ver-detalle" data-id="${entry.id}" type="button">Ver detalle</button>
+                    <button class="btn btn-outline-secondary btn-sm js-repetir-compra" data-id="${entry.id}" type="button">Repetir compra</button>
+                    <button class="btn btn-outline-danger btn-sm js-eliminar-compra" data-id="${entry.id}" type="button">Eliminar</button>
+                  </div>
+                </div>
+              `
+            )
+            .join("");
+        };
+
+        const bindAutocomplete = (inputEl, listEl, catalog, onPick, onConfirm) => {
+          if (!inputEl || !listEl) return;
+          inputEl.addEventListener("input", () => {
+            renderSuggestions(listEl, filteredSuggestions(catalog, inputEl.value), onPick);
+          });
+          inputEl.addEventListener("focus", () => {
+            renderSuggestions(listEl, filteredSuggestions(catalog, inputEl.value), onPick);
+          });
+          inputEl.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              if (typeof onConfirm === "function") onConfirm();
+            }
+          });
+        };
+
+        const bootstrapData = () => {
+          state.catalogoProductos = readStorage(STORAGE.products, []);
+          state.catalogoSupermercados = readStorage(STORAGE.stores, []);
+          state.historicosCompras = readStorage(STORAGE.history, []);
+          state.catalogoProductos.sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+          state.catalogoSupermercados.sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+        };
+
+        const bindEvents = () => {
+          refs.btnNueva.addEventListener("click", () => {
+            state.highlightedHistoryId = null;
+            switchView("nueva");
+          });
+          refs.btnHistoricos.addEventListener("click", () => {
+            renderHistoricos();
+            switchView("historicos");
+          });
+          refs.btnVolverInicio.addEventListener("click", () => switchView("inicio"));
+          refs.btnVolverInicioHistoricos.addEventListener("click", () => switchView("inicio"));
+          refs.btnVolverHistoricos.addEventListener("click", () => switchView("historicos"));
+          refs.btnLimpiarHistorico.addEventListener("click", () => {
+            if (!state.historicosCompras.length) return;
+            if (!window.confirm("¿Eliminar todo el historico?")) return;
+            state.historicosCompras = [];
+            writeStorage(STORAGE.history, state.historicosCompras);
+            renderHistoricos();
+            renderInicioResumen();
+          });
+
+          bindAutocomplete(
+            refs.inputSupermercado,
+            refs.supermercadoSuggestions,
+            state.catalogoSupermercados,
+            (value) => {
+              refs.inputSupermercado.value = value;
+              setSupermercadoSeleccionado(value);
+            },
+            confirmSupermercadoInput
+          );
+          refs.btnUsarSupermercado.addEventListener("click", confirmSupermercadoInput);
+
+          bindAutocomplete(
+            refs.inputProducto,
+            refs.productoSuggestions,
+            state.catalogoProductos,
+            (value) => {
+              refs.inputProducto.value = value;
+              refs.productoSuggestions.classList.add("d-none");
+            },
+            () => refs.btnAgregarItem.click()
+          );
+
+          refs.inputPrecio.addEventListener("input", renderPreviewItemTotal);
+          refs.inputCantidad.addEventListener("input", () => {
+            renderPreviewItemTotal();
+          });
+          refs.btnAgregarItem.addEventListener("click", addItem);
+          refs.btnFinalizar.addEventListener("click", finalizarCompra);
+
+          refs.listaItems.addEventListener("click", (event) => {
+            const editBtn = event.target.closest(".js-edit-item");
+            if (editBtn) {
+              openEditItem(editBtn.dataset.id);
+              return;
+            }
+            const deleteBtn = event.target.closest(".js-delete-item");
+            if (deleteBtn) {
+              openDeleteItem(deleteBtn.dataset.id);
+            }
+          });
+
+          bindAutocomplete(
+            refs.editProducto,
+            refs.editProductoSuggestions,
+            state.catalogoProductos,
+            (value) => {
+              refs.editProducto.value = value;
+              refs.editProductoSuggestions.classList.add("d-none");
+            },
+            saveEditedItem
+          );
+          refs.editPrecio.addEventListener("input", () => {
+            refs.editTotal.textContent = formatGs(parseMoney(refs.editPrecio.value) * parseQuantity(refs.editCantidad.value));
+          });
+          refs.editCantidad.addEventListener("input", () => {
+            refs.editTotal.textContent = formatGs(parseMoney(refs.editPrecio.value) * parseQuantity(refs.editCantidad.value));
+          });
+          refs.btnGuardarEdicion.addEventListener("click", saveEditedItem);
+          refs.btnConfirmarEliminar.addEventListener("click", deleteItem);
+
+          refs.historicosLista.addEventListener("click", (event) => {
+            const detailBtn = event.target.closest(".js-ver-detalle");
+            if (detailBtn) {
+              openHistoryDetail(detailBtn.dataset.id);
+              return;
+            }
+            const repeatBtn = event.target.closest(".js-repetir-compra");
+            if (repeatBtn) {
+              repeatHistory(repeatBtn.dataset.id);
+              return;
+            }
+            const deleteBtn = event.target.closest(".js-eliminar-compra");
+            if (deleteBtn && window.confirm("¿Eliminar esta compra del historico?")) {
+              deleteHistory(deleteBtn.dataset.id);
+            }
+          });
+
+          document.addEventListener("click", (event) => {
+            if (!event.target.closest(".autocomplete-wrap")) {
+              refs.supermercadoSuggestions.classList.add("d-none");
+              refs.productoSuggestions.classList.add("d-none");
+              refs.editProductoSuggestions.classList.add("d-none");
+            }
+          });
+        };
+
+        const init = () => {
+          bootstrapData();
+          bindEvents();
+          renderInicioResumen();
+          renderPreviewItemTotal();
+          renderItems();
+          renderHistoricos();
+          setSupermercadoSeleccionado("");
+          switchView("inicio");
+        };
+
+        init();
+      })();
+    </script>
+  </body>
+</html>
