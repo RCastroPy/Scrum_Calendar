@@ -19,6 +19,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Query,
     Request,
     Response,
     UploadFile,
@@ -5289,17 +5290,26 @@ def compras_catalogo_supermercado_delete(
 
 @router.get("/compras/historicos", response_model=List[CompraOut])
 def compras_historicos(
+    skip: int = Query(default=0, ge=0),
+    limit: Optional[int] = Query(default=None, ge=1, le=1000),
+    fecha_desde: Optional[date] = None,
+    fecha_hasta: Optional[date] = None,
     db: Session = Depends(get_db),
     scrum_session: Optional[str] = Cookie(default=None),
 ):
     user = require_user(db, scrum_session)
-    rows = (
-        db.query(Compra)
-        .options(joinedload(Compra.items))
-        .filter(Compra.usuario_id == user.id)
-        .order_by(Compra.fecha.desc(), Compra.id.desc())
-        .all()
-    )
+    q = db.query(Compra).options(joinedload(Compra.items)).filter(Compra.usuario_id == user.id)
+    if fecha_desde:
+        q = q.filter(Compra.fecha >= fecha_desde)
+    if fecha_hasta:
+        # Include the whole end day
+        next_day = fecha_hasta + timedelta(days=1)
+        q = q.filter(Compra.fecha < next_day)
+    
+    q = q.order_by(Compra.fecha.desc(), Compra.id.desc()).offset(skip)
+    if limit is not None:
+        q = q.limit(limit)
+    rows = q.all()
     return rows
 
 
@@ -5326,6 +5336,64 @@ def compras_historico_crear(
     )
     db.add(compra)
     db.flush()
+
+    total_general = 0
+    for raw_item in payload.items:
+        producto = clean_label(raw_item.producto)
+        if not producto:
+            raise HTTPException(status_code=400, detail="Producto requerido")
+        precio = int(round(float(raw_item.precio or 0)))
+        cantidad = float(raw_item.cantidad or 0)
+        if precio <= 0:
+            raise HTTPException(status_code=400, detail="Precio invalido")
+        if cantidad <= 0:
+            raise HTTPException(status_code=400, detail="Cantidad invalida")
+        total_item = int(round(precio * cantidad))
+        total_general += total_item
+        _upsert_catalog_name(db, CompraCatalogProducto, user.id, producto)
+        db.add(
+            CompraItem(
+                compra_id=compra.id,
+                producto=producto,
+                precio=precio,
+                cantidad=cantidad,
+                total_item=total_item,
+            )
+        )
+
+    compra.total_general = int(round(total_general))
+    db.commit()
+    db.refresh(compra)
+    return (
+        db.query(Compra)
+        .options(joinedload(Compra.items))
+        .filter(Compra.id == compra.id)
+        .first()
+    )
+
+
+@router.put("/compras/historicos/{compra_id}", response_model=CompraOut)
+def compras_historico_actualizar(
+    compra_id: int,
+    payload: CompraCreate,
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    user = require_user(db, scrum_session)
+    compra = db.get(Compra, compra_id)
+    if not compra or compra.usuario_id != user.id:
+        raise HTTPException(status_code=404, detail="Compra no encontrada")
+
+    supermercado = clean_label(payload.supermercado)
+    if not supermercado:
+        raise HTTPException(status_code=400, detail="Supermercado requerido")
+    if not payload.items:
+        raise HTTPException(status_code=400, detail="Items requeridos")
+
+    _upsert_catalog_name(db, CompraCatalogSupermercado, user.id, supermercado)
+    compra.supermercado = supermercado
+
+    db.query(CompraItem).filter(CompraItem.compra_id == compra.id).delete(synchronize_session=False)
 
     total_general = 0
     for raw_item in payload.items:

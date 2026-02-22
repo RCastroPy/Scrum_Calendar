@@ -12,3 +12,12 @@ Conectarme a Server
 
 # Local DB backups (never commit)
 scrum_calendar/db_backups/
+
+# Environment files (never commit secrets)
+scrum_calendar/.env
+scrum_calendar/.env.local
+scrum_calendar/.env.production
+
+# Local debug artifacts
+scrum_calendar/.tmp_ref/
+tmp_*.png

@@ -1,0 +1,47 @@
+# Informe Final de Evaluación de Seguridad
+
+Este informe detalla las vulnerabilidades encontradas en el sistema (FastAPI) y proporciona una guía estructurada para resolverlas. La calificación actual de seguridad del sistema es **3/10**.
+
+## 1. Vulnerabilidades Identificadas
+
+### 1.1. Control de Acceso Roto (Autorización Insegura) - **Criticidad: ALTA**
+**Ubicación:** [main.py](file:///Users/rafaelcastro/Library/CloudStorage/OneDrive-Personal/Desarrollos/SCRUM%20IA/scrum_calendar/main.py) (Líneas 92-97)
+El middleware de autenticación permite que peticiones `GET`, `HEAD`, `OPTIONS` y las que comiencen con `/tasks` completen la solicitud sin verificar si el usuario tiene el rol `admin`. Esto permite a cualquier miembro extraer datos confidenciales o saltarse restricciones para ciertas mutaciones.
+
+### 1.2. Bypass de Autenticación en Interfaz (UI) - **Criticidad: MEDIA/ALTA**
+**Ubicación:** [main.py](file:///Users/rafaelcastro/Library/CloudStorage/OneDrive-Personal/Desarrollos/SCRUM%20IA/scrum_calendar/main.py) (Líneas 55-57)
+Al acceder a rutas `/ui`, el sistema solo verifica si el navegador envía una cookie llamada `scrum_session`. No valida el contenido del token ni su expiración en la base de datos. Un atacante puede forjar esta cookie en su navegador para explorar vistas protegidas.
+
+### 1.3. Configuración CORS Permisiva - **Criticidad: MEDIA**
+**Ubicación:** [main.py](file:///Users/rafaelcastro/Library/CloudStorage/OneDrive-Personal/Desarrollos/SCRUM%20IA/scrum_calendar/main.py)
+Se configuró `allow_origins=["*"]`, permitiendo que cualquier dominio externo interactúe con el API.
+
+### 1.4. Credenciales "Hardcodeadas" - **Criticidad: MEDIA**
+**Ubicación:** [config/settings.py](file:///Users/rafaelcastro/Library/CloudStorage/OneDrive-Personal/Desarrollos/SCRUM%20IA/scrum_calendar/config/settings.py)
+La variable `database_url` contiene credenciales en texto plano (`scrum_user:scrum_pass`). Estas credenciales pueden filtrarse si el código se hace público.
+
+### 1.5. Hashing Criptográfico Débil - **Criticidad: BAJA**
+**Ubicación:** [core/security.py](file:///Users/rafaelcastro/Library/CloudStorage/OneDrive-Personal/Desarrollos/SCRUM%20IA/scrum_calendar/core/security.py)
+Se utilizan `120_000` iteraciones para PBKDF2, lo cual está por debajo de los estándares modernos recomendados por OWASP (600,000+).
+
+---
+
+## 2. Checklist de Correcciones para Asistente IA
+
+Puedes copiar y compartir la siguiente lista de tareas con cualquier IA para que implemente las correcciones paso a paso.
+
+- [ ] **Asegurar la validación de sesiones en la UI ([main.py](file:///Users/rafaelcastro/Library/CloudStorage/OneDrive-Personal/Desarrollos/SCRUM%20IA/scrum_calendar/main.py))**: 
+  - Modificar el bloque de exclusiones para `/ui` en [auth_middleware](file:///Users/rafaelcastro/Library/CloudStorage/OneDrive-Personal/Desarrollos/SCRUM%20IA/scrum_calendar/main.py#24-102).
+  - En lugar de solo verificar `if not token:`, hacer una consulta a la BD verificando que la sesión sea válida y no haya expirado. Eliminar la cookie si resulta inválida.
+- [ ] **Eliminar bypass de Control de Acceso genérico ([main.py](file:///Users/rafaelcastro/Library/CloudStorage/OneDrive-Personal/Desarrollos/SCRUM%20IA/scrum_calendar/main.py))**: 
+  - Eliminar la lógica condicional que otorga paso libre a `GET`, `HEAD`, `OPTIONS` y `/tasks` a usuarios que no son *admin*. 
+  - El middleware solo debe verificar que el usuario esté autenticado. La autorización granular debe moverse a las dependencias de rutas (ej. en [routes.py](file:///Users/rafaelcastro/Library/CloudStorage/OneDrive-Personal/Desarrollos/SCRUM%20IA/scrum_calendar/api/routes.py)).
+- [ ] **Implementar Dependencias de Autorización por Rol ([api/routes.py](file:///Users/rafaelcastro/Library/CloudStorage/OneDrive-Personal/Desarrollos/SCRUM%20IA/scrum_calendar/api/routes.py))**:
+  - Validar los roles (ej. `admin`, `member`) en cada endpoint individualmente usando inyección de dependencias (`Depends`) nativa de FastAPI.
+- [ ] **Restringir Dominios CORS ([main.py](file:///Users/rafaelcastro/Library/CloudStorage/OneDrive-Personal/Desarrollos/SCRUM%20IA/scrum_calendar/main.py))**:
+  - Cambiar `allow_origins=["*"]` a una lista de orígenes proveniente de las variables de entorno (`settings.cors_origins`), usando `http://localhost:8000` como fallback.
+- [ ] **Ocultar Credenciales ([config/settings.py](file:///Users/rafaelcastro/Library/CloudStorage/OneDrive-Personal/Desarrollos/SCRUM%20IA/scrum_calendar/config/settings.py))**:
+  - Eliminar el valor por defecto de la cadena de conexión de base de datos o usar parámetros genéricos como `postgresql+psycopg2://localhost:5432/scrum_calendar`.
+  - Asegurar que Pydantic lea las credenciales verdaderas de un archivo `.env`.
+- [ ] **Fortalecer Criptografía ([core/security.py](file:///Users/rafaelcastro/Library/CloudStorage/OneDrive-Personal/Desarrollos/SCRUM%20IA/scrum_calendar/core/security.py))**:
+  - Aumentar el valor de la variable constante `PBKDF2_ROUNDS` a `600_000`.

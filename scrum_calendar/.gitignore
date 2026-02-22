@@ -3,3 +3,6 @@
 scrum_calendar.dump
 deploy.sh
 Conectarme a Server
+.env
+.env.local
+.env.production

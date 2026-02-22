@@ -1,12 +1,10 @@
-version: "3.9"
-
 services:
   db:
     image: postgres:15
     environment:
-      POSTGRES_USER: scrum_user
-      POSTGRES_PASSWORD: scrum_pass
-      POSTGRES_DB: scrum_calendar
+      POSTGRES_USER: ${DB_USER:-scrum_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-scrum_pass}
+      POSTGRES_DB: ${DB_NAME:-scrum_calendar}
     ports:
       - "5433:5432"
     volumes:
@@ -16,6 +14,8 @@ services:
     build: .
     env_file:
       - .env.example
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://${DB_USER:-scrum_user}:${DB_PASSWORD:-scrum_pass}@db:5432/${DB_NAME:-scrum_calendar}}
     depends_on:
       - db
     ports:

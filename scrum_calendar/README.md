@@ -22,6 +22,11 @@
 ## Tests
 - Ejecutar: `docker compose exec api python -m pytest /app/tests`
 
+## Rotacion de credenciales
+- Runbook: `documentos/SECURITY_ROTACION_CREDENCIALES.md`
+- Simular (dry-run): `python3 scripts/rotate_credentials.py --env-file .env`
+- Aplicar: `python3 scripts/rotate_credentials.py --env-file .env --apply`
+
 ## Desarrollo frontend
 - El frontend se sirve desde `:8000` (contenedor).
 - Para cambios HTML/CSS/JS:
