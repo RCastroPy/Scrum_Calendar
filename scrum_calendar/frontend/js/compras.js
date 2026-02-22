@@ -38,7 +38,6 @@
           btnVolverInicioHistoricos: document.getElementById("volver-inicio-desde-historicos"),
           btnVolverInicioReportes: document.getElementById("volver-inicio-desde-reportes"),
           btnVolverHistoricos: document.getElementById("volver-historicos"),
-          btnLimpiarHistorico: document.getElementById("limpiar-historico"),
           resumenUltimaCompra: document.getElementById("resumen-ultima-compra"),
           inputSupermercado: document.getElementById("input-supermercado"),
           supermercadoError: document.getElementById("supermercado-error"),
@@ -1331,6 +1330,7 @@
               <table class="table table-sm align-middle">
                 <thead>
                   <tr>
+                    <th class="text-center">#</th>
                     <th>Producto</th>
                     <th class="text-end">Detalle</th>
                     <th class="text-end">Variacion precio</th>
@@ -1339,7 +1339,7 @@
                 </thead>
                 <tbody>
                   ${(entry.items || [])
-                    .map((item) => {
+                    .map((item, index) => {
                       const previousPrice = previousPriceForHistoryItem(entry, item);
                       const hasPreviousPrice = Number.isFinite(previousPrice) && Number(previousPrice) > 0;
                       const delta = hasPreviousPrice
@@ -1352,6 +1352,7 @@
                         : "-";
                       return `
                         <tr>
+                          <td class="text-center">${index + 1}</td>
                           <td>${item.producto}</td>
                           <td class="text-end">${formatGs(item.precio)} x ${formatQuantity(item.cantidad)} = ${formatGs(itemTotal(item))}</td>
                           <td class="text-end ${deltaClass} fw-semibold">${deltaLabel}</td>
@@ -1542,12 +1543,6 @@
             renderReportesGenerales();
             persistDraftState();
           });
-          refs.btnLimpiarHistorico.addEventListener("click", async () => {
-            if (!state.historicosCompras.length) return;
-            if (!window.confirm("¿Eliminar todo el historico?")) return;
-            await clearAllHistory();
-          });
-
           bindAutocomplete(
             refs.inputSupermercado,
             refs.supermercadoSuggestions,
