@@ -4872,7 +4872,9 @@ def actualizar_task(
 
     prev_estado = task.estado
     prev_start_date = getattr(task, "start_date", None)
-    fields_set = getattr(payload, "model_fields_set", set())
+    fields_set = getattr(payload, "model_fields_set", None)
+    if fields_set is None:
+        fields_set = getattr(payload, "__fields_set__", set())
 
     if payload.titulo is not None:
         titulo = (payload.titulo or "").strip()
@@ -4944,18 +4946,26 @@ def actualizar_task(
         if parent and not _same_optional_int(task.celula_id, parent.celula_id):
             raise HTTPException(status_code=400, detail="La subtarea debe pertenecer a la misma celula del padre")
 
-    # Auto set start_date when moving to In Progress (doing) unless explicitly provided.
+    # Auto-manage start/end dates on status transitions.
     business_today = now_py().date()
-    if (
-        prev_estado != "doing"
-        and (task.estado or "") == "doing"
-        and "start_date" not in fields_set
-        and task.start_date is None
-    ):
-        task.start_date = business_today
-    # Auto set end_date when moving to Done unless explicitly provided.
-    if prev_estado != "done" and (task.estado or "") == "done" and "end_date" not in fields_set:
-        task.end_date = business_today
+    prev_estado_norm = (prev_estado or "").strip().lower()
+    next_estado_norm = (task.estado or "").strip().lower()
+    status_changed = "estado" in fields_set and prev_estado_norm != next_estado_norm
+
+    if status_changed:
+        # Explicit rule: Backlog -> ToDo does not auto-update dates.
+        if prev_estado_norm == "backlog" and next_estado_norm == "todo":
+            pass
+        elif next_estado_norm in {"backlog", "todo"}:
+            task.start_date = None
+            task.end_date = None
+        elif next_estado_norm == "doing":
+            task.start_date = business_today
+            task.end_date = None
+        elif next_estado_norm == "done":
+            if prev_estado_norm in {"backlog", "todo"}:
+                task.start_date = business_today
+            task.end_date = business_today
 
     # Cascade: propagate earliest start_date + in-progress status to all ancestors.
     if prev_estado != task.estado or prev_start_date != getattr(task, "start_date", None):

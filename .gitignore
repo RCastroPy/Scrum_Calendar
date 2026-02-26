@@ -6,6 +6,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+.venv*/
 
 # Local notes/scripts (keep local)
 Conectarme a Server

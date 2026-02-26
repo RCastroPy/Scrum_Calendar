@@ -115,9 +115,10 @@ def test_tasks_start_date_is_min_of_descendants_and_recursive(client: TestClient
     c2 = next(t for t in items if t["id"] == c2_id)
     parent = next(t for t in items if t["id"] == parent_id)
     assert c2["estado"] == "doing"
-    assert c2["start_date"] == "2024-12-31"
+    assert c2["start_date"] == now_py().date().isoformat()
     assert parent["estado"] == "doing"
-    assert parent["start_date"] == "2024-12-31"
+    # Parent keeps the earliest descendant start_date across all children (C1 still has 2025-01-01).
+    assert parent["start_date"] == "2025-01-01"
 
 
 def test_tasks_done_sets_end_date_automatically(client: TestClient):
@@ -135,7 +136,72 @@ def test_tasks_done_sets_end_date_automatically(client: TestClient):
     assert resp.status_code == 200
     task = resp.json()
     assert task["estado"] == "done"
+    assert task["start_date"] == now_py().date().isoformat()
     assert task["end_date"] == now_py().date().isoformat()
+
+
+def test_task_status_transitions_manage_start_and_end_dates(client: TestClient):
+    bootstrap_admin(client)
+
+    resp = client.post("/celulas", json={"nombre": "Celula Reglas Estado", "jira_codigo": "EST", "activa": True})
+    assert resp.status_code == 201
+    celula_id = resp.json()["id"]
+
+    resp = client.post("/tasks", json={"titulo": "Task estados", "celula_id": celula_id})
+    assert resp.status_code == 201
+    task_id = resp.json()["id"]
+
+    # Backlog -> ToDo: no auto update de fechas.
+    resp = client.put(f"/tasks/{task_id}", json={"estado": "todo"})
+    assert resp.status_code == 200
+    task = resp.json()
+    assert task["estado"] == "todo"
+    assert task["start_date"] is None
+    assert task["end_date"] is None
+
+    # ToDo -> Done: setea start_date y end_date.
+    resp = client.put(f"/tasks/{task_id}", json={"estado": "done"})
+    assert resp.status_code == 200
+    task = resp.json()
+    assert task["estado"] == "done"
+    assert task["start_date"] == now_py().date().isoformat()
+    assert task["end_date"] == now_py().date().isoformat()
+
+    # Done -> In Progress: limpia end_date y mantiene/reasigna start_date.
+    resp = client.put(f"/tasks/{task_id}", json={"estado": "doing"})
+    assert resp.status_code == 200
+    task = resp.json()
+    assert task["estado"] == "doing"
+    assert task["start_date"] == now_py().date().isoformat()
+    assert task["end_date"] is None
+
+    # In Progress -> Done: setea end_date.
+    resp = client.put(f"/tasks/{task_id}", json={"estado": "done"})
+    assert resp.status_code == 200
+    task = resp.json()
+    assert task["estado"] == "done"
+    assert task["start_date"] == now_py().date().isoformat()
+    assert task["end_date"] == now_py().date().isoformat()
+
+    # In Progress -> Backlog: limpia start_date y end_date.
+    resp = client.put(f"/tasks/{task_id}", json={"estado": "doing"})
+    assert resp.status_code == 200
+    resp = client.put(f"/tasks/{task_id}", json={"estado": "backlog"})
+    assert resp.status_code == 200
+    task = resp.json()
+    assert task["estado"] == "backlog"
+    assert task["start_date"] is None
+    assert task["end_date"] is None
+
+    # Done -> ToDo: limpia start_date y end_date.
+    resp = client.put(f"/tasks/{task_id}", json={"estado": "done"})
+    assert resp.status_code == 200
+    resp = client.put(f"/tasks/{task_id}", json={"estado": "todo"})
+    assert resp.status_code == 200
+    task = resp.json()
+    assert task["estado"] == "todo"
+    assert task["start_date"] is None
+    assert task["end_date"] is None
 
 
 def test_subtask_must_belong_to_same_celula_as_parent(client: TestClient):

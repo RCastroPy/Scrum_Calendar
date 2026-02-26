@@ -730,16 +730,20 @@
   }
 
   function initLogout() {
-    const logoutBtn = qs("#logout-btn");
-    if (!logoutBtn || logoutBtn.dataset.bound === "true") return;
-    logoutBtn.dataset.bound = "true";
-    logoutBtn.addEventListener("click", async () => {
-      try {
-        await fetchWithFallback("/auth/logout", { method: "POST" });
-      } catch {
-        // ignore
-      }
-      redirectToLogin();
+    const buttons = Array.from(document.querySelectorAll('#logout-btn, [data-action="logout"]'));
+    if (!buttons.length) return;
+    buttons.forEach((logoutBtn) => {
+      if (!logoutBtn || logoutBtn.dataset.bound === "true") return;
+      logoutBtn.dataset.bound = "true";
+      logoutBtn.addEventListener("click", async (event) => {
+        event.preventDefault();
+        try {
+          await fetchWithFallback("/auth/logout", { method: "POST" });
+        } catch {
+          // ignore
+        }
+        redirectToLogin();
+      });
     });
   }
 
@@ -2323,6 +2327,7 @@
     };
     const renderPersonaSelect = () => {
       if (!personaSelect) return;
+      const previousValue = String(personaSelect.value || "");
       const existing = getExistingPersonIds();
       personaSelect.innerHTML = '<option value="">Seleccionar</option>';
       const available = personaOptions.filter((p) => !existing.has(String(p.id)));
@@ -2332,6 +2337,9 @@
         opt.textContent = item.nombre;
         personaSelect.appendChild(opt);
       });
+      if (previousValue && available.some((item) => String(item.id) === previousValue)) {
+        personaSelect.value = previousValue;
+      }
       personaSelect.disabled = !available.length;
     };
     renderPersonaSelect();
@@ -2421,20 +2429,42 @@
             jornada: jornadaSelect?.value || "completo",
             descripcion: descInput?.value.trim() || null,
           };
-          await postJson("/eventos", payload);
+          const created = await postJson("/eventos", payload);
           setStatus("#day-event-status", "Evento creado.", "ok");
-          // Prevent adding the same combo again in the same modal session.
-          base.eventos = base.eventos || [];
-          base.eventos.push({
-            persona_id: payload.persona_id,
-            tipo_evento_id: payload.tipo_evento_id,
-            sprint_id: payload.sprint_id,
-            fecha_inicio: payload.fecha_inicio,
-            fecha_fin: payload.fecha_fin,
-            jornada: payload.jornada,
-            descripcion: payload.descripcion,
-          });
-          await reloadAll();
+
+          // Keep dashboard state in sync without requiring full page data reload.
+          const createdEvent =
+            created && typeof created === "object"
+              ? {
+                  ...created,
+                  persona_id: created.persona_id ?? payload.persona_id,
+                  tipo_evento_id: created.tipo_evento_id ?? payload.tipo_evento_id,
+                  sprint_id: created.sprint_id ?? payload.sprint_id,
+                  fecha_inicio: created.fecha_inicio ?? payload.fecha_inicio,
+                  fecha_fin: created.fecha_fin ?? payload.fecha_fin,
+                  jornada: created.jornada ?? payload.jornada,
+                  descripcion: created.descripcion ?? payload.descripcion,
+                }
+              : { ...payload };
+
+          if (!Array.isArray(state.base?.eventos)) {
+            state.base.eventos = [];
+          }
+          state.base.eventos.push(createdEvent);
+          if (base !== state.base) {
+            base.eventos = base.eventos || [];
+            base.eventos.push(createdEvent);
+          }
+
+          if (qs("#dashboard") && state.base) {
+            try {
+              const dashboard = await loadDashboardData(state.base, state.selectedCelulaId);
+              renderDashboard(dashboard);
+            } catch (refreshErr) {
+              console.error("Dashboard live refresh error:", refreshErr);
+            }
+          }
+
           const updated = collectDayEventsForDate(currentDateKey);
           openDayModal(currentDateKey, updated);
         } catch (err) {
@@ -5983,6 +6013,25 @@
         ".user-avatar-placeholder{background:#bfc5cd !important;}";
       document.head.appendChild(style);
     }
+
+    if (!header.querySelector("#logout-btn-topbar")) {
+      const rightNav =
+        header.querySelector(".navbar-nav.ms-auto.navbar-end") ||
+        header.querySelector(".navbar-nav.ms-auto");
+      if (rightNav) {
+        const li = document.createElement("li");
+        li.className = "nav-item d-flex align-items-center";
+        const btn = document.createElement("button");
+        btn.id = "logout-btn-topbar";
+        btn.type = "button";
+        btn.className = "btn btn-outline-danger btn-sm ms-2";
+        btn.dataset.action = "logout";
+        btn.textContent = "LogOut";
+        li.appendChild(btn);
+        rightNav.appendChild(li);
+      }
+    }
+    initLogout();
   }
 
   function buildSprintItemStats(items, personaLookup) {
@@ -10020,14 +10069,21 @@
           commentCount,
           hidden: commentCount <= 0,
         };
-        actionDefs.push(commentDef);
-        actionDefs.push({
+        const subtaskDef = {
           key: "subtask",
           action: "subtask",
           title: "Crear subtarea",
           className: "btn btn-outline-primary btn-sm",
           iconClass: "bi bi-node-plus",
-        });
+        };
+        const toggleSubtasksDef = {
+          key: "toggle-subtasks",
+          action: "toggle-subtasks",
+          title: expanded ? "Ocultar subtareas" : "Mostrar subtareas",
+          className: "btn btn-outline-info btn-sm",
+          arrow: true,
+        };
+        actionDefs.push(subtaskDef);
         actionDefs.push({
           key: "delete",
           action: "delete",
@@ -10035,15 +10091,6 @@
           className: "btn btn-outline-danger btn-sm",
           iconClass: "bi bi-trash",
         });
-        if (hasChildren) {
-          actionDefs.push({
-            key: "toggle-subtasks",
-            action: "toggle-subtasks",
-            title: expanded ? "Ocultar subtareas" : "Mostrar subtareas",
-            className: "btn btn-outline-info btn-sm",
-            arrow: true,
-          });
-        }
 
         const buildActionButton = (def) => {
           const btn = document.createElement("button");
@@ -10075,8 +10122,11 @@
           return btn;
         };
 
-        // Top-level actions in backlog row: only comments (when available) and "+".
+        // Backlog default icons: comentarios, subtarea (↳ si tiene hijas) y "+".
         actions.appendChild(buildActionButton(commentDef));
+        if (hasChildrenAny) {
+          actions.appendChild(buildActionButton(toggleSubtasksDef));
+        }
 
         const moreBtn = document.createElement("button");
         moreBtn.type = "button";
@@ -10619,6 +10669,69 @@
         icon.className = "tasks-pill-icon tasks-siren";
       } else {
         icon.className = "tasks-pill-icon bi bi-circle-fill";
+      }
+    };
+
+    const syncBacklogRowAfterStatusUpdate = (rowEl, updatedTask) => {
+      if (!rowEl || !updatedTask) return;
+      const statusSelect = rowEl.querySelector("select[data-field='estado']");
+      if (statusSelect) {
+        statusSelect.value = String(updatedTask.estado || "backlog").toLowerCase();
+        syncInlineEstadoPill(statusSelect);
+      }
+      const startInput = rowEl.querySelector("input[data-field='start_date']");
+      if (startInput) {
+        startInput.value = updatedTask.start_date ? String(updatedTask.start_date) : "";
+      }
+      const endInput = rowEl.querySelector("input[data-field='end_date']");
+      if (endInput) {
+        endInput.value = updatedTask.end_date ? String(updatedTask.end_date) : "";
+      }
+      const dueInput = rowEl.querySelector("input[data-field='fecha_vencimiento']");
+      if (dueInput) {
+        dueInput.value = updatedTask.fecha_vencimiento ? String(updatedTask.fecha_vencimiento) : "";
+      }
+      const daysCell = rowEl.querySelector("td[data-col-key='dias_habiles']");
+      if (daysCell) {
+        const start = String(updatedTask.start_date || "").trim();
+        const due = String(updatedTask.fecha_vencimiento || "").trim();
+        daysCell.innerHTML = "";
+        if (!start || !due) {
+          daysCell.textContent = "-";
+        } else {
+          const feriadosSet = new Set((state.base?.feriados || []).map((f) => f.fecha).filter(Boolean));
+          const total = countWeekdays(start, due, feriadosSet);
+          if (!Number.isFinite(total) || total <= 0) {
+            daysCell.textContent = "-";
+          } else {
+            const todayKey = formatISO(getToday());
+            const overdue = todayKey > due;
+            let className = "is-green";
+            let overdueSiren = false;
+            if (overdue) {
+              className = "is-red";
+              overdueSiren = true;
+            } else {
+              const remaining = countWeekdays(todayKey, due, feriadosSet);
+              if (remaining <= 1) className = "is-red";
+              else if (remaining <= 2) className = "is-yellow";
+              else className = "is-green";
+            }
+            const wrap = document.createElement("span");
+            wrap.className = `tasks-days ${className}`;
+            if (overdueSiren) {
+              const siren = document.createElement("span");
+              siren.className = "tasks-siren";
+              wrap.appendChild(siren);
+            } else {
+              const dot = document.createElement("i");
+              dot.className = "bi bi-circle-fill";
+              wrap.appendChild(dot);
+            }
+            wrap.appendChild(document.createTextNode(`${total} dias`));
+            daysCell.appendChild(wrap);
+          }
+        }
       }
     };
 
@@ -11503,12 +11616,13 @@
           try {
             if (field === "estado") {
               syncInlineEstadoPill(el);
-              await updateTaskLocal(
+              const updated = await updateTaskLocal(
                 taskId,
                 { estado: String(el.value || "").trim().toLowerCase() },
                 "Actualizado.",
                 { rerender: "none" }
               );
+              syncBacklogRowAfterStatusUpdate(row, updated);
               return;
             }
             if (field === "prioridad") {
@@ -11558,23 +11672,26 @@
             }
             if (field === "start_date") {
               const v = String(el.value || "");
-              await updateTaskLocal(taskId, { start_date: v || null }, "Actualizado.", {
+              const updated = await updateTaskLocal(taskId, { start_date: v || null }, "Actualizado.", {
                 rerender: "none",
               });
+              syncBacklogRowAfterStatusUpdate(row, updated);
               return;
             }
             if (field === "end_date") {
               const v = String(el.value || "");
-              await updateTaskLocal(taskId, { end_date: v || null }, "Actualizado.", {
+              const updated = await updateTaskLocal(taskId, { end_date: v || null }, "Actualizado.", {
                 rerender: "none",
               });
+              syncBacklogRowAfterStatusUpdate(row, updated);
               return;
             }
             if (field === "fecha_vencimiento") {
               const v = String(el.value || "");
-              await updateTaskLocal(taskId, { fecha_vencimiento: v || null }, "Actualizado.", {
+              const updated = await updateTaskLocal(taskId, { fecha_vencimiento: v || null }, "Actualizado.", {
                 rerender: "none",
               });
+              syncBacklogRowAfterStatusUpdate(row, updated);
               return;
             }
             if (field === "puntos" || field === "horas_estimadas") {
