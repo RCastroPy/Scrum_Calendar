@@ -7450,7 +7450,7 @@
         label.setAttribute("x", String(x));
         label.setAttribute("y", String(margin.top + plotHeight + 18));
         label.setAttribute("text-anchor", "middle");
-        label.setAttribute("font-size", "10");
+        label.setAttribute("font-size", "12");
         label.setAttribute("fill", "#94a3b8");
         const labelText = String(sprint.label || "");
         label.textContent = labelText.length > 14 ? `${labelText.slice(0, 13)}…` : labelText;
@@ -7492,7 +7492,7 @@
             pointLabel.setAttribute("x", String(point.x));
             pointLabel.setAttribute("y", String(point.y - 8));
             pointLabel.setAttribute("text-anchor", "middle");
-            pointLabel.setAttribute("font-size", "10");
+            pointLabel.setAttribute("font-size", "16");
             pointLabel.setAttribute("font-weight", "700");
             pointLabel.setAttribute("fill", color);
             pointLabel.textContent = String(Number(point.value || 0).toFixed(0));

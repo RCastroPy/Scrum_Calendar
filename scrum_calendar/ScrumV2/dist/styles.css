@@ -1581,7 +1581,13 @@ h1 {
 }
 
 .daily-labels-toggle {
-  width: 100%;
+  width: auto;
+  min-width: 104px;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.74rem;
+  line-height: 1.1;
+  border-radius: 999px;
+  align-self: end;
 }
 
 .daily-labels-toggle.is-active {
@@ -5821,6 +5827,10 @@ body.theme-dark .tasks-priority-kpi {
   #daily-storypoints-user-card .btn,
   #daily-storypoints-user-card .daily-storypoints-toolbar {
     width: 100%;
+  }
+
+  #daily-storypoints-user-card .daily-labels-toggle {
+    width: auto !important;
   }
 
   #daily-points-user-line-chart svg {
