@@ -101,6 +101,10 @@
     dailyStatusOpen: false,
     dailyStatusOutsideBound: false,
     dailyStatusTouched: false,
+    dailyPointsUserFilter: "",
+    dailyPointsUserRows: [],
+    dailyPointsUserSprintColumns: [],
+    dailyPointsShowLabels: false,
     dailySprintManual: false,
     dailyRealtimeSignature: "",
 	    dailySprintOpen: false,
@@ -3141,6 +3145,7 @@
         state.dailySelectedAssignee = "";
         state.dailyStatusFilters = [];
         state.dailyStoryPointsFilter = null;
+        state.dailyPointsUserFilter = "";
         state.dailyStatusOpen = false;
         state.dailyStatusTouched = false;
         state.dailySprintManual = false;
@@ -6115,6 +6120,19 @@
     const form = qs("#daily-form");
     const status = qs("#daily-status");
     const storypointsKpi = qs("#daily-kpi-storypoints");
+    const pointsUserSelect = qs("#daily-points-user-select");
+    const pointsLabelsToggle = qs("#daily-points-labels-toggle");
+    const pointsUserSummary = qs("#daily-storypoints-user-summary");
+    const pointsUserChart = qs("#daily-points-user-line-chart");
+    const pointsUserLegend = qs("#daily-points-user-legend");
+    const pointsUserTable = qs("#daily-points-user-table");
+    const syncLabelsToggle = () => {
+      if (!pointsLabelsToggle) return;
+      const active = Boolean(state.dailyPointsShowLabels);
+      pointsLabelsToggle.classList.toggle("is-active", active);
+      pointsLabelsToggle.setAttribute("aria-pressed", active ? "true" : "false");
+      pointsLabelsToggle.textContent = `Etiquetas: ${active ? "On" : "Off"}`;
+    };
 
     const sprints = getDailySprints(base);
     const sprintIdByName = new Map(
@@ -6175,6 +6193,17 @@
       renderDailyItemsSummary(itemsCount, 0);
       if (devTable) devTable.innerHTML = '<p class="empty">Sin datos</p>';
       if (itemsTable) itemsTable.innerHTML = '<p class="empty">Sin items cargados.</p>';
+      if (pointsUserSelect) pointsUserSelect.innerHTML = '<option value="">Todos</option>';
+      syncLabelsToggle();
+      if (pointsUserSummary) pointsUserSummary.textContent = "Sin datos";
+      if (pointsUserChart) {
+        const svg = pointsUserChart.querySelector("svg");
+        if (svg) svg.innerHTML = "";
+      }
+      if (pointsUserLegend) pointsUserLegend.innerHTML = "";
+      if (pointsUserTable) pointsUserTable.innerHTML = '<p class="empty">Sin datos</p>';
+      state.dailyPointsUserRows = [];
+      state.dailyPointsUserSprintColumns = [];
       if (status) status.textContent = "";
       return;
     }
@@ -6232,6 +6261,7 @@
           state.dailySelectedAssignee = "";
           state.dailyStatusFilters = [];
           state.dailyStoryPointsFilter = null;
+          state.dailyPointsUserFilter = "";
           state.dailyStatusOpen = false;
           state.dailyStatusTouched = false;
           state.dailySprintOpen = false;
@@ -6391,6 +6421,12 @@
         )
       : personasActivas;
     const personaLookup = buildPersonaLookup(personasFiltradas);
+    const personaNameById = Object.fromEntries(
+      personasActivas.map((persona) => [
+        String(persona.id),
+        `${persona.nombre || ""} ${persona.apellido || ""}`.trim() || `Persona ${persona.id}`,
+      ])
+    );
     const activePersonaIds = new Set(personasActivas.map((persona) => persona.id));
     const shouldFilterByPersona = activePersonaIds.size > 0;
     const itemsAll = dailyItemsSource.filter((item) => {
@@ -6555,11 +6591,349 @@
         if (!Number.isFinite(points)) return;
         if (state.dailyStoryPointsFilter === points) {
           state.dailyStoryPointsFilter = null;
+          state.dailyPointsUserFilter = "";
         } else {
           state.dailyStoryPointsFilter = points;
         }
         renderDaily(state.base);
       });
+    }
+
+    const formatStoryPointsValue = (value) => {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) return "0";
+      const hasDecimals = Math.abs(numeric % 1) > 0;
+      return new Intl.NumberFormat("es-PY", {
+        minimumFractionDigits: hasDecimals ? 1 : 0,
+        maximumFractionDigits: 2,
+      }).format(numeric);
+    };
+    const linePalette = [
+      "#0d6efd",
+      "#20c997",
+      "#fd7e14",
+      "#6610f2",
+      "#dc3545",
+      "#198754",
+      "#0dcaf0",
+      "#ffc107",
+    ];
+
+    const renderStoryPointsLegend = (container, rows) => {
+      if (!container) return;
+      container.innerHTML = "";
+      if (!rows.length) {
+        container.innerHTML = '<span class="empty">Sin series visibles</span>';
+        return;
+      }
+      rows.forEach((row, idx) => {
+        const item = document.createElement("span");
+        item.className = "daily-line-legend-item";
+        const dot = document.createElement("span");
+        dot.className = "daily-line-legend-dot";
+        dot.style.background = linePalette[idx % linePalette.length];
+        const text = document.createElement("span");
+        text.textContent = row?.usuario || "Sin asignar";
+        item.appendChild(dot);
+        item.appendChild(text);
+        container.appendChild(item);
+      });
+    };
+
+    const renderStoryPointsTrendChart = (container, sprintColumns, rows, showPointLabels) => {
+      if (!container) return;
+      const svg = container.querySelector("svg");
+      if (!svg) return;
+      svg.innerHTML = "";
+      if (!sprintColumns.length || !rows.length) return;
+      const values = rows.flatMap((row) =>
+        sprintColumns.map((sprint) => Number(row.sprints?.[sprint.id] || 0))
+      );
+      const maxValue = Math.max(...values, 0);
+      const yMax = Math.max(5, Math.ceil(maxValue));
+      const containerWidth = Math.floor(container.clientWidth || svg.clientWidth || 0);
+      const width = Math.max(320, containerWidth || 320);
+      const height = Math.max(230, Math.min(300, Math.round(width * 0.34)));
+      const margin = { top: 18, right: 14, bottom: 54, left: 48 };
+      const plotWidth = Math.max(80, width - margin.left - margin.right);
+      const plotHeight = Math.max(80, height - margin.top - margin.bottom);
+      const xStep = sprintColumns.length > 1 ? plotWidth / (sprintColumns.length - 1) : 0;
+      const toX = (idx) => margin.left + idx * xStep;
+      const toY = (value) => margin.top + plotHeight - (value / (yMax || 1)) * plotHeight;
+      const yTicks = 5;
+      const createSvgNode = (tag) => document.createElementNS("http://www.w3.org/2000/svg", tag);
+
+      svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+      svg.setAttribute("preserveAspectRatio", "xMinYMin meet");
+
+      for (let i = 0; i <= yTicks; i += 1) {
+        const value = (yMax / yTicks) * i;
+        const y = toY(value);
+        const line = createSvgNode("line");
+        line.setAttribute("x1", String(margin.left));
+        line.setAttribute("y1", String(y));
+        line.setAttribute("x2", String(width - margin.right));
+        line.setAttribute("y2", String(y));
+        line.setAttribute("stroke", "rgba(148, 163, 184, 0.25)");
+        line.setAttribute("stroke-width", "1");
+        svg.appendChild(line);
+
+        const label = createSvgNode("text");
+        label.setAttribute("x", String(margin.left - 8));
+        label.setAttribute("y", String(y + 4));
+        label.setAttribute("text-anchor", "end");
+        label.setAttribute("font-size", "11");
+        label.setAttribute("fill", "#94a3b8");
+        label.textContent = String(Math.round(value));
+        svg.appendChild(label);
+      }
+
+      const axisX = createSvgNode("line");
+      axisX.setAttribute("x1", String(margin.left));
+      axisX.setAttribute("y1", String(margin.top + plotHeight));
+      axisX.setAttribute("x2", String(width - margin.right));
+      axisX.setAttribute("y2", String(margin.top + plotHeight));
+      axisX.setAttribute("stroke", "rgba(148, 163, 184, 0.55)");
+      axisX.setAttribute("stroke-width", "1.2");
+      svg.appendChild(axisX);
+
+      const axisY = createSvgNode("line");
+      axisY.setAttribute("x1", String(margin.left));
+      axisY.setAttribute("y1", String(margin.top));
+      axisY.setAttribute("x2", String(margin.left));
+      axisY.setAttribute("y2", String(margin.top + plotHeight));
+      axisY.setAttribute("stroke", "rgba(148, 163, 184, 0.55)");
+      axisY.setAttribute("stroke-width", "1.2");
+      svg.appendChild(axisY);
+
+      sprintColumns.forEach((sprint, idx) => {
+        const x = toX(idx);
+        const label = createSvgNode("text");
+        label.setAttribute("x", String(x));
+        label.setAttribute("y", String(margin.top + plotHeight + 18));
+        label.setAttribute("text-anchor", "middle");
+        label.setAttribute("font-size", "10");
+        label.setAttribute("fill", "#94a3b8");
+        const labelText = String(sprint.label || "");
+        label.textContent = labelText.length > 14 ? `${labelText.slice(0, 13)}…` : labelText;
+        svg.appendChild(label);
+      });
+
+      rows.forEach((row, rowIdx) => {
+        const color = linePalette[rowIdx % linePalette.length];
+        const points = sprintColumns.map((sprint, sprintIdx) => ({
+          x: toX(sprintIdx),
+          y: toY(Number(row.sprints?.[sprint.id] || 0)),
+          value: Number(row.sprints?.[sprint.id] || 0),
+        }));
+        const path = createSvgNode("polyline");
+        path.setAttribute(
+          "points",
+          points.map((point) => `${point.x},${point.y}`).join(" ")
+        );
+        path.setAttribute("fill", "none");
+        path.setAttribute("stroke", color);
+        path.setAttribute("stroke-width", "2.6");
+        svg.appendChild(path);
+
+        points.forEach((point, pointIdx) => {
+          const circle = createSvgNode("circle");
+          circle.setAttribute("cx", String(point.x));
+          circle.setAttribute("cy", String(point.y));
+          circle.setAttribute("r", "3.2");
+          circle.setAttribute("fill", color);
+          circle.setAttribute("stroke", "#0b1220");
+          circle.setAttribute("stroke-width", "0.8");
+          circle.setAttribute(
+            "title",
+            `${row.usuario} · ${point.value} pts · ${sprintColumns[pointIdx]?.label || ""}`
+          );
+          svg.appendChild(circle);
+          if (showPointLabels) {
+            const pointLabel = createSvgNode("text");
+            pointLabel.setAttribute("x", String(point.x));
+            pointLabel.setAttribute("y", String(point.y - 8));
+            pointLabel.setAttribute("text-anchor", "middle");
+            pointLabel.setAttribute("font-size", "10");
+            pointLabel.setAttribute("font-weight", "700");
+            pointLabel.setAttribute("fill", color);
+            pointLabel.textContent = String(Number(point.value || 0).toFixed(0));
+            svg.appendChild(pointLabel);
+          }
+        });
+      });
+
+      const yAxisLabel = createSvgNode("text");
+      yAxisLabel.setAttribute("x", "16");
+      yAxisLabel.setAttribute("y", String(margin.top + plotHeight / 2));
+      yAxisLabel.setAttribute("transform", `rotate(-90 16 ${margin.top + plotHeight / 2})`);
+      yAxisLabel.setAttribute("font-size", "11");
+      yAxisLabel.setAttribute("fill", "#94a3b8");
+      yAxisLabel.textContent = "Story Points";
+      svg.appendChild(yAxisLabel);
+
+      const xAxisLabel = createSvgNode("text");
+      xAxisLabel.setAttribute("x", String(margin.left + plotWidth / 2));
+      xAxisLabel.setAttribute("y", String(height - 8));
+      xAxisLabel.setAttribute("text-anchor", "middle");
+      xAxisLabel.setAttribute("font-size", "11");
+      xAxisLabel.setAttribute("fill", "#94a3b8");
+      xAxisLabel.textContent = "Sprints (ultimos 6)";
+      svg.appendChild(xAxisLabel);
+    };
+
+    const sprintTimeline = [...sprints].sort((a, b) => {
+      const rankA = getSprintRank(a?.nombre || "");
+      const rankB = getSprintRank(b?.nombre || "");
+      if (rankA !== null && rankB !== null && rankA !== rankB) return rankA - rankB;
+      if (rankA !== null && rankB === null) return -1;
+      if (rankA === null && rankB !== null) return 1;
+      const startA = parseDateOnly(a?.fecha_inicio || a?.fecha_fin || "");
+      const startB = parseDateOnly(b?.fecha_inicio || b?.fecha_fin || "");
+      if (startA && startB && startA.getTime() !== startB.getTime()) return startA - startB;
+      return Number(a?.id || 0) - Number(b?.id || 0);
+    });
+    const recentSprints = sprintTimeline.slice(-6);
+    const sprintColumns = recentSprints.map((sprint) => ({
+      id: String(sprint.id),
+      label: String(sprint.nombre || `Sprint ${sprint.id}`),
+    }));
+    state.dailyPointsUserSprintColumns = sprintColumns;
+    const recentSprintIds = new Set(sprintColumns.map((col) => col.id));
+    const trendItems = dailyItemsSource.filter((item) => {
+      if (state.selectedCelulaId && String(item.celula_id) !== state.selectedCelulaId) {
+        return false;
+      }
+      if (item.persona_id && shouldFilterByPersona && !activePersonaIds.has(item.persona_id)) {
+        return false;
+      }
+      return recentSprintIds.has(String(item.sprint_id || ""));
+    });
+
+    const userPointsMap = new Map();
+    trendItems.forEach((item) => {
+      const personaId = resolvePersonaIdFromItem(item, personaLookup);
+      const personaName =
+        resolvePersonaNameFromItem(item, personaLookup, personaNameById) || "Sin asignar";
+      const filterKey = personaId
+        ? `persona:${personaId}`
+        : `nombre:${normalizeText(personaName || "sin asignar") || "sin_asignar"}`;
+      if (!userPointsMap.has(filterKey)) {
+        userPointsMap.set(filterKey, {
+          filterKey,
+          personaId: personaId ? String(personaId) : "",
+          usuario: personaName,
+          totalItems: 0,
+          totalStoryPoints: 0,
+          sprints: {},
+        });
+      }
+      const row = userPointsMap.get(filterKey);
+      const sprintId = String(item.sprint_id || "");
+      const points = Number(item.story_points);
+      const normalizedPoints = Number.isFinite(points) ? points : 0;
+      row.totalItems += 1;
+      row.totalStoryPoints += normalizedPoints;
+      row.sprints[sprintId] = Number((Number(row.sprints[sprintId] || 0) + normalizedPoints).toFixed(2));
+    });
+
+    const userPointsRows = Array.from(userPointsMap.values())
+      .map((row) => ({
+        ...row,
+        totalStoryPoints: Number(row.totalStoryPoints.toFixed(2)),
+      }))
+      .sort((a, b) =>
+        String(a.usuario || "").localeCompare(String(b.usuario || ""), "es", {
+          sensitivity: "base",
+          numeric: true,
+        })
+      );
+
+    const availableKeys = new Set(userPointsRows.map((row) => String(row.filterKey)));
+    if (
+      state.dailyPointsUserFilter &&
+      !availableKeys.has(String(state.dailyPointsUserFilter))
+    ) {
+      state.dailyPointsUserFilter = "";
+    }
+    if (pointsUserSelect) {
+      fillSelect(
+        pointsUserSelect,
+        userPointsRows.map((row) => ({
+          id: row.filterKey,
+          nombre: row.usuario,
+        })),
+        { includeEmpty: true, emptyLabel: "Todos", sortByLabel: true }
+      );
+      pointsUserSelect.value = state.dailyPointsUserFilter || "";
+    }
+    syncLabelsToggle();
+
+    const visibleUserPointsRows = state.dailyPointsUserFilter
+      ? userPointsRows.filter(
+          (row) => String(row.filterKey) === String(state.dailyPointsUserFilter)
+        )
+      : userPointsRows;
+    state.dailyPointsUserRows = visibleUserPointsRows.map((row) => ({ ...row }));
+
+    if (pointsUserSummary) {
+      if (!visibleUserPointsRows.length || !sprintColumns.length) {
+        pointsUserSummary.textContent = "Sin datos";
+      } else {
+        const totalPoints = visibleUserPointsRows.reduce(
+          (sum, row) => sum + (Number(row.totalStoryPoints) || 0),
+          0
+        );
+        const totalItems = visibleUserPointsRows.reduce(
+          (sum, row) => sum + (Number(row.totalItems) || 0),
+          0
+        );
+        const sprintRange = `${sprintColumns[0].label} -> ${
+          sprintColumns[sprintColumns.length - 1].label
+        }`;
+        if (state.dailyPointsUserFilter && visibleUserPointsRows.length === 1) {
+          pointsUserSummary.textContent = `${sprintRange} · ${
+            visibleUserPointsRows[0].usuario
+          } · ${formatStoryPointsValue(totalPoints)} pts · ${totalItems} items`;
+        } else {
+          pointsUserSummary.textContent = `${sprintRange} · Usuarios: ${
+            visibleUserPointsRows.length
+          } · ${formatStoryPointsValue(totalPoints)} pts · ${totalItems} items`;
+        }
+      }
+    }
+
+    if (pointsUserChart) {
+      const svg = pointsUserChart.querySelector("svg");
+      if (svg) svg.innerHTML = "";
+      renderStoryPointsTrendChart(
+        pointsUserChart,
+        sprintColumns,
+        visibleUserPointsRows,
+        Boolean(state.dailyPointsShowLabels)
+      );
+    }
+    renderStoryPointsLegend(pointsUserLegend, visibleUserPointsRows);
+
+    if (pointsUserTable) {
+      const tableColumns = [
+        { key: "_index", label: "#", sortable: false },
+        { key: "usuario", label: "Usuario" },
+        ...sprintColumns.map((sprint) => ({
+          key: `sprint_${sprint.id}`,
+          label: sprint.label,
+          render: (row) => formatStoryPointsValue(row.sprints?.[sprint.id] || 0),
+          getValue: (row) => Number(row.sprints?.[sprint.id] || 0),
+        })),
+        {
+          key: "totalStoryPoints",
+          label: "Total Story Points",
+          render: (row) => formatStoryPointsValue(row.totalStoryPoints),
+          getValue: (row) => Number(row.totalStoryPoints) || 0,
+        },
+        { key: "totalItems", label: "Total items" },
+      ];
+      renderAdminTable(pointsUserTable, visibleUserPointsRows, tableColumns, []);
     }
 
     const previousSprint = getPreviousSprint(sprints, selectedSprint);
@@ -6903,15 +7277,18 @@
         totalPendientes: pendingPoints,
         avance,
         _trend: trend,
+        _isSelectedUser: isSelected,
         _rowClass: isSelected ? "is-selected" : "",
         _isDev: isDev,
         _rowClick: () => {
           if (state.dailySelectedPersonaId === String(persona.id)) {
             state.dailySelectedPersonaId = "";
             state.dailySelectedAssignee = "";
+            state.dailyPointsUserFilter = "";
           } else {
             state.dailySelectedPersonaId = String(persona.id);
             state.dailySelectedAssignee = "";
+            state.dailyPointsUserFilter = `persona:${persona.id}`;
           }
           renderDaily(state.base);
         },
@@ -6957,15 +7334,18 @@
         totalPendientes: pendingPoints,
         avance,
         _trend: trend,
+        _isSelectedUser: isSelected,
         _rowClass: isSelected ? "is-selected" : "",
         _isDev: false,
         _rowClick: () => {
           if (normalizeText(state.dailySelectedAssignee) === key) {
             state.dailySelectedAssignee = "";
             state.dailySelectedPersonaId = "";
+            state.dailyPointsUserFilter = "";
           } else {
             state.dailySelectedAssignee = stats.nombre;
             state.dailySelectedPersonaId = "";
+            state.dailyPointsUserFilter = `nombre:${key || "sin_asignar"}`;
           }
           renderDaily(state.base);
         },
@@ -7232,7 +7612,17 @@
       devTable,
       teamRows,
       [
-        { key: "usuario", label: "Usuario" },
+        {
+          key: "usuario",
+          label: "Usuario",
+          render: (row) => {
+            if (!row?._isSelectedUser) return row?.usuario || "";
+            const badge = document.createElement("span");
+            badge.className = "daily-selected-user";
+            badge.textContent = row.usuario || "";
+            return badge;
+          },
+        },
         {
           key: "capacidad",
           label: "Capacidad",
@@ -7478,6 +7868,9 @@
     const form = qs("#daily-form");
     const clearBtn = qs("#daily-form-clear");
     const status = qs("#daily-status");
+    const pointsUserSelect = qs("#daily-points-user-select");
+    const pointsLabelsToggle = qs("#daily-points-labels-toggle");
+    const pointsUserExportBtn = qs("#daily-points-user-export");
 
     if (sprintSelect && !sprintSelect.dataset.bound) {
       sprintSelect.dataset.bound = "true";
@@ -7489,6 +7882,7 @@
         state.dailySelectedAssignee = "";
         state.dailyStatusFilters = [];
         state.dailyStoryPointsFilter = null;
+        state.dailyPointsUserFilter = "";
         state.dailyStatusOpen = false;
         state.dailyStatusTouched = false;
         await renderDaily(state.base);
@@ -7534,6 +7928,7 @@
       state.dailySelectedPersonaId = "";
       state.dailySelectedAssignee = "";
       state.dailyStoryPointsFilter = null;
+      state.dailyPointsUserFilter = "";
       if (targetStatus && Array.isArray(state.dailyStatusFilters) && state.dailyStatusFilters.length) {
         const statusLabel = getStatusLabel(targetStatus) || targetStatus;
         const next = new Set(state.dailyStatusFilters.filter(Boolean));
@@ -7545,6 +7940,91 @@
     if (clearBtn && !clearBtn.dataset.bound) {
       clearBtn.dataset.bound = "true";
       clearBtn.addEventListener("click", resetDailyForm);
+    }
+
+    if (pointsUserSelect && !pointsUserSelect.dataset.bound) {
+      pointsUserSelect.dataset.bound = "true";
+      pointsUserSelect.addEventListener("change", () => {
+        const selectedKey = String(pointsUserSelect.value || "").trim();
+        state.dailyPointsUserFilter = selectedKey;
+        if (!selectedKey) {
+          state.dailySelectedPersonaId = "";
+          state.dailySelectedAssignee = "";
+        } else if (selectedKey.startsWith("persona:")) {
+          state.dailySelectedPersonaId = selectedKey.slice("persona:".length);
+          state.dailySelectedAssignee = "";
+        } else if (selectedKey.startsWith("nombre:")) {
+          const optionText =
+            pointsUserSelect.options?.[pointsUserSelect.selectedIndex]?.textContent || "";
+          state.dailySelectedAssignee = optionText.trim();
+          state.dailySelectedPersonaId = "";
+        }
+        renderDaily(state.base);
+      });
+    }
+    if (pointsLabelsToggle && !pointsLabelsToggle.dataset.bound) {
+      pointsLabelsToggle.dataset.bound = "true";
+      pointsLabelsToggle.addEventListener("click", () => {
+        state.dailyPointsShowLabels = !state.dailyPointsShowLabels;
+        renderDaily(state.base);
+      });
+    }
+
+    if (pointsUserExportBtn && !pointsUserExportBtn.dataset.bound) {
+      pointsUserExportBtn.dataset.bound = "true";
+      pointsUserExportBtn.addEventListener("click", () => {
+        const rows = Array.isArray(state.dailyPointsUserRows)
+          ? state.dailyPointsUserRows
+          : [];
+        if (!rows.length) {
+          if (status) {
+            status.textContent = "No hay datos para exportar en Story Points por usuario.";
+            status.dataset.type = "error";
+          }
+          return;
+        }
+        const sprintColumns = Array.isArray(state.dailyPointsUserSprintColumns)
+          ? state.dailyPointsUserSprintColumns
+          : [];
+        const headers = [
+          "Usuario",
+          ...sprintColumns.map((sprint) => sprint.label),
+          "Total Story Points",
+          "Total items",
+        ];
+        const escapeCsv = (value) =>
+          `"${String(value ?? "")
+            .replace(/"/g, '""')
+            .replace(/\n/g, " ")
+            .trim()}"`;
+        const lines = [
+          headers.map(escapeCsv).join(","),
+          ...rows.map((row) =>
+            [
+              row.usuario,
+              ...sprintColumns.map((sprint) => row?.sprints?.[sprint.id] ?? 0),
+              row.totalStoryPoints,
+              row.totalItems,
+            ]
+              .map(escapeCsv)
+              .join(",")
+          ),
+        ];
+        const csv = `\uFEFF${lines.join("\n")}`;
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = `daily_story_points_por_usuario_${formatISO(getToday())}.csv`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        if (status) {
+          status.textContent = "Exportacion completada.";
+          status.dataset.type = "ok";
+        }
+      });
     }
 
     if (form && !form.dataset.bound) {
@@ -7706,10 +8186,12 @@
     const dateWeekBtn = qs("#tasks-date-week");
     const dateMonthBtn = qs("#tasks-date-month");
     const dateYearBtn = qs("#tasks-date-year");
+    const dateNoDueBtn = qs("#tasks-date-nodue");
     const filterHideSubtasks = qs("#tasks-filter-hide-subtasks");
     const filterClearBtn = qs("#tasks-filter-clear");
     const filterCloseBtn = qs("#tasks-filter-close");
     const columnsBtn = qs("#tasks-columns-btn");
+    const priorityKpis = qs("#tasks-priority-kpis");
     const columnsPanel = qs("#tasks-columns-panel");
     const columnsList = qs("#tasks-columns-list");
     const columnsCloseBtn = qs("#tasks-columns-close");
@@ -7760,7 +8242,9 @@
       { id: "chore", nombre: "Chore" },
     ];
 
-    const TASK_COLUMNS_KEY = "scrum_calendar_tasks_columns_v3";
+    const TASK_COLUMNS_KEY = "scrum_calendar_tasks_columns_v4";
+    const TASKS_BACKLOG_DT_STATE_KEY = "scrum_calendar_tasks_backlog_dt_state_v2";
+    const TASKS_BACKLOG_DT_STATE_SCHEMA = 2;
     const DEFAULT_COLUMNS = [
       "titulo",
       "estado",
@@ -7800,6 +8284,7 @@
       assignees: [],
       dueFrom: "",
       dueTo: "",
+      noDueDate: false,
       hideSubtasks: false,
     };
     const cloneDefaultTasksAdvancedFilters = () => ({
@@ -7808,6 +8293,7 @@
       assignees: [],
       dueFrom: "",
       dueTo: "",
+      noDueDate: false,
       hideSubtasks: false,
     });
     const normalizeIsoDate = (value) => {
@@ -7816,7 +8302,7 @@
     };
     const normalizeDatePreset = (value) => {
       const raw = String(value || "").trim().toLowerCase();
-      return ["today", "week", "month", "year"].includes(raw) ? raw : "";
+      return ["today", "week", "month", "year", "nodue"].includes(raw) ? raw : "";
     };
     const normalizeTasksFiltersState = (raw) => {
       const viewRaw = String(raw?.view || "").trim().toLowerCase();
@@ -7847,6 +8333,7 @@
         assignees,
         dueFrom: normalizeIsoDate(filtersRaw.dueFrom),
         dueTo: normalizeIsoDate(filtersRaw.dueTo),
+        noDueDate: Boolean(filtersRaw.noDueDate),
         hideSubtasks: Boolean(filtersRaw.hideSubtasks),
       };
 
@@ -7893,6 +8380,17 @@
 
     const loadColumnsConfig = () => {
       if (state.tasksColumnsConfig) return state.tasksColumnsConfig;
+      try {
+        const staleKeys = [];
+        for (let idx = 0; idx < localStorage.length; idx += 1) {
+          const key = localStorage.key(idx);
+          if (!key) continue;
+          if (key.startsWith("DataTables_") && key.includes("tasks-backlog-table")) staleKeys.push(key);
+        }
+        staleKeys.forEach((key) => localStorage.removeItem(key));
+      } catch {
+        // ignore
+      }
       let cfg = null;
       try {
         const raw = localStorage.getItem(TASK_COLUMNS_KEY);
@@ -7901,8 +8399,24 @@
         cfg = null;
       }
       const orderRaw = cfg && Array.isArray(cfg.order) ? cfg.order.slice() : [];
-      const hiddenRaw = cfg && cfg.hidden && typeof cfg.hidden === "object" ? { ...cfg.hidden } : {};
-      const widthsRaw = cfg && cfg.widths && typeof cfg.widths === "object" ? { ...cfg.widths } : {};
+      const hiddenRaw =
+        cfg && cfg.hidden && typeof cfg.hidden === "object"
+          ? Object.fromEntries(
+              Object.entries(cfg.hidden)
+                .filter(([key]) => DEFAULT_COLUMNS.includes(key))
+                .map(([key, value]) => [key, Boolean(value)])
+            )
+          : {};
+      const widthsRaw =
+        cfg && cfg.widths && typeof cfg.widths === "object"
+          ? Object.fromEntries(
+              Object.entries(cfg.widths)
+                .filter(([key]) => DEFAULT_COLUMNS.includes(key))
+                .map(([key, value]) => [key, Number(value)])
+                .filter(([, value]) => Number.isFinite(value) && value > 0)
+                .map(([key, value]) => [key, Math.round(value)])
+            )
+          : {};
 
       const order = orderRaw.filter((k) => DEFAULT_COLUMNS.includes(k));
       DEFAULT_COLUMNS.forEach((k) => {
@@ -8091,6 +8605,7 @@
       { key: "week", btn: dateWeekBtn },
       { key: "month", btn: dateMonthBtn },
       { key: "year", btn: dateYearBtn },
+      { key: "nodue", btn: dateNoDueBtn },
     ].filter((entry) => entry.btn);
 
     const syncDatePresetButtons = () => {
@@ -8133,18 +8648,27 @@
       const toggle = Boolean(options?.toggle);
       const nextPreset = toggle && normalized && state.tasksDatePreset === normalized ? "" : normalized;
       state.tasksDatePreset = nextPreset;
-      if (nextPreset) {
+      if (nextPreset === "nodue") {
+        state.tasksFilters = {
+          ...state.tasksFilters,
+          dueFrom: "",
+          dueTo: "",
+          noDueDate: true,
+        };
+      } else if (nextPreset) {
         const range = getDatePresetRange(nextPreset);
         state.tasksFilters = {
           ...state.tasksFilters,
           dueFrom: range?.from || "",
           dueTo: range?.to || "",
+          noDueDate: false,
         };
       } else {
         state.tasksFilters = {
           ...state.tasksFilters,
           dueFrom: "",
           dueTo: "",
+          noDueDate: false,
         };
       }
       if (filterDueFrom) filterDueFrom.value = state.tasksFilters?.dueFrom || "";
@@ -8193,6 +8717,37 @@
       backlogDataTable = $table.DataTable({
         destroy: true,
         stateSave: true,
+        stateLoadCallback: () => {
+          try {
+            const raw = localStorage.getItem(TASKS_BACKLOG_DT_STATE_KEY);
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            if (Number(parsed?.__schema || 0) !== TASKS_BACKLOG_DT_STATE_SCHEMA) return null;
+            const savedKeys = Array.isArray(parsed?.__columnKeys)
+              ? parsed.__columnKeys.map((key) => String(key || ""))
+              : [];
+            if (savedKeys.length !== visibleColumns.length) return null;
+            const sameColumns = savedKeys.every((key, idx) => key === String(visibleColumns[idx] || ""));
+            if (!sameColumns) return null;
+            const cols = Array.isArray(parsed?.columns) ? parsed.columns : [];
+            if (cols.length !== visibleColumns.length) return null;
+            return parsed;
+          } catch {
+            return null;
+          }
+        },
+        stateSaveCallback: (_settings, data) => {
+          try {
+            const payload = {
+              ...data,
+              __schema: TASKS_BACKLOG_DT_STATE_SCHEMA,
+              __columnKeys: visibleColumns.slice(),
+            };
+            localStorage.setItem(TASKS_BACKLOG_DT_STATE_KEY, JSON.stringify(payload));
+          } catch {
+            // ignore
+          }
+        },
         autoWidth: false,
         searching: true,
         ordering: false,
@@ -8459,6 +9014,19 @@
       statusEl.dataset.type = type;
     };
 
+    const updatePrioritySummaryButton = (items = []) => {
+      if (!priorityKpis) return;
+      const counts = { urgente: 0, alta: 0, media: 0, baja: 0 };
+      (Array.isArray(items) ? items : []).forEach((task) => {
+        const key = String(task?.prioridad || "").trim().toLowerCase();
+        if (Object.prototype.hasOwnProperty.call(counts, key)) counts[key] += 1;
+      });
+      ["urgente", "alta", "media", "baja"].forEach((key) => {
+        const el = priorityKpis.querySelector(`[data-priority-kpi="${key}"]`);
+        if (el) el.textContent = String(counts[key] || 0);
+      });
+    };
+
     const setActiveView = (view) => {
       state.tasksView = view;
       try {
@@ -8515,6 +9083,38 @@
               <div class="small text-muted mb-2" id="task-parent-hint"></div>
               <div class="card mb-0 hidden task-existing-only mt-2">
                 <div class="card-header border-0 py-2">
+                  <div class="d-flex align-items-center justify-content-between gap-2">
+                    <h3 class="card-title mb-0">Subtareas</h3>
+                    <button class="btn btn-outline-primary btn-sm px-2" type="button" id="task-subtask-add" title="Agregar subtarea" aria-label="Agregar subtarea">
+                      <i class="bi bi-diagram-3"></i>
+                    </button>
+                  </div>
+                </div>
+                <div class="card-body pt-0">
+                  <div id="task-subtasks-list" class="tasks-subtasks"></div>
+                  <div class="input-group input-group-sm mt-2">
+                    <input class="form-control" id="task-subtask-title" type="text" placeholder="Titulo subtarea..." />
+                    <button class="btn btn-outline-primary" type="button" id="task-subtask-create">Crear</button>
+                  </div>
+                </div>
+              </div>
+              <div id="task-new-subtasks" class="hidden mb-2 mt-2">
+                <div class="d-flex align-items-center justify-content-between gap-2">
+                  <h3 class="card-title mb-0">Subtareas iniciales</h3>
+                  <button class="btn btn-outline-primary btn-sm" type="button" id="task-new-subtask-toggle">
+                    <i class="bi bi-list-task me-1"></i>Agregar subtareas
+                  </button>
+                </div>
+                <div id="task-new-subtask-panel" class="hidden mt-2">
+                  <div class="input-group input-group-sm">
+                    <input class="form-control" id="task-new-subtask-title" type="text" placeholder="Titulo subtarea..." />
+                    <button class="btn btn-outline-primary" type="button" id="task-new-subtask-create">Agregar</button>
+                  </div>
+                  <div id="task-new-subtasks-list" class="tasks-subtasks mt-2"></div>
+                </div>
+              </div>
+              <div class="card mb-0 hidden task-existing-only mt-2">
+                <div class="card-header border-0 py-2">
                   <h3 class="card-title mb-0">Comentarios</h3>
                 </div>
                 <div class="card-body pt-0">
@@ -8556,38 +9156,14 @@
                 <label class="form-label" for="task-due">Vencimiento</label>
                 <input class="form-control" id="task-due" name="fecha_vencimiento" type="date" />
               </div>
-              <div class="card mb-0 hidden task-existing-only">
-                <div class="card-header border-0 py-2">
-                  <div class="d-flex align-items-center justify-content-between gap-2">
-                    <h3 class="card-title mb-0">Subtareas</h3>
-                    <button class="btn btn-outline-primary btn-sm px-2" type="button" id="task-subtask-add" title="Agregar subtarea" aria-label="Agregar subtarea">
-                      <i class="bi bi-diagram-3"></i>
-                    </button>
-                  </div>
-                </div>
-                <div class="card-body pt-0">
-                  <div id="task-subtasks-list" class="tasks-subtasks"></div>
-                  <div class="input-group input-group-sm mt-2">
-                    <input class="form-control" id="task-subtask-title" type="text" placeholder="Titulo subtarea..." />
-                    <button class="btn btn-outline-primary" type="button" id="task-subtask-create">Crear</button>
-                  </div>
-                </div>
+              <div class="mb-3">
+                <label class="form-label" for="task-start-date">Start Date</label>
+                <input class="form-control" id="task-start-date" name="start_date" type="date" />
               </div>
-	            </div>
-	          </div>
-	          <div id="task-new-subtasks" class="hidden mb-2">
-	            <div class="d-flex align-items-center justify-content-between gap-2">
-	              <h3 class="card-title mb-0">Subtareas iniciales</h3>
-	              <button class="btn btn-outline-primary btn-sm" type="button" id="task-new-subtask-toggle">
-	                <i class="bi bi-list-task me-1"></i>Agregar subtareas
-	              </button>
-	            </div>
-	            <div id="task-new-subtask-panel" class="hidden mt-2">
-	              <div class="input-group input-group-sm">
-	                <input class="form-control" id="task-new-subtask-title" type="text" placeholder="Titulo subtarea..." />
-	                <button class="btn btn-outline-primary" type="button" id="task-new-subtask-create">Agregar</button>
-	              </div>
-	              <div id="task-new-subtasks-list" class="tasks-subtasks mt-2"></div>
+              <div class="mb-3">
+                <label class="form-label" for="task-end-date">End Date</label>
+                <input class="form-control" id="task-end-date" name="end_date" type="date" />
+              </div>
 	            </div>
 	          </div>
 	          <div class="d-flex gap-2 align-items-center">
@@ -8910,6 +9486,19 @@
 
       const resolvedCelulaId = Number(task?.celula_id || celulaId || resolveCelulaId() || 0);
       form.dataset.celulaId = resolvedCelulaId ? String(resolvedCelulaId) : "";
+      const applyModalStatusDateRules = (nextStatusRaw) => {
+        const nextStatus = String(nextStatusRaw || "").trim().toLowerCase();
+        if (!form.start_date || !form.end_date) return;
+        if (nextStatus === "backlog" || nextStatus === "todo") {
+          form.start_date.value = "";
+          form.end_date.value = "";
+          return;
+        }
+        if (nextStatus === "doing") {
+          if (!form.start_date.value) form.start_date.value = formatISO(getToday());
+          form.end_date.value = "";
+        }
+      };
       const personasFiltradas = personasActivas
         .filter((p) => !resolvedCelulaId || personaBelongsToCelula(p, resolvedCelulaId))
         .map((p) => ({ id: p.id, nombre: `${p.nombre} ${p.apellido}`.trim() }))
@@ -9054,12 +9643,14 @@
 	        form.titulo.value = task.titulo || "";
 	        form.descripcion.value = task.descripcion || "";
 	        form.estado.value = task.estado || "backlog";
-	        form.prioridad.value = task.prioridad || "media";
-	        form.assignee_persona_id.value = task.assignee_persona_id ? String(task.assignee_persona_id) : "";
-	        form.fecha_vencimiento.value = task.fecha_vencimiento || "";
-	        setFormMode(form, "edit", task.id, "Guardar");
-	        if (deleteBtn) deleteBtn.classList.remove("hidden");
-	        existingOnlyBlocks.forEach((node) => node.classList.remove("hidden"));
+        form.prioridad.value = task.prioridad || "media";
+        form.assignee_persona_id.value = task.assignee_persona_id ? String(task.assignee_persona_id) : "";
+        form.fecha_vencimiento.value = task.fecha_vencimiento || "";
+        form.start_date.value = task.start_date || "";
+        form.end_date.value = task.end_date || "";
+        setFormMode(form, "edit", task.id, "Guardar");
+        if (deleteBtn) deleteBtn.classList.remove("hidden");
+        existingOnlyBlocks.forEach((node) => node.classList.remove("hidden"));
 	        if (newSubtasksWrap) newSubtasksWrap.classList.add("hidden");
 	        if (newSubtaskPanel) newSubtaskPanel.classList.add("hidden");
 	        if (newSubtaskToggle) {
@@ -9070,13 +9661,15 @@
 	        refreshDetails();
 	      } else {
 	        form.dataset.currentTaskId = "";
-	        form.reset();
-	        resetFormMode(form, "Guardar");
-	        form.estado.value = status || "backlog";
-	        if (status) form.estado.value = status;
-	        if (deleteBtn) deleteBtn.classList.add("hidden");
-	        existingOnlyBlocks.forEach((node) => node.classList.add("hidden"));
-	        const canUseDraftSubtasks = !parentId;
+        form.reset();
+        resetFormMode(form, "Guardar");
+        form.estado.value = status || "backlog";
+        if (status) form.estado.value = status;
+        form.start_date.value = "";
+        form.end_date.value = "";
+        if (deleteBtn) deleteBtn.classList.add("hidden");
+        existingOnlyBlocks.forEach((node) => node.classList.add("hidden"));
+        const canUseDraftSubtasks = !parentId;
 	        if (newSubtasksWrap) newSubtasksWrap.classList.toggle("hidden", !canUseDraftSubtasks);
 	        if (newSubtaskPanel) newSubtaskPanel.classList.add("hidden");
 	        if (newSubtaskToggle) {
@@ -9089,6 +9682,13 @@
 
       if (formStatus) formStatus.textContent = "";
       openAdminModal(form, task ? "Editar tarea" : parentId ? "Nueva subtarea" : "Nueva tarea");
+
+      if (form.estado && !form.estado.dataset.boundDateRules) {
+        form.estado.dataset.boundDateRules = "true";
+        form.estado.addEventListener("change", () => {
+          applyModalStatusDateRules(form.estado.value);
+        });
+      }
 
       if (cancelBtn && !cancelBtn.dataset.bound) {
         cancelBtn.dataset.bound = "true";
@@ -9108,7 +9708,8 @@
               throw new Error(text || "No se pudo eliminar.");
             }
             closeAdminModal(true);
-            await root.__tasksApi?.loadAndRender?.();
+            removeTaskTreeFromCache(editId);
+            refreshTasksUi("all");
           } catch (err) {
             if (formStatus) {
               formStatus.textContent = err.message || "No se pudo eliminar.";
@@ -9131,7 +9732,7 @@
 	          if (!parent) return;
 	          try {
 	            subtaskCreate.disabled = true;
-	            await postJson("/tasks", {
+	            const createdSubtask = await postJson("/tasks", {
 	              titulo: title,
 	              descripcion: null,
 	              estado: parent.estado || "backlog",
@@ -9141,8 +9742,9 @@
 	              assignee_persona_id: parent.assignee_persona_id || null,
 	              fecha_vencimiento: null,
 	            });
+	            upsertTaskInCache(createdSubtask);
 	            if (subtaskTitle) subtaskTitle.value = "";
-	            await root.__tasksApi?.loadAndRender?.();
+	            refreshTasksUi("all");
 	            renderSubtasks();
 	          } catch (err) {
 	            if (formStatus) {
@@ -9315,6 +9917,8 @@
             parent_id: form.dataset.parentId ? Number(form.dataset.parentId) : null,
             assignee_persona_id: form.assignee_persona_id.value ? Number(form.assignee_persona_id.value) : null,
             fecha_vencimiento: form.fecha_vencimiento.value || null,
+            start_date: form.start_date.value || null,
+            end_date: form.end_date.value || null,
           };
 
 	          const submitBtn = form.querySelector("button[type='submit']");
@@ -9329,13 +9933,15 @@
 	              async () => {
 	                const editId = form.dataset.editId;
 	                if (editId) {
-	                  await putJson(`/tasks/${editId}`, payload);
+	                  const updated = await putJson(`/tasks/${editId}`, payload);
+	                  upsertTaskInCache(updated);
 	                } else {
 	                  const created = await postJson("/tasks", payload);
+	                  upsertTaskInCache(created);
 	                  const createdId = Number(created?.id || 0);
 	                  if (createdId && draftSubtasks.length) {
 	                    for (const subTitle of draftSubtasks) {
-	                      await postJson("/tasks", {
+	                      const createdSubtask = await postJson("/tasks", {
 	                        titulo: subTitle,
 	                        descripcion: null,
 	                        estado: payload.estado || "backlog",
@@ -9345,6 +9951,7 @@
 	                        assignee_persona_id: payload.assignee_persona_id || null,
 	                        fecha_vencimiento: null,
 	                      });
+	                      upsertTaskInCache(createdSubtask);
 	                    }
 	                  }
 	                }
@@ -9353,7 +9960,7 @@
 	            );
 	            clearDraftSubtasks();
 	            closeAdminModal(true);
-	            await root.__tasksApi?.loadAndRender?.();
+	            refreshTasksUi("all");
           } catch (err) {
             if (formStatus) {
               formStatus.textContent = err.message || "No se pudo guardar.";
@@ -9379,6 +9986,7 @@
       );
       const dueFrom = state.tasksFilters?.dueFrom ? String(state.tasksFilters.dueFrom) : "";
       const dueTo = state.tasksFilters?.dueTo ? String(state.tasksFilters.dueTo) : "";
+      const noDueDate = Boolean(state.tasksFilters?.noDueDate);
       const hideSubtasks = Boolean(state.tasksFilters?.hideSubtasks);
       return items.filter((task) => {
         if (hideSubtasks && task.parent_id) return false;
@@ -9387,6 +9995,10 @@
         if (assigneeSet.size) {
           const key = task.assignee_persona_id ? String(task.assignee_persona_id) : "__none__";
           if (!assigneeSet.has(key)) return false;
+        }
+        if (noDueDate) {
+          const due = task.fecha_vencimiento ? String(task.fecha_vencimiento).trim() : "";
+          if (due) return false;
         }
         if (dueFrom || dueTo) {
           const due = task.fecha_vencimiento ? String(task.fecha_vencimiento) : "";
@@ -10027,7 +10639,7 @@
         const descriptionText = String(task.descripcion || "").trim();
         if (descriptionText) {
           const hint = document.createElement("div");
-          hint.className = "tasks-desc-preview is-collapsed text-muted small";
+          hint.className = "tasks-desc-preview is-collapsed is-hidden text-muted small";
           hint.textContent = descriptionText;
           main.appendChild(hint);
           const toggleDesc = document.createElement("button");
@@ -10300,7 +10912,7 @@
           if (!titulo) return;
           const celulaId = resolveCelulaId() || null;
           try {
-            await postJson("/tasks", {
+            const created = await postJson("/tasks", {
               titulo,
               descripcion: null,
               estado: statusKey,
@@ -10311,8 +10923,9 @@
               assignee_persona_id: null,
               fecha_vencimiento: null,
             });
+            upsertTaskInCache(created);
             if (input) input.value = "";
-            await root.__tasksApi?.loadAndRender?.();
+            refreshTasksUi("all");
           } catch (err) {
             setTasksStatus(err.message || "No se pudo crear la tarea.", "error");
           }
@@ -10336,8 +10949,9 @@
           const task = (state.tasksCache || []).find((t) => t.id === taskId);
           if (!task || task.estado === statusKey) return;
           try {
-            await putJson(`/tasks/${taskId}`, { estado: statusKey });
-            await root.__tasksApi?.loadAndRender?.();
+            const updated = await putJson(`/tasks/${taskId}`, { estado: statusKey });
+            upsertTaskInCache(updated);
+            refreshTasksUi("all");
           } catch (err) {
             setTasksStatus(err.message || "No se pudo mover la tarea.", "error");
           }
@@ -10735,21 +11349,308 @@
       }
     };
 
+    const syncBacklogHeaderSortState = () => {
+      const sortState = getTasksBacklogSort();
+      backlogList?.querySelectorAll("th[data-col-key]").forEach((th) => {
+        const key = String(th?.dataset?.colKey || "");
+        th.classList.remove("sorting_asc", "sorting_desc");
+        th.classList.add("sorting");
+        if (key && key === sortState.key) {
+          th.classList.add(sortState.dir === "asc" ? "sorting_asc" : "sorting_desc");
+          th.setAttribute("aria-sort", sortState.dir === "asc" ? "ascending" : "descending");
+        } else {
+          th.setAttribute("aria-sort", "none");
+        }
+      });
+    };
+
+    const reorderBacklogRowsInPlace = ({ prune = false } = {}) => {
+      const tbody =
+        backlogList?.querySelector(".dataTables_scrollBody tbody") ||
+        backlogList?.querySelector("table.tasks-notion-table tbody");
+      if (!tbody) return false;
+      const rows = Array.from(tbody.querySelectorAll("tr[data-task-id]"));
+      if (!rows.length) return false;
+      const rowById = new Map(
+        rows
+          .map((row) => [String(row?.dataset?.taskId || ""), row])
+          .filter(([id]) => Boolean(id))
+      );
+      if (!rowById.size) return false;
+
+      const filtered = applyFilters(state.tasksCache || []);
+      const tasks = buildBacklogContext(filtered || [], state.tasksCache || []);
+      const taskById = new Map((tasks || []).map((task) => [String(task.id), task]));
+      const { roots, childrenByParent } = buildTaskHierarchy(tasks);
+
+      const taskCelulaIds = new Set(
+        tasks
+          .map((task) => (task?.celula_id ? String(task.celula_id) : ""))
+          .filter(Boolean)
+      );
+      const hasTaskCelulas = taskCelulaIds.size > 0;
+      const feriadosSet = new Set(
+        (base.feriados || [])
+          .filter((f) => !f.celula_id || !hasTaskCelulas || taskCelulaIds.has(String(f.celula_id)))
+          .map((f) => f.fecha)
+          .filter(Boolean)
+      );
+      const sprintPool = hasTaskCelulas
+        ? [...(base.sprints || [])].filter((s) => taskCelulaIds.has(String(s.celula_id)))
+        : [...(base.sprints || [])];
+      const sprintMap = Object.fromEntries(sprintPool.map((s) => [String(s.id), s.nombre]));
+      const personasFiltradas = personasActivas
+        .filter(
+          (p) =>
+            !hasTaskCelulas ||
+            (p.celulas || []).some((celula) => taskCelulaIds.has(String(celula.id)))
+        )
+        .map((p) => ({ id: p.id, nombre: `${p.nombre} ${p.apellido}`.trim() }))
+        .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
+      const personaMap = Object.fromEntries(personasFiltradas.map((p) => [String(p.id), p.nombre]));
+
+      const sortState = getTasksBacklogSort();
+      const parseDateSortKey = (value) => {
+        const raw = String(value || "").trim();
+        if (!raw) return null;
+        const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!match) return null;
+        return Number(`${match[1]}${match[2]}${match[3]}`);
+      };
+      const isMissingSortValue = (value) =>
+        value === null ||
+        value === undefined ||
+        value === "" ||
+        (typeof value === "number" && !Number.isFinite(value));
+      const statusRank = Object.fromEntries(STATUS_ORDER.map((key, idx) => [key, idx]));
+      const priorityRank = {
+        baja: 1,
+        media: 2,
+        alta: 3,
+        urgente: 4,
+      };
+      const resolveBacklogSortValue = (task, key) => {
+        if (key === "titulo") return normalizeText(task.titulo || "");
+        if (key === "estado") return statusRank[String(task.estado || "backlog").toLowerCase()] ?? 0;
+        if (key === "prioridad") return priorityRank[String(task.prioridad || "media").toLowerCase()] ?? 0;
+        if (key === "tipo") return normalizeText(task.tipo || "");
+        if (key === "etiquetas") return normalizeText(task.etiquetas || "");
+        if (key === "assignee_persona_id") {
+          const personId = task.assignee_persona_id ? String(task.assignee_persona_id) : "";
+          const name = personId ? personaMap[personId] || `Persona ${personId}` : "";
+          return normalizeText(name);
+        }
+        if (key === "sprint_id") {
+          const sprintId = task.sprint_id ? String(task.sprint_id) : "";
+          const name = sprintId ? sprintMap[sprintId] || `Sprint ${sprintId}` : "";
+          return normalizeText(name);
+        }
+        if (key === "start_date" || key === "end_date" || key === "fecha_vencimiento") {
+          return parseDateSortKey(task[key]);
+        }
+        if (key === "dias_habiles") {
+          if (!task.start_date || !task.fecha_vencimiento) return null;
+          const days = countWeekdays(task.start_date, task.fecha_vencimiento, feriadosSet);
+          return Number.isFinite(days) ? days : null;
+        }
+        if (key === "puntos" || key === "horas_estimadas") {
+          const value = Number(task[key]);
+          return Number.isFinite(value) ? value : null;
+        }
+        if (key === "importante") return task.importante ? 1 : 0;
+        return normalizeText(task?.[key] ?? "");
+      };
+      const compareBacklogTasks = (a, b) => {
+        const av = resolveBacklogSortValue(a, sortState.key);
+        const bv = resolveBacklogSortValue(b, sortState.key);
+        const aMissing = isMissingSortValue(av);
+        const bMissing = isMissingSortValue(bv);
+        if (aMissing && bMissing) return compareTaskNatural(a, b);
+        if (aMissing) return 1;
+        if (bMissing) return -1;
+        let cmp = 0;
+        if (typeof av === "number" && typeof bv === "number") {
+          cmp = av - bv;
+        } else {
+          cmp = String(av).localeCompare(String(bv), "es", { sensitivity: "base", numeric: true });
+        }
+        if (cmp === 0 && sortState.key === "fecha_vencimiento") {
+          const pa = priorityRank[String(a?.prioridad || "media").toLowerCase()] ?? 0;
+          const pb = priorityRank[String(b?.prioridad || "media").toLowerCase()] ?? 0;
+          const priorityCmp = pb - pa;
+          if (priorityCmp !== 0) return priorityCmp;
+        }
+        if (cmp === 0) return compareTaskNatural(a, b);
+        return sortState.dir === "desc" ? -cmp : cmp;
+      };
+      const sortBacklogTasks = (items) => [...items].sort(compareBacklogTasks);
+      const hideSubtasks = Boolean(state.tasksFilters?.hideSubtasks);
+      const orderedIds = [];
+      const walk = (task, ancestors = new Set()) => {
+        const taskKey = String(task?.id || "");
+        if (!taskKey || ancestors.has(taskKey)) return;
+        const nextAncestors = new Set(ancestors);
+        nextAncestors.add(taskKey);
+        orderedIds.push(taskKey);
+        const children = sortBacklogTasks(childrenByParent.get(taskKey) || []);
+        const hasChildrenAny = children.length > 0;
+        const hasChildren = !hideSubtasks && hasChildrenAny;
+        const expanded = Boolean(state.tasksBacklogExpanded?.[taskKey]);
+        if (hasChildren && expanded) {
+          children.forEach((child) => walk(child, nextAncestors));
+        }
+      };
+      sortBacklogTasks(roots).forEach((task) => walk(task));
+      if (!orderedIds.length) {
+        let removedAny = false;
+        if (prune) {
+          rows.forEach((row) => {
+            if (hasBacklogDataTable && backlogDataTable) {
+              try {
+                backlogDataTable.row(row).remove();
+                removedAny = true;
+              } catch {
+                row.remove();
+                removedAny = true;
+              }
+            } else {
+              row.remove();
+              removedAny = true;
+            }
+          });
+          if (removedAny && hasBacklogDataTable && backlogDataTable) {
+            try {
+              backlogDataTable.draw(false);
+            } catch {
+              // ignore
+            }
+          }
+          syncBacklogHeaderSortState();
+          updatePrioritySummaryButton(filtered);
+          renderReports(filtered);
+          return true;
+        }
+        return false;
+      }
+
+      const orderedSet = new Set(orderedIds);
+      let removedAny = false;
+      if (prune) {
+        rows.forEach((row) => {
+          const id = String(row?.dataset?.taskId || "");
+          if (!id || orderedSet.has(id)) return;
+          if (hasBacklogDataTable && backlogDataTable) {
+            try {
+              backlogDataTable.row(row).remove();
+              removedAny = true;
+            } catch {
+              row.remove();
+              removedAny = true;
+            }
+          } else {
+            row.remove();
+            removedAny = true;
+          }
+        });
+      }
+
+      orderedIds.forEach((id) => {
+        const row = rowById.get(id);
+        if (row) tbody.appendChild(row);
+      });
+      if (removedAny && hasBacklogDataTable && backlogDataTable && prune) {
+        try {
+          backlogDataTable.draw(false);
+        } catch {
+          // ignore
+        }
+      }
+      syncBacklogHeaderSortState();
+      updatePrioritySummaryButton(filtered);
+      renderReports(filtered);
+      return true;
+    };
+
+    const upsertTaskInCache = (task) => {
+      const taskId = Number(task?.id || 0);
+      if (!taskId) return null;
+      const idx = (state.tasksCache || []).findIndex((t) => Number(t?.id || 0) === taskId);
+      if (idx >= 0) {
+        state.tasksCache[idx] = task;
+      } else {
+        state.tasksCache = [...(state.tasksCache || []), task];
+      }
+      return task;
+    };
+
+    const removeTaskTreeFromCache = (taskId) => {
+      const rootId = Number(taskId || 0);
+      if (!rootId) return new Set();
+      const all = Array.isArray(state.tasksCache) ? state.tasksCache : [];
+      const byParent = new Map();
+      all.forEach((item) => {
+        const pid = Number(item?.parent_id || 0);
+        if (!pid) return;
+        if (!byParent.has(pid)) byParent.set(pid, []);
+        byParent.get(pid).push(Number(item?.id || 0));
+      });
+      const removeIds = new Set();
+      const queue = [rootId];
+      while (queue.length) {
+        const current = Number(queue.shift() || 0);
+        if (!current || removeIds.has(current)) continue;
+        removeIds.add(current);
+        const children = byParent.get(current) || [];
+        children.forEach((childId) => {
+          if (!removeIds.has(childId)) queue.push(childId);
+        });
+      }
+      if (!removeIds.size) return removeIds;
+      state.tasksCache = all.filter((item) => !removeIds.has(Number(item?.id || 0)));
+      removeIds.forEach((id) => {
+        delete state.tasksCommentCounts?.[String(id)];
+      });
+      return removeIds;
+    };
+
+    const refreshTasksUi = (mode = "all") => {
+      const normalized = String(mode || "all").trim().toLowerCase();
+      const filtered = applyFilters(state.tasksCache || []);
+      updatePrioritySummaryButton(filtered);
+      if (normalized === "backlog") {
+        renderBacklogPreservingViewport();
+        return;
+      }
+      if (normalized === "board") {
+        renderBoard(filtered, state.tasksCache || []);
+        return;
+      }
+      if (state.tasksView === "backlog") {
+        renderBacklogPreservingViewport();
+        renderBoard(filtered, state.tasksCache || []);
+        renderReports(filtered);
+        return;
+      }
+      renderBacklog(filtered, state.tasksCache || []);
+      renderBoard(filtered, state.tasksCache || []);
+      renderReports(filtered);
+    };
+
     const updateTaskLocal = async (taskId, payload, okMessage, options = {}) => {
       try {
         const updated = await putJson(`/tasks/${taskId}`, payload);
-        const idx = (state.tasksCache || []).findIndex((t) => t.id === taskId);
-        if (idx >= 0) {
-          state.tasksCache[idx] = updated;
-        } else {
-          state.tasksCache = [...(state.tasksCache || []), updated];
-        }
+        upsertTaskInCache(updated);
         if (okMessage) {
           setTasksStatus(okMessage, "ok");
         }
         const rerender = String(options?.rerender || "none").toLowerCase();
         if (rerender === "all") {
-          renderAll();
+          refreshTasksUi("all");
+        } else if (rerender === "backlog") {
+          const filtered = applyFilters(state.tasksCache || []);
+          updatePrioritySummaryButton(filtered);
+          renderBacklogPreservingViewport();
+          renderReports(filtered);
         } else if (rerender === "none") {
           // Keep current DOM as-is (inline edit without redraw).
         } else {
@@ -10810,6 +11711,7 @@
 
     const renderAll = () => {
       const filtered = applyFilters(state.tasksCache || []);
+      updatePrioritySummaryButton(filtered);
       renderBacklog(filtered, state.tasksCache || []);
       renderBoard(filtered, state.tasksCache || []);
       renderReports(filtered);
@@ -10835,28 +11737,58 @@
           left: Number(node.scrollLeft || 0),
         });
       });
-      const pageX =
-        window.pageXOffset ??
-        document.documentElement?.scrollLeft ??
-        document.body?.scrollLeft ??
-        0;
-      const pageY =
-        window.pageYOffset ??
-        document.documentElement?.scrollTop ??
-        document.body?.scrollTop ??
-        0;
+      const dtBefore = backlogDataTable;
+      const dtPageBefore = (() => {
+        try {
+          return dtBefore?.page?.info?.()?.page ?? null;
+        } catch {
+          return null;
+        }
+      })();
+      const dtLengthBefore = (() => {
+        try {
+          const len = Number(dtBefore?.page?.len?.());
+          return Number.isFinite(len) ? len : null;
+        } catch {
+          return null;
+        }
+      })();
+      const dtSearchBefore = (() => {
+        try {
+          const value = dtBefore?.search?.();
+          return typeof value === "string" ? value : "";
+        } catch {
+          return "";
+        }
+      })();
       const dtBodyBefore = backlogList?.querySelector(".dataTables_scrollBody");
       const backlogScrollLeft = Number(dtBodyBefore?.scrollLeft || 0);
       const backlogScrollTop = Number(dtBodyBefore?.scrollTop || 0);
       const filtered = applyFilters(state.tasksCache || []);
       renderBacklog(filtered, state.tasksCache || []);
-
-      const restore = () => {
+      const dtAfter = backlogDataTable;
+      if (dtAfter) {
         try {
-          window.scrollTo(pageX, pageY);
+          if (Number.isFinite(dtLengthBefore) && dtLengthBefore > 0) {
+            dtAfter.page.len(dtLengthBefore);
+          }
+          if (typeof dtSearchBefore === "string") {
+            dtAfter.search(dtSearchBefore);
+          }
+          if (Number.isFinite(dtPageBefore) && dtPageBefore >= 0) {
+            const info = dtAfter.page.info();
+            const maxPage = Math.max(0, Number(info?.pages || 1) - 1);
+            const targetPage = Math.min(dtPageBefore, maxPage);
+            dtAfter.page(targetPage).draw("page");
+          } else {
+            dtAfter.draw(false);
+          }
         } catch {
           // ignore
         }
+      }
+
+      const restore = () => {
         snapshots.forEach(({ node, top, left }) => {
           try {
             node.scrollTop = top;
@@ -10865,12 +11797,6 @@
             // ignore
           }
         });
-        try {
-          if (document.documentElement) document.documentElement.scrollTop = pageY;
-          if (document.body) document.body.scrollTop = pageY;
-        } catch {
-          // ignore
-        }
         const dtBodyAfter = backlogList?.querySelector(".dataTables_scrollBody");
         if (dtBodyAfter) {
           dtBodyAfter.scrollLeft = backlogScrollLeft;
@@ -11302,6 +12228,10 @@
           assignees,
           dueFrom: filterDueFrom?.value || "",
           dueTo: filterDueTo?.value || "",
+          noDueDate:
+            changedTarget === filterDueFrom || changedTarget === filterDueTo
+              ? false
+              : Boolean(state.tasksFilters?.noDueDate),
           hideSubtasks: Boolean(filterHideSubtasks?.checked),
         };
         if (changedTarget === filterDueFrom || changedTarget === filterDueTo) {
@@ -11341,6 +12271,7 @@
             label: `Vence: ${state.tasksFilters.dueFrom || "…"} - ${state.tasksFilters.dueTo || "…"}`,
           });
         }
+        if (state.tasksFilters?.noDueDate) chips.push({ key: "nodue", label: "Sin fechas de vencimiento" });
         if (state.tasksFilters?.hideSubtasks) chips.push({ key: "hideSub", label: "Sin subtareas" });
 
         filterChips.innerHTML = chips
@@ -11389,6 +12320,13 @@
             if (filterDueFrom) filterDueFrom.value = "";
             if (filterDueTo) filterDueTo.value = "";
             state.tasksDatePreset = "";
+            syncDatePresetButtons();
+          } else if (key === "nodue") {
+            state.tasksDatePreset = "";
+            state.tasksFilters = {
+              ...state.tasksFilters,
+              noDueDate: false,
+            };
             syncDatePresetButtons();
           } else if (key === "hideSub") {
             if (filterHideSubtasks) filterHideSubtasks.checked = false;
@@ -11535,7 +12473,7 @@
             document.removeEventListener("pointerup", onUp, true);
             if (!isDragging) {
               toggleTasksBacklogSort(key);
-              renderBacklogPreservingViewport();
+              reorderBacklogRowsInPlace({ prune: false });
               return;
             }
             clearMarks();
@@ -11692,6 +12630,7 @@
                 rerender: "none",
               });
               syncBacklogRowAfterStatusUpdate(row, updated);
+              reorderBacklogRowsInPlace({ prune: true });
               return;
             }
             if (field === "puntos" || field === "horas_estimadas") {
@@ -11721,9 +12660,14 @@
           if (action === "toggle-desc") {
             const preview = row?.querySelector(".tasks-desc-preview");
             if (!preview) return;
-            const collapsed = preview.classList.toggle("is-collapsed");
-            btn.textContent = collapsed ? "Ver más" : "Ver menos";
-            btn.setAttribute("aria-expanded", String(!collapsed));
+            const hidden = preview.classList.toggle("is-hidden");
+            if (hidden) {
+              preview.classList.add("is-collapsed");
+            } else {
+              preview.classList.remove("is-collapsed");
+            }
+            btn.textContent = hidden ? "Ver más" : "Ver menos";
+            btn.setAttribute("aria-expanded", hidden ? "false" : "true");
             return;
           }
           if (action === "toggle-actions") {
@@ -11737,7 +12681,7 @@
           if (action === "toggle-subtasks") {
             if (!taskId) return;
             state.tasksBacklogExpanded[String(taskId)] = !state.tasksBacklogExpanded[String(taskId)];
-            renderAll();
+            refreshTasksUi("backlog");
             return;
           }
           if (action === "create") {
@@ -11767,7 +12711,8 @@
                 const text = await res.text();
                 throw new Error(text || "No se pudo eliminar.");
               }
-              await root.__tasksApi?.loadAndRender?.();
+              removeTaskTreeFromCache(taskId);
+              refreshTasksUi("all");
             } catch (err) {
               setTasksStatus(err.message || "No se pudo eliminar.", "error");
             }
@@ -11788,7 +12733,7 @@
           if (action === "toggle-subtasks") {
             const key = `kanban:${taskId}`;
             state.tasksBacklogExpanded[key] = !state.tasksBacklogExpanded[key];
-            renderAll();
+            refreshTasksUi("board");
             return;
           }
           if (action === "edit-subtask") {
@@ -11817,7 +12762,8 @@
                 const text = await res.text();
                 throw new Error(text || "No se pudo eliminar.");
               }
-              await root.__tasksApi?.loadAndRender?.();
+              removeTaskTreeFromCache(taskId);
+              refreshTasksUi("all");
             } catch (err) {
               setTasksStatus(err.message || "No se pudo eliminar.", "error");
             }

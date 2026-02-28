@@ -112,6 +112,33 @@
               <div class="admin-table" id="daily-dev-table"></div>
             </article>
 
+            <article class="admin-card daily-card daily-span-2" id="daily-storypoints-user-card">
+              <div class="card-head">
+                <h3>Story Points por usuario</h3>
+                <p class="daily-subtitle" id="daily-storypoints-user-summary">Vista total</p>
+              </div>
+              <div class="daily-storypoints-toolbar">
+                <div class="daily-storypoints-field">
+                  <label>
+                    Usuario
+                    <select id="daily-points-user-select"></select>
+                  </label>
+                </div>
+                <div class="daily-storypoints-field">
+                  <label>
+                    Etiquetas
+                    <button class="btn ghost daily-labels-toggle" type="button" id="daily-points-labels-toggle">Etiquetas: Off</button>
+                  </label>
+                </div>
+                <button class="btn ghost" type="button" id="daily-points-user-export">Exportar tabla</button>
+              </div>
+              <div class="line-chart daily-line-chart" id="daily-points-user-line-chart">
+                <svg viewBox="0 0 320 160" preserveAspectRatio="none"></svg>
+              </div>
+              <div class="daily-line-legend" id="daily-points-user-legend"></div>
+              <div class="admin-table" id="daily-points-user-table"></div>
+            </article>
+
             <article class="admin-card daily-card daily-span-2">
               <div class="card-head">
                 <h3>Items cargados</h3>

@@ -1029,6 +1029,37 @@
                 </div>
 
                 <div class="col-12">
+                  <div class="card daily-card" id="daily-storypoints-user-card">
+                    <div class="card-header border-0">
+                      <div>
+                        <h3 class="card-title">Story Points por usuario</h3>
+                        <p class="daily-subtitle mb-0" id="daily-storypoints-user-summary">Vista total</p>
+                      </div>
+                    </div>
+                    <div class="card-body">
+                      <div class="daily-storypoints-toolbar">
+                        <div class="daily-storypoints-field">
+                          <label class="form-label mb-1" for="daily-points-user-select">Usuario</label>
+                          <select class="form-select form-select-sm" id="daily-points-user-select"></select>
+                        </div>
+                        <div class="daily-storypoints-field">
+                          <label class="form-label mb-1" for="daily-points-labels-toggle">Etiquetas</label>
+                          <button class="btn btn-outline-secondary btn-sm daily-labels-toggle" id="daily-points-labels-toggle" type="button">Etiquetas: Off</button>
+                        </div>
+                        <button class="btn btn-outline-secondary btn-sm" id="daily-points-user-export" type="button">
+                          <i class="bi bi-download me-1"></i>Exportar tabla
+                        </button>
+                      </div>
+                      <div class="line-chart daily-line-chart mb-3" id="daily-points-user-line-chart">
+                        <svg viewBox="0 0 320 160" preserveAspectRatio="none"></svg>
+                      </div>
+                      <div class="daily-line-legend mb-3" id="daily-points-user-legend"></div>
+                      <div class="admin-table" id="daily-points-user-table"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="col-12">
                   <div class="card daily-card">
                     <div class="card-header border-0">
                       <h3 class="card-title">Items cargados</h3>
@@ -1303,7 +1334,7 @@
     <script src="https://cdn.jsdelivr.net/npm/pdfmake@0.2.7/build/vfs_fonts.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/datatables.net-buttons@2.4.2/js/buttons.html5.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/datatables.net-buttons@2.4.2/js/buttons.print.min.js"></script>
-<script src="./app.js?v=20260220tz"></script>
+<script src="./app.js?v=20260228dailyux9"></script>
     <!--end::Script-->
   </body>
   <!--end::Body-->
