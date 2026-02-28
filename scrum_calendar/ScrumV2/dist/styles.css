@@ -6050,6 +6050,9 @@ body.theme-dark .tasks-notion-table td {
 .tasks-notion-table td + td {
   border-left: 1px solid rgba(0, 0, 0, 0.04);
 }
+.tasks-notion-table tr.tasks-subrow-hidden {
+  display: none;
+}
 body.theme-dark .tasks-notion-table th + th,
 body.theme-dark .tasks-notion-table td + td {
   border-left-color: rgba(255, 255, 255, 0.08);

@@ -11575,7 +11575,7 @@
       };
       const sortBacklogTasks = (items) => [...items].sort(compareBacklogTasks);
 
-      const renderRow = (task, depth = 0, ancestors = new Set()) => {
+      const renderRow = (task, depth = 0, ancestors = new Set(), parentVisible = true) => {
         const taskKey = String(task.id || "");
         if (!taskKey || ancestors.has(taskKey)) return;
         const nextAncestors = new Set(ancestors);
@@ -11589,6 +11589,9 @@
 
         const tr = document.createElement("tr");
         tr.dataset.taskId = String(task.id);
+        tr.dataset.parentId = task.parent_id ? String(task.parent_id) : "";
+        const rowVisible = Boolean(parentVisible);
+        tr.classList.toggle("tasks-subrow-hidden", !rowVisible);
 
         const buildTitleTd = () => {
           const titleTd = document.createElement("td");
@@ -11673,6 +11676,7 @@
           title: expanded ? "Ocultar subtareas" : "Mostrar subtareas",
           className: "btn btn-outline-info btn-sm",
           arrow: true,
+          expanded,
         };
         actionDefs.push(subtaskDef);
         actionDefs.push({
@@ -11689,6 +11693,9 @@
           btn.className = `${def.className}${def.hidden ? " d-none" : ""}`;
           btn.title = def.title;
           btn.dataset.action = def.action;
+          if (def.key === "toggle-subtasks") {
+            btn.setAttribute("aria-expanded", def.expanded ? "true" : "false");
+          }
           if (def.key === "comments") {
             btn.dataset.commentBtnTask = String(task.id);
           }
@@ -11828,12 +11835,12 @@
         visibleColumns.forEach((key) => tr.appendChild(columnCell(key)));
         tbody.appendChild(tr);
 
-        if (hasChildren && expanded) {
-          children.forEach((child) => renderRow(child, depth + 1, nextAncestors));
+        if (hasChildren) {
+          children.forEach((child) => renderRow(child, depth + 1, nextAncestors, rowVisible && expanded));
         }
       };
 
-      sortBacklogTasks(roots).forEach((t) => renderRow(t, 0));
+      sortBacklogTasks(roots).forEach((t) => renderRow(t, 0, new Set(), true));
       tableHost.appendChild(table);
       if (scroll) wrap.appendChild(scroll);
 
@@ -12474,8 +12481,7 @@
         const children = sortBacklogTasks(childrenByParent.get(taskKey) || []);
         const hasChildrenAny = children.length > 0;
         const hasChildren = !hideSubtasks && hasChildrenAny;
-        const expanded = Boolean(state.tasksBacklogExpanded?.[taskKey]);
-        if (hasChildren && expanded) {
+        if (hasChildren) {
           children.forEach((child) => walk(child, nextAncestors));
         }
       };
@@ -12545,8 +12551,56 @@
         }
       }
       syncBacklogHeaderSortState();
+      applyBacklogExpandedVisibilityInPlace();
       updatePrioritySummaryButton(filtered);
       renderReports(filtered);
+      return true;
+    };
+
+    const applyBacklogExpandedVisibilityInPlace = (rootTaskId = "") => {
+      const tbody =
+        backlogList?.querySelector(".dataTables_scrollBody tbody") ||
+        backlogList?.querySelector("table.tasks-notion-table tbody");
+      if (!tbody) return false;
+      const rows = Array.from(tbody.querySelectorAll("tr[data-task-id]"));
+      if (!rows.length) return false;
+      const rowById = new Map(
+        rows
+          .map((row) => [String(row?.dataset?.taskId || ""), row])
+          .filter(([id]) => Boolean(id))
+      );
+      const childrenByParent = new Map();
+      rows.forEach((row) => {
+        const parentId = String(row?.dataset?.parentId || "");
+        if (!parentId) return;
+        if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
+        childrenByParent.get(parentId).push(row);
+      });
+      const updateBranch = (taskId, parentVisible) => {
+        const key = String(taskId || "");
+        if (!key) return;
+        const expanded = Boolean(state.tasksBacklogExpanded?.[key]);
+        const children = childrenByParent.get(key) || [];
+        children.forEach((childRow) => {
+          const childId = String(childRow?.dataset?.taskId || "");
+          const childVisible = Boolean(parentVisible && expanded);
+          childRow.classList.toggle("tasks-subrow-hidden", !childVisible);
+          updateBranch(childId, childVisible);
+        });
+      };
+      const rootKey = String(rootTaskId || "");
+      if (rootKey) {
+        updateBranch(rootKey, true);
+        return true;
+      }
+      rows.forEach((row) => {
+        const taskId = String(row?.dataset?.taskId || "");
+        const parentId = String(row?.dataset?.parentId || "");
+        if (!taskId) return;
+        if (parentId && rowById.has(parentId)) return;
+        row.classList.remove("tasks-subrow-hidden");
+        updateBranch(taskId, true);
+      });
       return true;
     };
 
@@ -13696,8 +13750,13 @@
           }
           if (action === "toggle-subtasks") {
             if (!taskId) return;
-            state.tasksBacklogExpanded[String(taskId)] = !state.tasksBacklogExpanded[String(taskId)];
-            refreshTasksUi("backlog");
+            const nextExpanded = !Boolean(state.tasksBacklogExpanded[String(taskId)]);
+            state.tasksBacklogExpanded[String(taskId)] = nextExpanded;
+            btn.title = nextExpanded ? "Ocultar subtareas" : "Mostrar subtareas";
+            btn.setAttribute("aria-expanded", nextExpanded ? "true" : "false");
+            if (!applyBacklogExpandedVisibilityInPlace(String(taskId))) {
+              refreshTasksUi("backlog");
+            }
             return;
           }
           if (action === "create") {
