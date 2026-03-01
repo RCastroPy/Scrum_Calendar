@@ -13,6 +13,7 @@
           historicosCompras: [],
           compraActual: { supermercado: "", items: [] },
           historyEditSearchTerm: "",
+          historyDetailSearchTerm: "",
           ticketDiffTarget: null,
           editingHistoryId: null,
           editItemId: null,
@@ -159,6 +160,7 @@
           selectedHistoryId: state.selectedHistoryId ? String(state.selectedHistoryId) : null,
           editingHistoryId: state.editingHistoryId ? String(state.editingHistoryId) : null,
           historyEditSearchTerm: state.historyEditSearchTerm || "",
+          historyDetailSearchTerm: state.historyDetailSearchTerm || "",
           compraActual: {
             supermercado: normalizeText(state.compraActual?.supermercado || ""),
             items: Array.isArray(state.compraActual?.items)
@@ -217,6 +219,7 @@
             if (refs.inputCantidad) refs.inputCantidad.value = String(draftForm.cantidad || "");
             state.editingHistoryId = draft?.editingHistoryId ? String(draft.editingHistoryId) : null;
             state.historyEditSearchTerm = String(draft?.historyEditSearchTerm || "");
+            state.historyDetailSearchTerm = String(draft?.historyDetailSearchTerm || "");
             const restoredView = VALID_VIEWS.has(draft?.view) ? draft.view : "inicio";
             const restoredHistoryId = draft?.selectedHistoryId ? String(draft.selectedHistoryId) : null;
             state.selectedHistoryId = restoredHistoryId;
@@ -1599,15 +1602,37 @@
             switchView("detalle");
             return;
           }
+          const detailSearch = normalizeText(state.historyDetailSearchTerm).toLowerCase();
+          const detailItems = [...(entry.items || [])]
+            .sort((a, b) =>
+              normalizeText(a?.producto || "").localeCompare(normalizeText(b?.producto || ""), "es", {
+                sensitivity: "base",
+                numeric: true,
+              })
+            )
+            .filter((item) => {
+              if (!detailSearch) return true;
+              return normalizeText(item?.producto || "").toLowerCase().includes(detailSearch);
+            });
           refs.detalleCompra.innerHTML = `
             <p class="mb-1"><strong>Supermercado:</strong> ${entry.supermercado}</p>
             <p class="mb-3 text-muted"><strong>Fecha:</strong> ${formatDateTime(entry.fecha)}</p>
-            <div class="table-responsive mb-3">
-              <table class="table table-sm align-middle">
+            <div class="compras-detail-toolbar mb-2">
+              <label for="detalle-product-search" class="form-label mb-1">Buscar producto</label>
+              <input
+                id="detalle-product-search"
+                type="search"
+                class="form-control compras-detail-search-input js-detail-product-search"
+                placeholder="Filtrar por producto..."
+                value="${escapeHtml(state.historyDetailSearchTerm)}"
+              />
+            </div>
+            <div class="table-responsive mb-3 compras-detail-table-wrap">
+              <table class="table table-sm align-middle compras-detail-table">
                 <thead>
                   <tr>
                     <th class="text-center">#</th>
-                    <th>Producto</th>
+                    <th class="col-producto">Producto</th>
                     <th class="text-end">Detalle</th>
                     <th class="text-end">Variacion precio</th>
                     <th class="text-end">Dif. ticket</th>
@@ -1615,7 +1640,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  ${(entry.items || [])
+                  ${detailItems
                     .map((item, index) => {
                       const previousPrice = previousPriceForHistoryItem(entry, item);
                       const hasPreviousPrice = Number.isFinite(previousPrice) && Number(previousPrice) > 0;
@@ -1641,7 +1666,7 @@
                       return `
                         <tr>
                           <td class="text-center">${index + 1}</td>
-                          <td class="${productClass}">${item.producto}${productBadge}</td>
+                          <td class="col-producto ${productClass}">${item.producto}${productBadge}</td>
                           <td class="text-end">${formatGs(item.precio)} x ${formatQuantity(item.cantidad)} = ${formatGs(itemTotal(item))}</td>
                           <td class="text-end ${deltaClass} fw-semibold">${deltaLabel}</td>
                           <td class="text-end ${ticketDiffClass} fw-bold">${ticketDiffLabel}</td>
@@ -1682,7 +1707,7 @@
                         </tr>
                       `
                     })
-                    .join("")}
+                    .join("") || '<tr><td colspan="6" class="text-center text-muted py-3">Sin productos para la busqueda.</td></tr>'}
                 </tbody>
               </table>
             </div>
@@ -2046,6 +2071,7 @@
           refs.historicosLista.addEventListener("click", (event) => {
             const detailBtn = event.target.closest(".js-ver-detalle");
             if (detailBtn) {
+              state.historyDetailSearchTerm = "";
               openHistoryDetail(detailBtn.dataset.id);
               return;
             }
@@ -2089,6 +2115,22 @@
             const itemId = editDiffBtn.dataset.itemId;
             if (!historyId || !itemId) return;
             openTicketDiffModal(historyId, itemId);
+          });
+          refs.detalleCompra.addEventListener("input", (event) => {
+            const searchInput = event.target.closest(".js-detail-product-search");
+            if (!searchInput) return;
+            const searchValue = searchInput.value || "";
+            state.historyDetailSearchTerm = searchValue;
+            if (!state.selectedHistoryId) return;
+            openHistoryDetail(state.selectedHistoryId);
+            const refreshedInput = refs.detalleCompra.querySelector(".js-detail-product-search");
+            if (refreshedInput) {
+              refreshedInput.focus();
+              const pos = searchValue.length;
+              if (typeof refreshedInput.setSelectionRange === "function") {
+                refreshedInput.setSelectionRange(pos, pos);
+              }
+            }
           });
 
           document.addEventListener("click", (event) => {
