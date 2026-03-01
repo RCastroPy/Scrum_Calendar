@@ -1748,7 +1748,7 @@
                 : "";
               const rowClass = state.highlightedHistoryId === entry.id ? "compras-history-highlight" : "";
               return `
-                <tr class="${rowClass}">
+                <tr class="${rowClass} js-open-history-detail" data-id="${entry.id}" role="button" tabindex="0" aria-label="Abrir detalle de compra">
                   <td data-order="${entry.fecha || ""}">${formatDateTime(entry.fecha)}</td>
                   <td>${entry.supermercado || "-"}</td>
                   <td class="text-end fw-semibold">${formatGs(entry.totalGeneral || 0)}</td>
@@ -1760,9 +1760,6 @@
                   </td>
                   <td>
                     <div class="historicos-actions">
-                      <button class="btn btn-outline-primary btn-sm js-ver-detalle" data-id="${entry.id}" type="button" aria-label="Ver detalle" title="Ver detalle">
-                        <i class="bi bi-eye"></i>
-                      </button>
                       <button class="btn btn-outline-secondary btn-sm js-editar-compra" data-id="${entry.id}" type="button" aria-label="Editar compra" title="Editar compra">
                         <i class="bi bi-pencil-square"></i>
                       </button>
@@ -2076,12 +2073,6 @@
           }
 
           refs.historicosLista.addEventListener("click", (event) => {
-            const detailBtn = event.target.closest(".js-ver-detalle");
-            if (detailBtn) {
-              state.historyDetailSearchTerm = "";
-              openHistoryDetail(detailBtn.dataset.id);
-              return;
-            }
             const editBtn = event.target.closest(".js-editar-compra");
             if (editBtn) {
               repeatHistory(editBtn.dataset.id);
@@ -2090,7 +2081,21 @@
             const deleteBtn = event.target.closest(".js-eliminar-compra");
             if (deleteBtn && window.confirm("¿Eliminar esta compra del historico?")) {
               void deleteHistory(deleteBtn.dataset.id);
+              return;
             }
+            const detailRow = event.target.closest(".js-open-history-detail");
+            if (detailRow) {
+              state.historyDetailSearchTerm = "";
+              openHistoryDetail(detailRow.dataset.id);
+            }
+          });
+          refs.historicosLista.addEventListener("keydown", (event) => {
+            const detailRow = event.target.closest(".js-open-history-detail");
+            if (!detailRow) return;
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            state.historyDetailSearchTerm = "";
+            openHistoryDetail(detailRow.dataset.id);
           });
 
           refs.detalleCompra.addEventListener("change", (event) => {
