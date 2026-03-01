@@ -1636,7 +1636,6 @@
                     <th class="text-end">Detalle</th>
                     <th class="text-end">Variacion precio</th>
                     <th class="text-end">Dif. ticket</th>
-                    <th class="text-center">Check ticket</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1663,15 +1662,24 @@
                       const productBadge = ticketDiff.hasDiff
                         ? '<span class="badge text-bg-danger ms-1">Ticket dif.</span>'
                         : "";
+                      const editDiffBtn = `
+                        <button
+                          type="button"
+                          class="btn btn-outline-danger btn-sm py-0 px-2 js-open-ticket-diff-modal ${item.ticketDiferente ? "" : "d-none"}"
+                          data-history-id="${entry.id}"
+                          data-item-id="${item.id}"
+                          title="Editar precio ticket"
+                          aria-label="Editar precio ticket"
+                        >
+                          <i class="bi bi-receipt"></i>
+                        </button>
+                      `;
                       return `
                         <tr>
                           <td class="text-center">${index + 1}</td>
-                          <td class="col-producto ${productClass}">${item.producto}${productBadge}</td>
-                          <td class="text-end">${formatGs(item.precio)} x ${formatQuantity(item.cantidad)} = ${formatGs(itemTotal(item))}</td>
-                          <td class="text-end ${deltaClass} fw-semibold">${deltaLabel}</td>
-                          <td class="text-end ${ticketDiffClass} fw-bold">${ticketDiffLabel}</td>
-                          <td class="text-center">
-                            <div class="ticket-check-stack">
+                          <td class="col-producto ${productClass}">
+                            <div>${item.producto}${productBadge}</div>
+                            <div class="ticket-check-inline">
                               <label class="form-check d-inline-flex align-items-center gap-1">
                                 <input
                                   class="form-check-input js-check-ticket-item"
@@ -1680,8 +1688,9 @@
                                   data-item-id="${item.id}"
                                   ${item.ticketValidado ? "checked" : ""}
                                 />
-                                <span class="text-success">Igual</span>
+                                <span class="text-success">OK</span>
                               </label>
+                              <span class="ticket-sep">|</span>
                               <label class="form-check d-inline-flex align-items-center gap-1">
                                 <input
                                   class="form-check-input js-check-ticket-diff"
@@ -1690,24 +1699,18 @@
                                   data-item-id="${item.id}"
                                   ${item.ticketDiferente ? "checked" : ""}
                                 />
-                                <span class="text-danger">Diferente</span>
+                                <span class="text-danger">Dif.</span>
                               </label>
-                              <button
-                                type="button"
-                                class="btn btn-outline-danger btn-sm py-0 px-2 js-open-ticket-diff-modal ${item.ticketDiferente ? "" : "d-none"}"
-                                data-history-id="${entry.id}"
-                                data-item-id="${item.id}"
-                                title="Editar precio ticket"
-                                aria-label="Editar precio ticket"
-                              >
-                                <i class="bi bi-receipt"></i>
-                              </button>
+                              ${editDiffBtn}
                             </div>
                           </td>
+                          <td class="text-end">${formatGs(item.precio)} x ${formatQuantity(item.cantidad)} = ${formatGs(itemTotal(item))}</td>
+                          <td class="text-end ${deltaClass} fw-semibold">${deltaLabel}</td>
+                          <td class="text-end ${ticketDiffClass} fw-bold">${ticketDiffLabel}</td>
                         </tr>
                       `
                     })
-                    .join("") || '<tr><td colspan="6" class="text-center text-muted py-3">Sin productos para la busqueda.</td></tr>'}
+                    .join("") || '<tr><td colspan="5" class="text-center text-muted py-3">Sin productos para la busqueda.</td></tr>'}
                 </tbody>
               </table>
             </div>
