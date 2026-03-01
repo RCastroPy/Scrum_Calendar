@@ -1603,13 +1603,18 @@
             return;
           }
           const detailSearch = normalizeText(state.historyDetailSearchTerm).toLowerCase();
+          const isItemChecked = (item) =>
+            Boolean(item?.ticketValidado || item?.ticketDiferente || item?.ticket_validado || item?.ticket_diferente);
           const detailItems = [...(entry.items || [])]
-            .sort((a, b) =>
-              normalizeText(a?.producto || "").localeCompare(normalizeText(b?.producto || ""), "es", {
+            .sort((a, b) => {
+              const aCheckedRank = isItemChecked(a) ? 1 : 0;
+              const bCheckedRank = isItemChecked(b) ? 1 : 0;
+              if (aCheckedRank !== bCheckedRank) return aCheckedRank - bCheckedRank;
+              return normalizeText(a?.producto || "").localeCompare(normalizeText(b?.producto || ""), "es", {
                 sensitivity: "base",
                 numeric: true,
-              })
-            )
+              });
+            })
             .filter((item) => {
               if (!detailSearch) return true;
               return normalizeText(item?.producto || "").toLowerCase().includes(detailSearch);
@@ -1633,7 +1638,6 @@
                   <tr>
                     <th class="text-center">#</th>
                     <th class="col-producto">Producto</th>
-                    <th class="text-end">Detalle</th>
                     <th class="text-end">Variacion precio</th>
                     <th class="text-end">Dif. ticket</th>
                   </tr>
@@ -1678,7 +1682,8 @@
                         <tr>
                           <td class="text-center">${index + 1}</td>
                           <td class="col-producto ${productClass}">
-                            <div>${item.producto}${productBadge}</div>
+                            <div class="fw-semibold">${item.producto}${productBadge}</div>
+                            <div class="small text-body-secondary mt-1">${formatGs(item.precio)} x ${formatQuantity(item.cantidad)} = ${formatGs(itemTotal(item))}</div>
                             <div class="ticket-check-inline">
                               <label class="form-check d-inline-flex align-items-center gap-1">
                                 <input
@@ -1704,13 +1709,12 @@
                               ${editDiffBtn}
                             </div>
                           </td>
-                          <td class="text-end">${formatGs(item.precio)} x ${formatQuantity(item.cantidad)} = ${formatGs(itemTotal(item))}</td>
                           <td class="text-end ${deltaClass} fw-semibold">${deltaLabel}</td>
                           <td class="text-end ${ticketDiffClass} fw-bold">${ticketDiffLabel}</td>
                         </tr>
                       `
                     })
-                    .join("") || '<tr><td colspan="5" class="text-center text-muted py-3">Sin productos para la busqueda.</td></tr>'}
+                    .join("") || '<tr><td colspan="4" class="text-center text-muted py-3">Sin productos para la busqueda.</td></tr>'}
                 </tbody>
               </table>
             </div>
