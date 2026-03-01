@@ -286,6 +286,18 @@ def startup():
                 conn.execute(
                     text("alter table compra_items add column ticket_validado boolean not null default false")
                 )
+            if "ticket_diferente" not in compra_items_col_names:
+                conn.execute(
+                    text("alter table compra_items add column ticket_diferente boolean not null default false")
+                )
+            if "precio_ticket_unitario" not in compra_items_col_names:
+                conn.execute(
+                    text("alter table compra_items add column precio_ticket_unitario integer null")
+                )
+            if "total_ticket_item" not in compra_items_col_names:
+                conn.execute(
+                    text("alter table compra_items add column total_ticket_item integer null")
+                )
 
 
 app.include_router(router)

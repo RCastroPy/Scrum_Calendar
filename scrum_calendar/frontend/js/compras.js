@@ -12,6 +12,8 @@
           catalogoSupermercados: [],
           historicosCompras: [],
           compraActual: { supermercado: "", items: [] },
+          historyEditSearchTerm: "",
+          ticketDiffTarget: null,
           editingHistoryId: null,
           editItemId: null,
           deleteItemId: null,
@@ -87,10 +89,20 @@
           btnGuardarEdicion: document.getElementById("guardar-edicion-item"),
           deleteModalEl: document.getElementById("modal-eliminar-item"),
           btnConfirmarEliminar: document.getElementById("confirmar-eliminar-item"),
+          ticketDiffModalEl: document.getElementById("modal-ticket-diff"),
+          ticketDiffProducto: document.getElementById("ticket-diff-producto"),
+          ticketDiffCantidad: document.getElementById("ticket-diff-cantidad"),
+          ticketDiffPrecioRegistrado: document.getElementById("ticket-diff-precio-registrado"),
+          ticketDiffPrecioTicket: document.getElementById("ticket-diff-precio-ticket"),
+          ticketDiffTotal: document.getElementById("ticket-diff-total"),
+          ticketDiffDelta: document.getElementById("ticket-diff-delta"),
+          ticketDiffError: document.getElementById("ticket-diff-error"),
+          btnGuardarTicketDiff: document.getElementById("guardar-ticket-diff"),
         };
 
         const editModal = refs.editModalEl ? new bootstrap.Modal(refs.editModalEl) : null;
         const deleteModal = refs.deleteModalEl ? new bootstrap.Modal(refs.deleteModalEl) : null;
+        const ticketDiffModal = refs.ticketDiffModalEl ? new bootstrap.Modal(refs.ticketDiffModalEl) : null;
         const reportCharts = {
           supermarkets: null,
           products: null,
@@ -134,10 +146,19 @@
             .trim()
             .replace(/\s+/g, " ");
 
+        const escapeHtml = (value) =>
+          String(value || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+
         const snapshotDraftState = () => ({
           view: state.view,
           selectedHistoryId: state.selectedHistoryId ? String(state.selectedHistoryId) : null,
           editingHistoryId: state.editingHistoryId ? String(state.editingHistoryId) : null,
+          historyEditSearchTerm: state.historyEditSearchTerm || "",
           compraActual: {
             supermercado: normalizeText(state.compraActual?.supermercado || ""),
             items: Array.isArray(state.compraActual?.items)
@@ -195,6 +216,7 @@
             if (refs.inputPrecio) refs.inputPrecio.value = String(draftForm.precio || "");
             if (refs.inputCantidad) refs.inputCantidad.value = String(draftForm.cantidad || "");
             state.editingHistoryId = draft?.editingHistoryId ? String(draft.editingHistoryId) : null;
+            state.historyEditSearchTerm = String(draft?.historyEditSearchTerm || "");
             const restoredView = VALID_VIEWS.has(draft?.view) ? draft.view : "inicio";
             const restoredHistoryId = draft?.selectedHistoryId ? String(draft.selectedHistoryId) : null;
             state.selectedHistoryId = restoredHistoryId;
@@ -238,6 +260,11 @@
                   Number(item?.total_item ?? item?.totalItem ?? 0) ||
                   Math.round((Number(item?.precio || 0) || 0) * (Number(item?.cantidad || 1) || 1)),
                 ticketValidado: Boolean(item?.ticket_validado ?? item?.ticketValidado ?? false),
+                ticketDiferente: Boolean(item?.ticket_diferente ?? item?.ticketDiferente ?? false),
+                precioTicketUnitario:
+                  Number(item?.precio_ticket_unitario ?? item?.precioTicketUnitario ?? 0) || 0,
+                totalTicketItem:
+                  Number(item?.total_ticket_item ?? item?.totalTicketItem ?? 0) || 0,
               }))
             : [],
         });
@@ -261,6 +288,13 @@
             Number.isFinite(Number(value)) ? Math.max(0, Math.round(Number(value))) : 0
           );
 
+        const formatSignedGs = (value) => {
+          const numeric = Number(value || 0);
+          if (!Number.isFinite(numeric) || numeric === 0) return "0 Gs";
+          const sign = numeric > 0 ? "+" : "-";
+          return `${sign}${formatGsNumber(Math.abs(numeric))} Gs`;
+        };
+
         const parseMoney = (value) => {
           const clean = String(value || "").replace(/[^\d]/g, "");
           return clean ? Number(clean) : 0;
@@ -270,6 +304,16 @@
           const clean = String(value || "").replace(/[^\d]/g, "");
           if (!clean) return "";
           return new Intl.NumberFormat("es-PY", { maximumFractionDigits: 0 }).format(Number(clean));
+        };
+
+        const getRecommendedUnitPriceFromHistoryItem = (item) => {
+          const isDiff = Boolean(item?.ticketDiferente || item?.ticket_diferente);
+          const ticketPrice = Math.max(
+            0,
+            Number(item?.precioTicketUnitario ?? item?.precio_ticket_unitario ?? 0) || 0
+          );
+          if (isDiff && ticketPrice > 0) return ticketPrice;
+          return Math.max(0, Number(item?.precio || 0) || 0);
         };
 
         const latestKnownPriceForProduct = (supermercadoValue, productoValue, options = {}) => {
@@ -286,7 +330,7 @@
             const validTs = Number.isFinite(ts) ? ts : -1;
             (entry?.items || []).forEach((item) => {
               if (normalizeText(item?.producto).toLowerCase() !== productoKey) return;
-              const price = Math.max(0, Number(item?.precio || 0) || 0);
+              const price = getRecommendedUnitPriceFromHistoryItem(item);
               if (price <= 0) return;
               if (validTs >= bestTimestamp) {
                 bestTimestamp = validTs;
@@ -371,6 +415,23 @@
         const itemTotal = (item) =>
           Math.round(Math.max(0, Number(item.precio || 0)) * Math.max(0, Number(item.cantidad || 0)));
         const totalGeneral = () => state.compraActual.items.reduce((sum, item) => sum + itemTotal(item), 0);
+
+        const getTicketDiffData = (item) => {
+          const qty = Math.max(0, Number(item?.cantidad || 0));
+          const baseTotal = itemTotal(item);
+          const hasDiff = Boolean(item?.ticketDiferente);
+          const unitPrice = Math.max(0, Number(item?.precioTicketUnitario || 0));
+          const computedTicketTotal = unitPrice > 0 ? Math.round(unitPrice * qty) : 0;
+          const persistedTicketTotal = Math.max(0, Number(item?.totalTicketItem || 0));
+          const ticketTotal = persistedTicketTotal > 0 ? persistedTicketTotal : computedTicketTotal;
+          const delta = hasDiff ? ticketTotal - baseTotal : 0;
+          return {
+            hasDiff,
+            unitPrice,
+            ticketTotal,
+            delta,
+          };
+        };
 
         const formatDateTime = (iso) => {
           const dt = new Date(iso);
@@ -1002,8 +1063,97 @@
             persistDraftState();
             return;
           }
+          const sortedByProducto = [...items].sort((a, b) =>
+            normalizeText(a?.producto || "").localeCompare(normalizeText(b?.producto || ""), "es", {
+              sensitivity: "base",
+              numeric: true,
+            })
+          );
           const lastItem = items[items.length - 1];
           refs.lastItemLoaded.textContent = `Ultimo producto: ${lastItem?.producto || "-"}`;
+          if (state.editingHistoryId) {
+            const searchTerm = normalizeText(state.historyEditSearchTerm).toLowerCase();
+            const filteredItems = sortedByProducto.filter((item) => {
+              if (!searchTerm) return true;
+              return normalizeText(item?.producto || "").toLowerCase().includes(searchTerm);
+            });
+            const rows = filteredItems
+              .map((item) => {
+                const historyPrice = latestKnownPriceForProduct(
+                  state.compraActual.supermercado,
+                  item.producto,
+                  { excludeHistoryId: state.editingHistoryId }
+                );
+                const hasHistoryPrice = Number.isFinite(historyPrice) && Number(historyPrice) > 0;
+                const delta = hasHistoryPrice
+                  ? Math.round(Number(item.precio || 0) - Number(historyPrice || 0))
+                  : 0;
+                const deltaClass = delta > 0 ? "text-danger" : delta < 0 ? "text-success" : "text-muted";
+                const deltaPrefix = delta > 0 ? "+" : delta < 0 ? "-" : "";
+                const deltaLabel = hasHistoryPrice
+                  ? `${deltaPrefix}${formatGsNumber(Math.abs(delta))} Gs`
+                  : "-";
+                return `
+                  <tr>
+                    <td class="col-producto">
+                      <span class="product-name">${escapeHtml(item.producto)}</span>
+                    </td>
+                    <td class="text-end">${formatGs(item.precio)}</td>
+                    <td class="text-end">${formatQuantity(item.cantidad)}</td>
+                    <td class="text-end fw-semibold">${formatGs(itemTotal(item))}</td>
+                    <td class="text-end ${deltaClass} fw-semibold">${deltaLabel}</td>
+                    <td>
+                      <div class="historicos-actions">
+                        <button type="button" class="btn btn-outline-secondary btn-sm js-edit-item" data-id="${item.id}" aria-label="Editar item" title="Editar item">
+                          <i class="bi bi-pencil"></i>
+                        </button>
+                        <button type="button" class="btn btn-outline-danger btn-sm js-delete-item" data-id="${item.id}" aria-label="Eliminar item" title="Eliminar item">
+                          <i class="bi bi-trash"></i>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              })
+              .join("");
+            refs.listaItems.innerHTML = `
+              <div class="compras-edit-table-wrap">
+                <div class="compras-edit-toolbar mb-2">
+                  <label for="compras-edit-search" class="form-label mb-1">Buscar producto</label>
+                  <input
+                    id="compras-edit-search"
+                    class="form-control compras-edit-search-input js-history-edit-product-search"
+                    type="search"
+                    placeholder="Escribe para filtrar productos..."
+                    value="${escapeHtml(state.historyEditSearchTerm)}"
+                  />
+                </div>
+                <div class="table-responsive compras-edit-table-responsive">
+                  <table class="table table-sm align-middle compras-edit-table">
+                    <thead>
+                      <tr>
+                        <th class="col-producto">Producto</th>
+                        <th class="text-end">Precio</th>
+                        <th class="text-end">Cantidad</th>
+                        <th class="text-end">Total</th>
+                        <th class="text-end">Variacion</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${
+                        rows ||
+                        '<tr><td colspan="6" class="text-center text-muted py-3">Sin productos para la busqueda.</td></tr>'
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            `;
+            updateTotalHeader();
+            persistDraftState();
+            return;
+          }
           refs.listaItems.innerHTML = [...items]
             .reverse()
             .map((item) => {
@@ -1197,6 +1347,7 @@
             return;
           }
           state.compraActual = { supermercado: "", items: [] };
+          state.historyEditSearchTerm = "";
           state.editingHistoryId = null;
           refs.inputSupermercado.value = "";
           setSupermercadoSeleccionado("");
@@ -1236,6 +1387,7 @@
           const entry = state.historicosCompras.find((item) => String(item.id) === String(historyId));
           if (!entry) return;
           state.editingHistoryId = String(entry.id);
+          state.historyEditSearchTerm = "";
           state.compraActual.supermercado = entry.supermercado;
           state.compraActual.items = (entry.items || []).map((item) => ({
             ...item,
@@ -1296,23 +1448,147 @@
           });
         };
 
-        const updateHistoryItemCheck = async (historyId, itemId, checked) => {
+        const updateHistoryItemTicket = async (historyId, itemId, payload, options = {}) => {
           try {
             const updated = await apiRequest(
               `${API.historicos}/${encodeURIComponent(historyId)}/items/${encodeURIComponent(itemId)}/check`,
               {
                 method: "PUT",
-                body: { ticket_validado: Boolean(checked) },
+                body: payload || {},
               }
             );
             replaceHistoryEntry(updated);
+            const entry = state.historicosCompras.find((row) => String(row.id) === String(historyId));
+            const localItem = (entry?.items || []).find((it) => String(it.id) === String(itemId));
+            if (localItem && payload && typeof payload === "object") {
+              if (Object.prototype.hasOwnProperty.call(payload, "producto")) {
+                localItem.producto = normalizeText(payload.producto || "");
+              }
+              if (Object.prototype.hasOwnProperty.call(payload, "cantidad")) {
+                const qty = Math.max(0, Number(payload.cantidad || 0));
+                localItem.cantidad = qty;
+                localItem.totalItem = Math.round(Number(localItem.precio || 0) * qty);
+                localItem.total_item = localItem.totalItem;
+              }
+              if (Object.prototype.hasOwnProperty.call(payload, "ticket_validado")) {
+                localItem.ticketValidado = Boolean(payload.ticket_validado);
+                if (localItem.ticketValidado) {
+                  localItem.ticketDiferente = false;
+                  localItem.precioTicketUnitario = 0;
+                  localItem.totalTicketItem = 0;
+                }
+              }
+              if (Object.prototype.hasOwnProperty.call(payload, "ticket_diferente")) {
+                localItem.ticketDiferente = Boolean(payload.ticket_diferente);
+                if (localItem.ticketDiferente) {
+                  localItem.ticketValidado = false;
+                } else {
+                  localItem.precioTicketUnitario = 0;
+                  localItem.totalTicketItem = 0;
+                }
+              }
+              if (Object.prototype.hasOwnProperty.call(payload, "precio_ticket_unitario")) {
+                const price = Math.max(0, Number(payload.precio_ticket_unitario || 0));
+                localItem.precioTicketUnitario = price;
+                if (localItem.ticketDiferente && price > 0) {
+                  localItem.totalTicketItem = Math.round(price * Math.max(0, Number(localItem.cantidad || 0)));
+                }
+              }
+            }
             renderHistoricos();
-            if (state.view === "detalle" && String(state.selectedHistoryId) === String(historyId)) {
+            if (options.refreshDetail !== false && state.view === "detalle" && String(state.selectedHistoryId) === String(historyId)) {
               openHistoryDetail(historyId);
             }
+            return true;
           } catch (error) {
             refs.formItemError.textContent = error?.message || "No se pudo actualizar el check del item.";
+            return false;
           }
+        };
+
+        const updateHistoryItemCheck = async (historyId, itemId, checked) =>
+          updateHistoryItemTicket(historyId, itemId, {
+            ticket_validado: Boolean(checked),
+            ...(checked ? { ticket_diferente: false } : {}),
+          });
+
+        const refreshTicketDiffPreview = () => {
+          if (!state.ticketDiffTarget) return;
+          const unitPrice = parseMoney(refs.ticketDiffPrecioTicket?.value || "");
+          const qty = parseQuantity(refs.ticketDiffCantidad?.value || "");
+          const shelfPrice = Math.max(0, Number(state.ticketDiffTarget?.item?.precio || 0));
+          const shelfTotal = Math.round(shelfPrice * Math.max(0, qty));
+          const ticketTotal = Math.round(unitPrice * qty);
+          const delta = ticketTotal - shelfTotal;
+          if (refs.ticketDiffTotal) refs.ticketDiffTotal.textContent = formatGs(ticketTotal);
+          if (refs.ticketDiffDelta) {
+            refs.ticketDiffDelta.textContent = formatSignedGs(delta);
+            refs.ticketDiffDelta.classList.remove("ticket-diff-up", "ticket-diff-down", "ticket-diff-zero");
+            if (delta > 0) refs.ticketDiffDelta.classList.add("ticket-diff-up");
+            else if (delta < 0) refs.ticketDiffDelta.classList.add("ticket-diff-down");
+            else refs.ticketDiffDelta.classList.add("ticket-diff-zero");
+          }
+        };
+
+        const openTicketDiffModal = (historyId, itemId) => {
+          const entry = state.historicosCompras.find((row) => String(row.id) === String(historyId));
+          if (!entry || !ticketDiffModal) return;
+          const item = (entry.items || []).find((it) => String(it.id) === String(itemId));
+          if (!item) return;
+          state.ticketDiffTarget = { historyId: String(historyId), itemId: String(itemId), item };
+          if (refs.ticketDiffProducto) refs.ticketDiffProducto.value = item.producto || "";
+          if (refs.ticketDiffCantidad) refs.ticketDiffCantidad.value = String(item.cantidad || "");
+          if (refs.ticketDiffPrecioRegistrado) refs.ticketDiffPrecioRegistrado.value = formatGs(item.precio);
+          if (refs.ticketDiffPrecioTicket) {
+            const initialPrice = Number(item?.precioTicketUnitario || 0) || Number(item?.precio || 0) || 0;
+            refs.ticketDiffPrecioTicket.value = initialPrice > 0 ? formatPriceInput(String(initialPrice)) : "";
+          }
+          if (refs.ticketDiffError) refs.ticketDiffError.textContent = "";
+          refreshTicketDiffPreview();
+          ticketDiffModal.show();
+          setTimeout(() => {
+            if (refs.ticketDiffProducto) {
+              refs.ticketDiffProducto.focus();
+              const len = (refs.ticketDiffProducto.value || "").length;
+              if (typeof refs.ticketDiffProducto.setSelectionRange === "function") {
+                refs.ticketDiffProducto.setSelectionRange(len, len);
+              }
+            }
+          }, 120);
+        };
+
+        const saveTicketDiff = async () => {
+          if (!state.ticketDiffTarget) return;
+          if (refs.ticketDiffError) refs.ticketDiffError.textContent = "";
+          const producto = normalizeText(refs.ticketDiffProducto?.value || "");
+          if (!producto) {
+            if (refs.ticketDiffError) refs.ticketDiffError.textContent = "Debes ingresar el producto.";
+            return;
+          }
+          const cantidad = parseQuantity(refs.ticketDiffCantidad?.value || "");
+          if (!cantidad || cantidad <= 0) {
+            if (refs.ticketDiffError) refs.ticketDiffError.textContent = "Debes ingresar una cantidad valida.";
+            return;
+          }
+          const ticketPrice = parseMoney(refs.ticketDiffPrecioTicket?.value || "");
+          if (!ticketPrice || ticketPrice <= 0) {
+            if (refs.ticketDiffError) refs.ticketDiffError.textContent = "Debes ingresar el precio del ticket.";
+            return;
+          }
+          const ok = await updateHistoryItemTicket(
+            state.ticketDiffTarget.historyId,
+            state.ticketDiffTarget.itemId,
+            {
+              ticket_diferente: true,
+              ticket_validado: false,
+              precio_ticket_unitario: Math.round(ticketPrice),
+              producto,
+              cantidad,
+            }
+          );
+          if (!ok) return;
+          if (ticketDiffModal) ticketDiffModal.hide();
+          state.ticketDiffTarget = null;
         };
 
         const openHistoryDetail = (historyId) => {
@@ -1334,6 +1610,7 @@
                     <th>Producto</th>
                     <th class="text-end">Detalle</th>
                     <th class="text-end">Variacion precio</th>
+                    <th class="text-end">Dif. ticket</th>
                     <th class="text-center">Check ticket</th>
                   </tr>
                 </thead>
@@ -1350,24 +1627,56 @@
                       const deltaLabel = hasPreviousPrice
                         ? `${deltaPrefix}${formatGsNumber(Math.abs(delta))} Gs`
                         : "-";
+                      const ticketDiff = getTicketDiffData(item);
+                      const ticketDiffClass = ticketDiff.delta > 0
+                        ? "ticket-diff-up"
+                        : ticketDiff.delta < 0
+                          ? "ticket-diff-down"
+                          : "ticket-diff-zero";
+                      const ticketDiffLabel = ticketDiff.hasDiff ? formatSignedGs(ticketDiff.delta) : "-";
+                      const productClass = ticketDiff.hasDiff ? "text-danger fw-bold" : "";
+                      const productBadge = ticketDiff.hasDiff
+                        ? '<span class="badge text-bg-danger ms-1">Ticket dif.</span>'
+                        : "";
                       return `
                         <tr>
                           <td class="text-center">${index + 1}</td>
-                          <td>${item.producto}</td>
+                          <td class="${productClass}">${item.producto}${productBadge}</td>
                           <td class="text-end">${formatGs(item.precio)} x ${formatQuantity(item.cantidad)} = ${formatGs(itemTotal(item))}</td>
                           <td class="text-end ${deltaClass} fw-semibold">${deltaLabel}</td>
+                          <td class="text-end ${ticketDiffClass} fw-bold">${ticketDiffLabel}</td>
                           <td class="text-center">
-                            <div class="form-check d-inline-flex align-items-center gap-1">
-                              <input
-                                class="form-check-input js-check-ticket-item"
-                                type="checkbox"
+                            <div class="ticket-check-stack">
+                              <label class="form-check d-inline-flex align-items-center gap-1">
+                                <input
+                                  class="form-check-input js-check-ticket-item"
+                                  type="checkbox"
+                                  data-history-id="${entry.id}"
+                                  data-item-id="${item.id}"
+                                  ${item.ticketValidado ? "checked" : ""}
+                                />
+                                <span class="text-success">Igual</span>
+                              </label>
+                              <label class="form-check d-inline-flex align-items-center gap-1">
+                                <input
+                                  class="form-check-input js-check-ticket-diff"
+                                  type="checkbox"
+                                  data-history-id="${entry.id}"
+                                  data-item-id="${item.id}"
+                                  ${item.ticketDiferente ? "checked" : ""}
+                                />
+                                <span class="text-danger">Diferente</span>
+                              </label>
+                              <button
+                                type="button"
+                                class="btn btn-outline-danger btn-sm py-0 px-2 js-open-ticket-diff-modal ${item.ticketDiferente ? "" : "d-none"}"
                                 data-history-id="${entry.id}"
                                 data-item-id="${item.id}"
-                                ${item.ticketValidado ? "checked" : ""}
-                              />
-                              <span class="badge ${item.ticketValidado ? "text-bg-success" : "text-bg-secondary"}">
-                                ${item.ticketValidado ? "OK" : "Pend."}
-                              </span>
+                                title="Editar precio ticket"
+                                aria-label="Editar precio ticket"
+                              >
+                                <i class="bi bi-receipt"></i>
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -1394,10 +1703,17 @@
               const checkedItems = Array.isArray(entry.items)
                 ? entry.items.filter((item) => Boolean(item.ticketValidado)).length
                 : 0;
+              const diffItems = Array.isArray(entry.items)
+                ? entry.items.filter((item) => Boolean(item.ticketDiferente))
+                : [];
+              const diffTotal = diffItems.reduce((sum, item) => sum + Number(getTicketDiffData(item).delta || 0), 0);
               const isAllChecked = totalItems > 0 && checkedItems === totalItems;
               const statusClass = isAllChecked ? "text-success" : "text-warning";
               const statusIcon = isAllChecked ? "bi-check-circle-fill" : "bi-hourglass-split";
               const statusText = isAllChecked ? "Validado" : "Pendiente";
+              const diffSummary = diffItems.length
+                ? `<div class="text-danger small fw-semibold mt-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Diferencias: ${diffItems.length} (${formatSignedGs(diffTotal)})</div>`
+                : "";
               const rowClass = state.highlightedHistoryId === entry.id ? "compras-history-highlight" : "";
               return `
                 <tr class="${rowClass}">
@@ -1408,6 +1724,7 @@
                     <span class="${statusClass}">
                       <i class="bi ${statusIcon} me-1"></i>${statusText} ${checkedItems}/${totalItems}
                     </span>
+                    ${diffSummary}
                   </td>
                   <td>
                     <div class="historicos-actions">
@@ -1473,6 +1790,7 @@
           refs.btnNueva.addEventListener("click", () => {
             state.highlightedHistoryId = null;
             state.editingHistoryId = null;
+            state.historyEditSearchTerm = "";
             updateTotalHeader();
             switchView("nueva");
           });
@@ -1658,6 +1976,21 @@
               openDeleteItem(deleteBtn.dataset.id);
             }
           });
+          refs.listaItems.addEventListener("input", (event) => {
+            const searchInput = event.target.closest(".js-history-edit-product-search");
+            if (!searchInput) return;
+            const searchValue = searchInput.value || "";
+            state.historyEditSearchTerm = searchValue;
+            renderItems();
+            const refreshedInput = refs.listaItems.querySelector(".js-history-edit-product-search");
+            if (refreshedInput) {
+              refreshedInput.focus();
+              const pos = searchValue.length;
+              if (typeof refreshedInput.setSelectionRange === "function") {
+                refreshedInput.setSelectionRange(pos, pos);
+              }
+            }
+          });
 
           bindAutocomplete(
             refs.editProducto,
@@ -1682,6 +2015,33 @@
             await saveEditedItem();
           });
           refs.btnConfirmarEliminar.addEventListener("click", deleteItem);
+          if (refs.ticketDiffPrecioTicket) {
+            refs.ticketDiffPrecioTicket.addEventListener("input", () => {
+              refs.ticketDiffPrecioTicket.value = formatPriceInput(refs.ticketDiffPrecioTicket.value);
+              refreshTicketDiffPreview();
+            });
+          }
+          if (refs.ticketDiffCantidad) {
+            refs.ticketDiffCantidad.addEventListener("input", () => {
+              refreshTicketDiffPreview();
+            });
+          }
+          if (refs.ticketDiffProducto) {
+            refs.ticketDiffProducto.addEventListener("input", () => {
+              if (refs.ticketDiffError) refs.ticketDiffError.textContent = "";
+            });
+          }
+          if (refs.btnGuardarTicketDiff) {
+            refs.btnGuardarTicketDiff.addEventListener("click", async () => {
+              await saveTicketDiff();
+            });
+          }
+          if (refs.ticketDiffModalEl) {
+            refs.ticketDiffModalEl.addEventListener("hidden.bs.modal", () => {
+              state.ticketDiffTarget = null;
+              if (refs.ticketDiffError) refs.ticketDiffError.textContent = "";
+            });
+          }
 
           refs.historicosLista.addEventListener("click", (event) => {
             const detailBtn = event.target.closest(".js-ver-detalle");
@@ -1701,12 +2061,34 @@
           });
 
           refs.detalleCompra.addEventListener("change", (event) => {
-            const checkbox = event.target.closest(".js-check-ticket-item");
-            if (!checkbox) return;
-            const historyId = checkbox.dataset.historyId;
-            const itemId = checkbox.dataset.itemId;
+            const validCheck = event.target.closest(".js-check-ticket-item");
+            if (validCheck) {
+              const historyId = validCheck.dataset.historyId;
+              const itemId = validCheck.dataset.itemId;
+              if (!historyId || !itemId) return;
+              void updateHistoryItemCheck(historyId, itemId, validCheck.checked);
+              return;
+            }
+            const diffCheck = event.target.closest(".js-check-ticket-diff");
+            if (!diffCheck) return;
+            const historyId = diffCheck.dataset.historyId;
+            const itemId = diffCheck.dataset.itemId;
             if (!historyId || !itemId) return;
-            void updateHistoryItemCheck(historyId, itemId, checkbox.checked);
+            if (diffCheck.checked) {
+              diffCheck.checked = false;
+              openTicketDiffModal(historyId, itemId);
+              return;
+            }
+            void updateHistoryItemTicket(historyId, itemId, { ticket_diferente: false });
+          });
+
+          refs.detalleCompra.addEventListener("click", (event) => {
+            const editDiffBtn = event.target.closest(".js-open-ticket-diff-modal");
+            if (!editDiffBtn) return;
+            const historyId = editDiffBtn.dataset.historyId;
+            const itemId = editDiffBtn.dataset.itemId;
+            if (!historyId || !itemId) return;
+            openTicketDiffModal(historyId, itemId);
           });
 
           document.addEventListener("click", (event) => {

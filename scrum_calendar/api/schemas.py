@@ -555,11 +555,18 @@ class CompraItemOut(BaseModel):
     cantidad: float
     total_item: int
     ticket_validado: bool
+    ticket_diferente: bool = False
+    precio_ticket_unitario: Optional[int] = None
+    total_ticket_item: Optional[int] = None
     creado_en: datetime
 
 
 class CompraItemCheckUpdate(BaseModel):
-    ticket_validado: bool
+    ticket_validado: Optional[bool] = None
+    ticket_diferente: Optional[bool] = None
+    precio_ticket_unitario: Optional[int] = Field(default=None, ge=0)
+    producto: Optional[str] = None
+    cantidad: Optional[float] = Field(default=None, gt=0)
 
 
 class CompraOut(BaseModel):

@@ -408,6 +408,9 @@ class CompraItem(Base):
     cantidad = Column(Float, nullable=False, default=1.0)
     total_item = Column(Integer, nullable=False, default=0)
     ticket_validado = Column(Boolean, nullable=False, default=False)
+    ticket_diferente = Column(Boolean, nullable=False, default=False)
+    precio_ticket_unitario = Column(Integer, nullable=True)
+    total_ticket_item = Column(Integer, nullable=True)
     creado_en = Column(DateTime, nullable=False, default=now_py)
 
     compra = relationship("Compra", back_populates="items")

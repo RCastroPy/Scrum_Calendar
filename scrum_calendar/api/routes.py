@@ -5368,6 +5368,10 @@ def compras_historico_crear(
                 precio=precio,
                 cantidad=cantidad,
                 total_item=total_item,
+                ticket_validado=False,
+                ticket_diferente=False,
+                precio_ticket_unitario=None,
+                total_ticket_item=None,
             )
         )
 
@@ -5426,6 +5430,10 @@ def compras_historico_actualizar(
                 precio=precio,
                 cantidad=cantidad,
                 total_item=total_item,
+                ticket_validado=False,
+                ticket_diferente=False,
+                precio_ticket_unitario=None,
+                total_ticket_item=None,
             )
         )
 
@@ -5460,7 +5468,46 @@ def compras_historico_item_check(
     item = next((it for it in (compra.items or []) if int(it.id) == int(item_id)), None)
     if not item:
         raise HTTPException(status_code=404, detail="Item no encontrado")
-    item.ticket_validado = bool(payload.ticket_validado)
+    if payload.producto is not None:
+        producto = clean_label(payload.producto)
+        if not producto:
+            raise HTTPException(status_code=400, detail="Producto requerido")
+        item.producto = producto
+        _upsert_catalog_name(db, CompraCatalogProducto, user.id, producto)
+    if payload.cantidad is not None:
+        cantidad = float(payload.cantidad or 0)
+        if cantidad <= 0:
+            raise HTTPException(status_code=400, detail="Cantidad invalida")
+        item.cantidad = cantidad
+        item.total_item = int(round(float(item.precio or 0) * float(item.cantidad or 0)))
+    if payload.ticket_validado is not None:
+        item.ticket_validado = bool(payload.ticket_validado)
+        if item.ticket_validado:
+            item.ticket_diferente = False
+            item.precio_ticket_unitario = None
+            item.total_ticket_item = None
+    if payload.ticket_diferente is not None:
+        item.ticket_diferente = bool(payload.ticket_diferente)
+        if item.ticket_diferente:
+            item.ticket_validado = False
+        else:
+            item.precio_ticket_unitario = None
+            item.total_ticket_item = None
+    if payload.precio_ticket_unitario is not None:
+        precio_ticket = int(round(float(payload.precio_ticket_unitario or 0)))
+        item.precio_ticket_unitario = precio_ticket if precio_ticket > 0 else None
+    if item.ticket_diferente and item.precio_ticket_unitario and item.precio_ticket_unitario > 0:
+        item.total_ticket_item = int(round(float(item.precio_ticket_unitario) * float(item.cantidad or 0)))
+    elif not item.ticket_diferente:
+        item.total_ticket_item = None
+    compra.total_general = int(
+        round(
+            sum(
+                int(round(float(it.total_item or 0)))
+                for it in (compra.items or [])
+            )
+        )
+    )
     db.commit()
     db.refresh(compra)
     return (
