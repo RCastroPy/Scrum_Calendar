@@ -1126,7 +1126,13 @@
                           <div class="col-md-4">
                             <div class="mb-3">
                               <label class="form-label" for="daily-issue-type">Issue Type</label>
-                              <select class="form-select" name="issue_type" id="daily-issue-type" required>
+                              <select
+                                class="form-select"
+                                name="issue_type"
+                                id="daily-issue-type"
+                                tabindex="1"
+                                required
+                              >
                                 <option value="Task">Task</option>
                                 <option value="Spike">Spike</option>
                                 <option value="Story">Story</option>
@@ -1140,6 +1146,7 @@
                                 type="text"
                                 name="issue_key"
                                 id="daily-issue-key"
+                                tabindex="4"
                                 placeholder="SMP-0000"
                                 required
                               />
@@ -1151,6 +1158,7 @@
                                 type="text"
                                 name="summary"
                                 id="daily-summary"
+                                tabindex="7"
                                 required
                               />
                             </div>
@@ -1158,7 +1166,13 @@
                           <div class="col-md-4">
                             <div class="mb-3">
                               <label class="form-label" for="daily-status-field">Estado</label>
-                              <select class="form-select" name="status" id="daily-status-field" required>
+                              <select
+                                class="form-select"
+                                name="status"
+                                id="daily-status-field"
+                                tabindex="2"
+                                required
+                              >
                                 <option value="To Do">To Do</option>
                                 <option value="In Progress">In Progress</option>
                                 <option value="Finalizada">Finalizada</option>
@@ -1172,6 +1186,7 @@
                                 type="number"
                                 name="story_points"
                                 id="daily-points"
+                                tabindex="5"
                                 min="0"
                                 step="0.1"
                               />
@@ -1180,11 +1195,23 @@
                           <div class="col-md-4">
                             <div class="mb-3">
                               <label class="form-label" for="daily-persona">Asignado</label>
-                              <select class="form-select" name="persona_id" id="daily-persona" required></select>
+                              <select
+                                class="form-select"
+                                name="persona_id"
+                                id="daily-persona"
+                                tabindex="3"
+                                required
+                              ></select>
                             </div>
                             <div class="mb-3">
                               <label class="form-label" for="daily-sprint">Sprint</label>
-                              <select class="form-select" name="sprint_id" id="daily-sprint" required></select>
+                              <select
+                                class="form-select"
+                                name="sprint_id"
+                                id="daily-sprint"
+                                tabindex="6"
+                                required
+                              ></select>
                             </div>
                           </div>
                         </div>

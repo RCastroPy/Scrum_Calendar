@@ -8815,6 +8815,8 @@
     }
 
     if (form) {
+      const preservedPersonaId = String(form.persona_id?.value || "");
+      const preservedSprintId = String(form.sprint_id?.value || "");
       const personaOptions = personasFiltradas
         .map((persona) => ({
           id: persona.id,
@@ -8828,6 +8830,12 @@
       );
       fillSelect(form.persona_id, personaOptions, { sortByLabel: true });
       fillSelect(form.sprint_id, sprintOptions);
+      if (preservedPersonaId && personaOptions.some((persona) => String(persona.id) === preservedPersonaId)) {
+        form.persona_id.value = preservedPersonaId;
+      }
+      if (preservedSprintId && sprintOptions.some((item) => String(item.id) === preservedSprintId)) {
+        form.sprint_id.value = preservedSprintId;
+      }
       if (selectedSprint) {
         form.sprint_id.value = String(selectedSprint.id);
       }
@@ -8886,13 +8894,49 @@
       });
     }
 
-    const resetDailyForm = (keepStatus = false) => {
+    const extractDailyIssuePrefix = (value) => {
+      const raw = String(value || "").trim();
+      if (!raw) return "";
+      const match = raw.match(/^([A-Za-z0-9]+[-_])/);
+      return match ? match[1] : "";
+    };
+
+    const resetDailyForm = ({ keepStatus = false, preserveValues = null } = {}) => {
       if (!form) return;
       form.reset();
       resetFormMode(form, "Agregar item");
       form.dataset.editSource = "";
+      delete form.dataset.editId;
+      if (preserveValues) {
+        if (Object.prototype.hasOwnProperty.call(preserveValues, "sprint_id")) {
+          form.sprint_id.value = preserveValues.sprint_id || "";
+        }
+        if (Object.prototype.hasOwnProperty.call(preserveValues, "persona_id")) {
+          form.persona_id.value = preserveValues.persona_id || "";
+        }
+        if (Object.prototype.hasOwnProperty.call(preserveValues, "issue_key")) {
+          form.issue_key.value = preserveValues.issue_key || "";
+        }
+      }
       if (status && !keepStatus) status.textContent = "";
       renderDaily(state.base);
+    };
+
+    const upsertDailySprintItemInState = (item) => {
+      if (!item) return;
+      const current = Array.isArray(state.base?.sprintItems) ? state.base.sprintItems : [];
+      const next = [...current];
+      const idx = next.findIndex(
+        (entry) =>
+          String(entry?.id || "") === String(item.id || "") ||
+          normalizeText(entry?.issue_key || "") === normalizeText(item.issue_key || "")
+      );
+      if (idx >= 0) {
+        next[idx] = item;
+      } else {
+        next.unshift(item);
+      }
+      state.base.sprintItems = next;
     };
 
     const ensureDailyItemVisible = (targetSprintId, targetStatus) => {
@@ -8914,7 +8958,7 @@
 
     if (clearBtn && !clearBtn.dataset.bound) {
       clearBtn.dataset.bound = "true";
-      clearBtn.addEventListener("click", resetDailyForm);
+      clearBtn.addEventListener("click", () => resetDailyForm());
     }
 
     if (pointsUserSelect && !pointsUserSelect.dataset.bound) {
@@ -9041,6 +9085,11 @@
           status: statusValue,
           story_points: Number.isNaN(storyPoints) ? null : storyPoints,
         };
+        const preservedFormValues = {
+          sprint_id: String(sprintId),
+          persona_id: String(personaId),
+          issue_key: extractDailyIssuePrefix(issueKey),
+        };
         try {
           const editId = form.dataset.editId;
           if (editId) {
@@ -9076,9 +9125,7 @@
                 String(item.id) === String(updated.id) ? updated : item
               );
             } else {
-              state.base.sprintItems = (state.base.sprintItems || []).map((item) =>
-                String(item.id) === String(updated.id) ? updated : item
-              );
+              upsertDailySprintItemInState(updated);
             }
             state.dailyRealtimeSignature = buildDailyRealtimeSignature(
               state.base.sprintItems || [],
@@ -9091,22 +9138,25 @@
             ensureDailyItemVisible(sprintId, statusValue);
           } else {
             const created = await postJson("/sprint-items", payload);
-            state.base.sprintItems = [created, ...(state.base.sprintItems || [])];
+            upsertDailySprintItemInState(created);
             state.dailyRealtimeSignature = buildDailyRealtimeSignature(
               state.base.sprintItems || [],
               state.base.releaseItems || []
             );
             if (status) {
-              status.textContent = "Item agregado.";
+              status.textContent = "Item guardado.";
               status.dataset.type = "ok";
             }
             ensureDailyItemVisible(sprintId, statusValue);
           }
-          resetDailyForm(true);
+          resetDailyForm({
+            keepStatus: true,
+            preserveValues: editId ? null : preservedFormValues,
+          });
           void syncDailyRealtime({ forceRender: false, skipWhenEditing: true });
         } catch (err) {
           if (status) {
-            status.textContent = "No se pudo crear el item.";
+            status.textContent = err?.message || "No se pudo guardar el item.";
             status.dataset.type = "error";
           }
         }

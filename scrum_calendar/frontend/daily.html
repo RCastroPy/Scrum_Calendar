@@ -162,7 +162,7 @@
               <form class="daily-form" id="daily-form">
                 <label>
                   Issue Type
-                  <select name="issue_type" required>
+                  <select name="issue_type" tabindex="1" required>
                     <option value="Task">Task</option>
                     <option value="Spike">Spike</option>
                     <option value="Story">Story</option>
@@ -170,16 +170,8 @@
                   </select>
                 </label>
                 <label>
-                  Issue Key
-                  <input type="text" name="issue_key" placeholder="SMP-0000" required />
-                </label>
-                <label>
-                  Resumen
-                  <input type="text" name="summary" required />
-                </label>
-                <label>
                   Estado
-                  <select name="status" required>
+                  <select name="status" tabindex="2" required>
                     <option value="To Do">To Do</option>
                     <option value="In Progress">In Progress</option>
                     <option value="Finalizada">Finalizada</option>
@@ -187,16 +179,24 @@
                   </select>
                 </label>
                 <label>
-                  Story Points
-                  <input type="number" name="story_points" min="0" step="0.1" />
+                  Asignado
+                  <select name="persona_id" tabindex="3" required></select>
                 </label>
                 <label>
-                  Asignado
-                  <select name="persona_id" required></select>
+                  Issue Key
+                  <input type="text" name="issue_key" tabindex="4" placeholder="SMP-0000" required />
+                </label>
+                <label>
+                  Story Points
+                  <input type="number" name="story_points" tabindex="5" min="0" step="0.1" />
                 </label>
                 <label>
                   Sprint
-                  <select name="sprint_id" required></select>
+                  <select name="sprint_id" tabindex="6" required></select>
+                </label>
+                <label>
+                  Resumen
+                  <input type="text" name="summary" tabindex="7" required />
                 </label>
                 <div class="form-actions">
                   <button class="btn" type="submit">Agregar item</button>

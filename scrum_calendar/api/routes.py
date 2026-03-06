@@ -409,6 +409,58 @@ def normalize_jira_code(value: str) -> str:
     return cleaned.strip().upper()
 
 
+def _sync_manual_sprint_import_item(
+    db: Session,
+    *,
+    issue_key: str,
+    celula_id: int,
+    sprint_id: int,
+    sprint_nombre: str,
+    persona_id: Optional[int],
+    assignee_nombre: Optional[str],
+    issue_type: str,
+    summary: str,
+    status: str,
+    story_points: Optional[float],
+) -> ReleaseImportItem:
+    import_item = (
+        db.query(ReleaseImportItem)
+        .filter(ReleaseImportItem.issue_key == issue_key)
+        .first()
+    )
+    if not import_item:
+        import_item = ReleaseImportItem(
+            celula_id=celula_id,
+            sprint_id=sprint_id,
+            persona_id=persona_id,
+            assignee_nombre=assignee_nombre,
+            issue_key=issue_key,
+            issue_type=issue_type,
+            summary=summary,
+            status=status,
+            story_points=story_points,
+            sprint_nombre=sprint_nombre,
+            release_tipo="tarea",
+            raw_data=json.dumps({"source": "manual"}, ensure_ascii=False),
+        )
+        db.add(import_item)
+        return import_item
+
+    import_item.celula_id = celula_id
+    import_item.sprint_id = sprint_id
+    import_item.persona_id = persona_id
+    import_item.assignee_nombre = assignee_nombre
+    import_item.issue_type = issue_type
+    import_item.summary = summary
+    import_item.status = status
+    import_item.story_points = story_points
+    import_item.sprint_nombre = sprint_nombre
+    import_item.release_tipo = "tarea"
+    if not import_item.raw_data:
+        import_item.raw_data = json.dumps({"source": "manual"}, ensure_ascii=False)
+    return import_item
+
+
 def get_user_from_token(db: Session, token: Optional[str]) -> Optional[Usuario]:
     if not token:
         return None
@@ -3468,31 +3520,58 @@ def crear_sprint_item(
         if not persona:
             raise HTTPException(status_code=404, detail="Persona no encontrada")
 
-    item = ReleaseItem(
+    item = db.query(ReleaseItem).filter(ReleaseItem.issue_key == payload.issue_key).first()
+    if item:
+        item.celula_id = payload.celula_id
+        item.sprint_id = payload.sprint_id
+        item.persona_id = payload.persona_id
+        item.assignee_nombre = payload.assignee_nombre
+        item.issue_type = payload.issue_type
+        item.summary = payload.summary
+        item.status = payload.status
+        item.story_points = payload.story_points
+        item.start_date = payload.start_date
+        item.end_date = payload.end_date
+        item.due_date = payload.due_date
+        item.sprint_nombre = sprint.nombre
+        item.release_tipo = "tarea"
+    else:
+        item = ReleaseItem(
+            celula_id=payload.celula_id,
+            sprint_id=payload.sprint_id,
+            persona_id=payload.persona_id,
+            assignee_nombre=payload.assignee_nombre,
+            issue_key=payload.issue_key,
+            issue_type=payload.issue_type,
+            summary=payload.summary,
+            status=payload.status,
+            story_points=payload.story_points,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            due_date=payload.due_date,
+            sprint_nombre=sprint.nombre,
+            release_tipo="tarea",
+        )
+        db.add(item)
+    _sync_manual_sprint_import_item(
+        db,
+        issue_key=payload.issue_key,
         celula_id=payload.celula_id,
         sprint_id=payload.sprint_id,
+        sprint_nombre=sprint.nombre,
         persona_id=payload.persona_id,
         assignee_nombre=payload.assignee_nombre,
-        issue_key=payload.issue_key,
         issue_type=payload.issue_type,
         summary=payload.summary,
         status=payload.status,
         story_points=payload.story_points,
-        start_date=payload.start_date,
-        end_date=payload.end_date,
-        due_date=payload.due_date,
-        sprint_nombre=sprint.nombre,
-        release_tipo="tarea",
     )
     try:
-        db.add(item)
         db.commit()
         db.refresh(item)
     except IntegrityError:
         db.rollback()
-        raise HTTPException(
-            status_code=409, detail="Issue ya existe en este sprint"
-        )
+        raise HTTPException(status_code=409, detail="Issue duplicado")
     return item
 
 
