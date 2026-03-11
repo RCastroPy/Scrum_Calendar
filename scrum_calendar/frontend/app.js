@@ -1025,6 +1025,102 @@
     return { remaining: remainingDays, total: totalDays, ratio };
   }
 
+  function getCommitmentMeta(item) {
+    const status = normalizeText(item?.estado);
+    const isClosed = status === "cerrado" || status.includes("cerrado");
+    const dueDate = item?.fecha_compromiso ? parseDateOnly(item.fecha_compromiso) : null;
+    const today = getToday();
+    today.setHours(0, 0, 0, 0);
+    if (isClosed) {
+      return {
+        toneClass: "is-success",
+        label: "Cerrado",
+        order: 4,
+        dueSort: dueDate ? dueDate.getTime() : Number.MAX_SAFE_INTEGER,
+      };
+    }
+    if (!dueDate) {
+      return {
+        toneClass: "is-info",
+        label: "Sin fecha",
+        order: 3,
+        dueSort: Number.MAX_SAFE_INTEGER - 1,
+      };
+    }
+    const diffDays = Math.round((dueDate.getTime() - today.getTime()) / 86400000);
+    if (diffDays < 0) {
+      return {
+        toneClass: "is-danger",
+        label: "Vencido",
+        order: 0,
+        dueSort: dueDate.getTime(),
+      };
+    }
+    if (diffDays === 0) {
+      return {
+        toneClass: "is-warning",
+        label: "Vence hoy",
+        order: 1,
+        dueSort: dueDate.getTime(),
+      };
+    }
+    if (diffDays <= 3) {
+      return {
+        toneClass: "is-caution",
+        label: "Proximo",
+        order: 2,
+        dueSort: dueDate.getTime(),
+      };
+    }
+    return {
+      toneClass: "is-info",
+      label: "Pendiente",
+      order: 3,
+      dueSort: dueDate.getTime(),
+    };
+  }
+
+  function buildDashboardCommitments(commitments) {
+    const items = Array.isArray(commitments) ? commitments : [];
+    const sortedItems = items
+      .map((item) => ({
+        ...item,
+        meta: getCommitmentMeta(item),
+      }))
+      .sort((a, b) => {
+        if (a.meta.order !== b.meta.order) return a.meta.order - b.meta.order;
+        if (a.meta.dueSort !== b.meta.dueSort) return a.meta.dueSort - b.meta.dueSort;
+        const sprintCmp = String(a.sprint_nombre || "").localeCompare(
+          String(b.sprint_nombre || ""),
+          "es"
+        );
+        if (sprintCmp !== 0) return sprintCmp;
+        return String(a.detalle || "").localeCompare(String(b.detalle || ""), "es");
+      });
+    const counters = {
+      overdue: 0,
+      today: 0,
+      upcoming: 0,
+      pending: 0,
+      closed: 0,
+    };
+    sortedItems.forEach((item) => {
+      const tone = item.meta.toneClass;
+      if (tone === "is-success") {
+        counters.closed += 1;
+        return;
+      }
+      counters.pending += 1;
+      if (tone === "is-danger") counters.overdue += 1;
+      else if (tone === "is-warning") counters.today += 1;
+      else if (tone === "is-caution") counters.upcoming += 1;
+    });
+    return {
+      counters,
+      items: sortedItems,
+    };
+  }
+
   function resolveCelulaId(value, cells) {
     if (!value) return "";
     const list = Array.isArray(cells) ? cells : [];
@@ -1521,6 +1617,7 @@
     feriados,
     personas,
     birthdaysPersonas,
+    commitments,
   }) {
     const sourceEventos = Array.isArray(events) ? events : base.eventos;
     const calendarEventos = Array.isArray(eventsAll) ? eventsAll : sourceEventos;
@@ -1794,6 +1891,7 @@
         columns,
         rows: personSummary,
       },
+      commitments: buildDashboardCommitments(commitments),
       eventsByJornada: {
         labels: capacidadSeries.map((item) => item.nombre),
         series: [
@@ -1885,6 +1983,28 @@
           (feriado) => !feriado.celula_id || String(feriado.celula_id) === String(celulaId)
         )
       : base.feriados;
+    let commitments = [];
+    const commitmentCells = celulaId
+      ? (base.celulas || []).filter((celula) => String(celula.id) === String(celulaId))
+      : (base.celulas || []);
+    if (commitmentCells.length) {
+      const responses = await Promise.all(
+        commitmentCells.map(async (celula) => {
+          try {
+            const items = await fetchJson(`/retros/compromisos?celula_id=${celula.id}`);
+            const list = Array.isArray(items) ? items : [];
+            return list.map((item) => ({
+              ...item,
+              celula_id: celula.id,
+              celula_nombre: celula.nombre || "",
+            }));
+          } catch {
+            return [];
+          }
+        })
+      );
+      commitments = responses.flat();
+    }
     state.capacidadSeries = capacidadSeries;
     const personasCalendario =
       state.user?.rol === "admin" ? personasActivas : personasFiltradas;
@@ -1901,6 +2021,7 @@
       feriados: feriadosFiltrados,
       personas: personasCalendario,
       birthdaysPersonas: personasBirthdays,
+      commitments,
     });
   }
 
@@ -2760,6 +2881,84 @@
       );
       renderStorypointsKpi(items, dashboardStorypoints, feriadosSet);
     }
+    renderDashboardCommitments(data.commitments);
+  }
+
+  function renderDashboardCommitments(data) {
+    const overdueEl = qs("#dashboard-commitments-overdue");
+    const todayEl = qs("#dashboard-commitments-today");
+    const upcomingEl = qs("#dashboard-commitments-upcoming");
+    const pendingEl = qs("#dashboard-commitments-pending");
+    const closedEl = qs("#dashboard-commitments-closed");
+    const listEl = qs("#dashboard-commitments-alerts");
+    if (!overdueEl || !todayEl || !upcomingEl || !pendingEl || !closedEl || !listEl) {
+      return;
+    }
+    const counters = data?.counters || {
+      overdue: 0,
+      today: 0,
+      upcoming: 0,
+      pending: 0,
+      closed: 0,
+    };
+    overdueEl.textContent = String(counters.overdue || 0);
+    todayEl.textContent = String(counters.today || 0);
+    upcomingEl.textContent = String(counters.upcoming || 0);
+    pendingEl.textContent = String(counters.pending || 0);
+    closedEl.textContent = String(counters.closed || 0);
+    listEl.innerHTML = "";
+    const items = Array.isArray(data?.items) ? data.items : [];
+    if (!items.length) {
+      const empty = document.createElement("p");
+      empty.className = "commitments-empty";
+      empty.textContent = "Sin compromisos para mostrar.";
+      listEl.appendChild(empty);
+      return;
+    }
+    items.forEach((item) => {
+      const row = document.createElement("article");
+      row.className = `commitment-alert ${item.meta.toneClass}`;
+
+      const header = document.createElement("div");
+      header.className = "commitment-alert-header";
+      const title = document.createElement("h4");
+      title.className = "commitment-alert-title";
+      title.textContent = item.detalle || "Compromiso sin detalle";
+      const badge = document.createElement("span");
+      badge.className = `commitment-alert-badge ${item.meta.toneClass}`;
+      badge.textContent = item.meta.label;
+      header.appendChild(title);
+      header.appendChild(badge);
+
+      const meta = document.createElement("div");
+      meta.className = "commitment-alert-meta";
+      [
+        item.celula_nombre || "",
+        item.sprint_nombre || "Sin sprint",
+        item.asignado_nombre || "Sin responsable",
+      ]
+        .filter(Boolean)
+        .forEach((label) => {
+          const chip = document.createElement("span");
+          chip.className = "commitment-alert-chip";
+          chip.textContent = label;
+          meta.appendChild(chip);
+        });
+
+      const subMeta = document.createElement("div");
+      subMeta.className = "commitment-alert-submeta";
+      const dueChip = document.createElement("span");
+      dueChip.className = "commitment-alert-chip";
+      dueChip.textContent = item.fecha_compromiso
+        ? `Compromiso: ${formatDate(item.fecha_compromiso)}`
+        : "Compromiso sin fecha";
+      subMeta.appendChild(dueChip);
+
+      row.appendChild(header);
+      row.appendChild(meta);
+      row.appendChild(subMeta);
+      listEl.appendChild(row);
+    });
   }
 
   function renderPersonSummary(container, data) {
@@ -5990,7 +6189,7 @@
     if (nameSpan) nameSpan.textContent = displayName;
     const headerText = menu?.querySelector(".user-header p");
     if (headerText) {
-      headerText.innerHTML = `${displayName}<small>ScrumIA</small>`;
+      headerText.innerHTML = `${displayName}<small>SCRUM MASTER</small>`;
     }
     menu?.querySelectorAll("img").forEach((img) => {
       const parent = img.parentElement;
@@ -11719,6 +11918,9 @@
 
     const refreshTasksUi = (mode = "all") => {
       const normalized = String(mode || "all").trim().toLowerCase();
+      if (normalized === "backlog" || state.tasksView === "backlog") {
+        captureBacklogColumnsFromDom();
+      }
       const filtered = applyFilters(state.tasksCache || []);
       updatePrioritySummaryButton(filtered);
       if (normalized === "backlog") {
@@ -11822,6 +12024,7 @@
     };
 
     const renderBacklogPreservingViewport = () => {
+      captureBacklogColumnsFromDom();
       const candidateNodes = [
         document.scrollingElement,
         document.documentElement,
@@ -11978,6 +12181,61 @@
       } catch {
         // ignore
       }
+      return true;
+    };
+
+    const captureBacklogColumnsFromDom = () => {
+      if (!backlogList) return false;
+      const headerCells = Array.from(
+        backlogList.querySelectorAll(
+          ".dataTables_scrollHead th[data-col-key], table.tasks-notion-table thead th[data-col-key]"
+        )
+      );
+      if (!headerCells.length) return false;
+
+      const visibleOrder = headerCells
+        .map((th) => String(th?.dataset?.colKey || "").trim())
+        .filter((key) => DEFAULT_COLUMNS.includes(key));
+      if (!visibleOrder.length) return false;
+
+      const cfg = loadColumnsConfig();
+      const existingOrder = Array.isArray(cfg.order) ? cfg.order.slice() : [...DEFAULT_COLUMNS];
+      const hidden = { ...(cfg.hidden || {}) };
+      const widths = { ...(cfg.widths || {}) };
+      const used = new Set();
+      const nextOrder = [];
+
+      visibleOrder.forEach((key) => {
+        if (!used.has(key)) {
+          used.add(key);
+          nextOrder.push(key);
+        }
+      });
+      existingOrder.forEach((key) => {
+        if (DEFAULT_COLUMNS.includes(key) && !used.has(key)) {
+          used.add(key);
+          nextOrder.push(key);
+        }
+      });
+      DEFAULT_COLUMNS.forEach((key) => {
+        if (!used.has(key)) {
+          used.add(key);
+          nextOrder.push(key);
+        }
+      });
+
+      headerCells.forEach((th) => {
+        const key = String(th?.dataset?.colKey || "").trim();
+        if (!DEFAULT_COLUMNS.includes(key)) return;
+        const width = Math.round(Number(th.getBoundingClientRect?.().width || 0));
+        if (Number.isFinite(width) && width > 40) {
+          widths[key] = width;
+        }
+        hidden[key] = false;
+      });
+
+      state.tasksColumnsConfig = { ...cfg, order: nextOrder, hidden, widths };
+      saveColumnsConfig();
       return true;
     };
 
@@ -13581,6 +13839,7 @@
     const shareUrl = qs("#retro-share-url");
     const shareQr = qs("#retro-share-qr");
     const copyBtn = qs("#retro-share-copy");
+    const toggleQrBtn = qs("#retro-share-toggle-qr");
     const shareStatus = qs("#retro-share-status");
     const shareBlock = shareUrl ? shareUrl.closest(".retro-share") : null;
     const qrBlock = shareQr ? shareQr.closest(".retro-qr") : null;
@@ -13601,6 +13860,9 @@
     const dueInput = qs("#retro-due");
     const commitmentFields = qs("#retro-commitment-fields");
     const formCancelBtn = qs("#retro-form-cancel");
+    if (typeof state.retroQrVisible !== "boolean") {
+      state.retroQrVisible = false;
+    }
 
     const setRetroStatus = (message, type = "info") => {
       if (!status) return;
@@ -13946,8 +14208,10 @@
       actions.className = "row-actions";
       const editBtn = document.createElement("button");
       editBtn.type = "button";
-      editBtn.className = "btn small";
-      editBtn.textContent = "Editar";
+      editBtn.className = "icon-btn";
+      editBtn.setAttribute("aria-label", "Editar retro");
+      editBtn.innerHTML =
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.25V21h3.75L18.8 8.94l-3.75-3.75L3 17.25zm17.7-10.2a1 1 0 0 0 0-1.4l-2.34-2.34a1 1 0 0 0-1.4 0l-1.82 1.82 3.75 3.75 1.81-1.83z"/></svg>';
       editBtn.addEventListener("click", async () => {
         await withButtonBusy(editBtn, async () => {
           if (retro.estado !== "abierta") {
@@ -13959,8 +14223,10 @@
       });
       const delBtn = document.createElement("button");
       delBtn.type = "button";
-      delBtn.className = "btn small ghost";
-      delBtn.textContent = "Eliminar";
+      delBtn.className = "icon-btn";
+      delBtn.setAttribute("aria-label", "Eliminar retro");
+      delBtn.innerHTML =
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8h2v10H7zm4 0h2v10h-2zm4 0h2v10h-2zM9 4h6l1 2h4v2H4V6h4l1-2zm-3 6h12v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V10z"/></svg>';
       delBtn.addEventListener("click", async () => {
         if (!confirm("Eliminar retro del sprint?")) return;
         await withButtonBusy(delBtn, async () => {
@@ -14039,9 +14305,15 @@
       if (!shareUrl) return;
       const isOpen = shareRetro && shareRetro.estado !== "cerrada";
       if (shareBlock) shareBlock.classList.toggle("hidden", !isOpen);
-      if (qrBlock) qrBlock.classList.toggle("hidden", !isOpen);
+      if (toggleQrBtn) {
+        toggleQrBtn.classList.toggle("hidden", !isOpen);
+        toggleQrBtn.disabled = !isOpen;
+        toggleQrBtn.textContent = state.retroQrVisible ? "Ocultar QR" : "Mostrar QR";
+      }
+      if (qrBlock) qrBlock.classList.toggle("hidden", !isOpen || !state.retroQrVisible);
       if (copyBtn) copyBtn.disabled = !isOpen;
       if (!shareRetro || !isOpen) {
+        state.retroQrVisible = false;
         shareUrl.value = "";
         shareUrl.readOnly = true;
         if (shareStatus) {
@@ -14065,6 +14337,9 @@
           shareLink
         )}`;
         shareQr.alt = "QR Retro";
+      }
+      if (toggleQrBtn) {
+        toggleQrBtn.textContent = state.retroQrVisible ? "Ocultar QR" : "Mostrar QR";
       }
     };
 
@@ -14187,6 +14462,19 @@
             setRetroStatus(ok ? "Link copiado." : "No se pudo copiar el link.", ok ? "ok" : "warn");
           }
         }
+      });
+    }
+
+    if (toggleQrBtn && !toggleQrBtn.dataset.bound) {
+      toggleQrBtn.dataset.bound = "true";
+      toggleQrBtn.addEventListener("click", () => {
+        if (!shareRetro || shareRetro.estado === "cerrada") return;
+        state.retroQrVisible = !state.retroQrVisible;
+        if (!state.retroQrVisible && shareQr) {
+          shareQr.classList.remove("is-zoomed");
+          document.body.classList.remove("qr-zoomed");
+        }
+        updateShareSection();
       });
     }
 
@@ -14551,16 +14839,20 @@
         actions.className = "row-actions";
         const editBtn = document.createElement("button");
         editBtn.type = "button";
-        editBtn.className = "btn small";
-        editBtn.textContent = "Editar";
+        editBtn.className = "icon-btn";
+        editBtn.setAttribute("aria-label", "Editar compromiso");
+        editBtn.innerHTML =
+          '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.25V21h3.75L18.8 8.94l-3.75-3.75L3 17.25zm17.7-10.2a1 1 0 0 0 0-1.4l-2.34-2.34a1 1 0 0 0-1.4 0l-1.82 1.82 3.75 3.75 1.81-1.83z"/></svg>';
         editBtn.addEventListener("click", () => {
           setEditMode(item);
           setRetroStatus("Editando compromiso.", "info");
         });
         const delBtn = document.createElement("button");
         delBtn.type = "button";
-        delBtn.className = "btn small ghost";
-        delBtn.textContent = "Eliminar";
+        delBtn.className = "icon-btn";
+        delBtn.setAttribute("aria-label", "Eliminar compromiso");
+        delBtn.innerHTML =
+          '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8h2v10H7zm4 0h2v10h-2zm4 0h2v10h-2zM9 4h6l1 2h4v2H4V6h4l1-2zm-3 6h12v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V10z"/></svg>';
         delBtn.addEventListener("click", async () => {
           if (!confirm("Eliminar compromiso?")) return;
           const retroId = item.retro_id || currentRetro?.id;

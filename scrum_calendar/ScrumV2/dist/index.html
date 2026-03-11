@@ -3,7 +3,7 @@
   <!--begin::Head-->
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-  <title>ScrumIA | Dashboard</title>
+  <title>SCRUM MASTER | Dashboard</title>
 
     <!--begin::Accessibility Meta Tags-->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
@@ -14,7 +14,7 @@
     <!--end::Accessibility Meta Tags-->
 
     <!--begin::Primary Meta Tags-->
-  <meta name="title" content="ScrumIA | Dashboard" />
+  <meta name="title" content="SCRUM MASTER | Dashboard" />
     <meta name="author" content="ColorlibHQ" />
     <meta
       name="description"
@@ -320,7 +320,7 @@
             />
             <!--end::Brand Image-->
             <!--begin::Brand Text-->
-            <span class="brand-text fw-light">ScrumIA</span>
+            <span class="brand-text fw-light">SCRUM MASTER</span>
             <!--end::Brand Text-->
           </a>
           <!--end::Brand Link-->
@@ -1009,6 +1009,41 @@
                   </div>
                   <ul id="birthday-list"></ul>
                 </div>
+              </div>
+
+              <div class="dashboard-row">
+                <section class="commitments-card">
+                  <div class="commitments-head">
+                    <div>
+                      <h3>Compromisos</h3>
+                      <p>Alertas activas de retrospectiva por celula.</p>
+                    </div>
+                    <a class="commitments-link" href="retrospective.html">Abrir retrospectiva</a>
+                  </div>
+                  <div class="commitments-kpis">
+                    <article class="commitment-kpi tone-danger">
+                      <span>Vencidos</span>
+                      <strong id="dashboard-commitments-overdue">0</strong>
+                    </article>
+                    <article class="commitment-kpi tone-warning">
+                      <span>Vencen hoy</span>
+                      <strong id="dashboard-commitments-today">0</strong>
+                    </article>
+                    <article class="commitment-kpi tone-caution">
+                      <span>Proximos</span>
+                      <strong id="dashboard-commitments-upcoming">0</strong>
+                    </article>
+                    <article class="commitment-kpi tone-info">
+                      <span>Pendientes</span>
+                      <strong id="dashboard-commitments-pending">0</strong>
+                    </article>
+                    <article class="commitment-kpi tone-success">
+                      <span>Cerrados</span>
+                      <strong id="dashboard-commitments-closed">0</strong>
+                    </article>
+                  </div>
+                  <div class="commitments-alerts" id="dashboard-commitments-alerts"></div>
+                </section>
               </div>
 
               <div class="charts-grid">

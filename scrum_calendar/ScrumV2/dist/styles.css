@@ -63,6 +63,7 @@ body.adminlte-base .filters input {
 body.adminlte-base .health-card,
 body.adminlte-base .calendar-card,
 body.adminlte-base .birthday-card,
+body.adminlte-base .commitments-card,
 body.adminlte-base .chart-card,
 body.adminlte-base .kpi-card {
   background: var(--bs-body-bg);
@@ -73,6 +74,44 @@ body.adminlte-base .kpi-card {
 body.adminlte-base .birthday-card li {
   background: var(--bs-tertiary-bg);
   color: var(--bs-secondary-color);
+}
+
+body.adminlte-base .commitment-kpi,
+body.adminlte-base .commitment-alert,
+body.adminlte-base .commitment-alert-chip {
+  background: var(--bs-tertiary-bg);
+  color: var(--bs-body-color);
+}
+
+body.adminlte-base .commitment-alert-title,
+body.adminlte-base .commitments-head h3,
+body.adminlte-base .commitment-kpi strong {
+  color: var(--bs-body-color);
+}
+
+body.adminlte-base .commitments-head p,
+body.adminlte-base .commitment-kpi span,
+body.adminlte-base .commitments-empty,
+body.adminlte-base .commitment-alert-chip {
+  color: var(--bs-secondary-color);
+}
+
+body.adminlte-base .commitments-empty {
+  background: var(--bs-tertiary-bg);
+}
+
+body.adminlte-base .commitments-link {
+  background: var(--bs-primary-bg-subtle);
+  border-color: color-mix(in srgb, var(--bs-primary) 30%, transparent);
+  color: var(--bs-primary-text-emphasis);
+}
+
+body.adminlte-base .commitment-alert.is-danger,
+body.adminlte-base .commitment-alert.is-warning,
+body.adminlte-base .commitment-alert.is-caution,
+body.adminlte-base .commitment-alert.is-info,
+body.adminlte-base .commitment-alert.is-success {
+  background: var(--bs-tertiary-bg);
 }
 
 body.adminlte-base .birthday-card li strong {
@@ -4115,7 +4154,8 @@ body.col-resize-active {
 
 .health-card,
 .calendar-card,
-.birthday-card {
+.birthday-card,
+.commitments-card {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 18px;
@@ -4287,6 +4327,232 @@ body.col-resize-active {
 .birthday-card li strong {
   color: var(--ink);
   font-weight: 600;
+}
+
+.commitments-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.commitments-head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.commitments-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.commitments-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(75, 163, 255, 0.28);
+  background: rgba(75, 163, 255, 0.14);
+  color: #84bcff;
+  text-decoration: none;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.commitments-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 12px;
+}
+
+.commitment-kpi {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.commitment-kpi span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.commitment-kpi strong {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.commitment-kpi.tone-danger {
+  border-color: rgba(255, 75, 75, 0.28);
+  background: rgba(255, 75, 75, 0.08);
+}
+
+.commitment-kpi.tone-danger strong {
+  color: #ff6b6b;
+}
+
+.commitment-kpi.tone-warning {
+  border-color: rgba(255, 200, 87, 0.3);
+  background: rgba(255, 200, 87, 0.08);
+}
+
+.commitment-kpi.tone-warning strong {
+  color: #ffc857;
+}
+
+.commitment-kpi.tone-caution {
+  border-color: rgba(255, 142, 60, 0.28);
+  background: rgba(255, 142, 60, 0.08);
+}
+
+.commitment-kpi.tone-caution strong {
+  color: #ff8e3c;
+}
+
+.commitment-kpi.tone-info {
+  border-color: rgba(75, 163, 255, 0.28);
+  background: rgba(75, 163, 255, 0.08);
+}
+
+.commitment-kpi.tone-info strong {
+  color: #4ba3ff;
+}
+
+.commitment-kpi.tone-success {
+  border-color: rgba(57, 255, 20, 0.2);
+  background: rgba(57, 255, 20, 0.08);
+}
+
+.commitment-kpi.tone-success strong {
+  color: #6ee7b7;
+}
+
+.commitments-alerts {
+  display: grid;
+  gap: 10px;
+  max-height: 430px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.commitments-empty {
+  margin: 0;
+  padding: 18px 16px;
+  border-radius: 14px;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+  text-align: center;
+}
+
+.commitment-alert {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.commitment-alert-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.commitment-alert-title {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.commitment-alert-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.commitment-alert-meta,
+.commitment-alert-submeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.commitment-alert-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.commitment-alert.is-danger {
+  border-color: rgba(255, 75, 75, 0.22);
+  background: linear-gradient(135deg, rgba(255, 75, 75, 0.12), rgba(255, 255, 255, 0.03));
+}
+
+.commitment-alert-badge.is-danger {
+  background: rgba(255, 75, 75, 0.2);
+  color: #ff6b6b;
+}
+
+.commitment-alert.is-warning {
+  border-color: rgba(255, 200, 87, 0.24);
+  background: linear-gradient(135deg, rgba(255, 200, 87, 0.12), rgba(255, 255, 255, 0.03));
+}
+
+.commitment-alert-badge.is-warning {
+  background: rgba(255, 200, 87, 0.2);
+  color: #ffc857;
+}
+
+.commitment-alert.is-caution {
+  border-color: rgba(255, 142, 60, 0.24);
+  background: linear-gradient(135deg, rgba(255, 142, 60, 0.12), rgba(255, 255, 255, 0.03));
+}
+
+.commitment-alert-badge.is-caution {
+  background: rgba(255, 142, 60, 0.2);
+  color: #ff8e3c;
+}
+
+.commitment-alert.is-info {
+  border-color: rgba(75, 163, 255, 0.22);
+  background: linear-gradient(135deg, rgba(75, 163, 255, 0.12), rgba(255, 255, 255, 0.03));
+}
+
+.commitment-alert-badge.is-info {
+  background: rgba(75, 163, 255, 0.18);
+  color: #84bcff;
+}
+
+.commitment-alert.is-success {
+  border-color: rgba(57, 255, 20, 0.16);
+  background: linear-gradient(135deg, rgba(57, 255, 20, 0.1), rgba(255, 255, 255, 0.03));
+}
+
+.commitment-alert-badge.is-success {
+  background: rgba(57, 255, 20, 0.16);
+  color: #6ee7b7;
 }
 
 .calendar-head {
@@ -4661,6 +4927,11 @@ body.col-resize-active {
     grid-template-columns: 1fr;
   }
 
+  .commitments-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .oneonone-layout {
     grid-template-columns: 1fr;
   }
@@ -4693,6 +4964,15 @@ body.col-resize-active {
 @media (max-width: 640px) {
   .health-metrics {
     grid-template-columns: 1fr;
+  }
+
+  .commitments-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .commitment-alert-header {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 

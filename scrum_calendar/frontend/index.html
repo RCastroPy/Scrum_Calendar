@@ -307,6 +307,41 @@
             </div>
           </div>
 
+          <div class="dashboard-row">
+            <section class="commitments-card">
+              <div class="commitments-head">
+                <div>
+                  <h3>Compromisos</h3>
+                  <p>Alertas activas de retrospectiva por celula.</p>
+                </div>
+                <a class="commitments-link" href="retrospective.html">Abrir retrospectiva</a>
+              </div>
+              <div class="commitments-kpis">
+                <article class="commitment-kpi tone-danger">
+                  <span>Vencidos</span>
+                  <strong id="dashboard-commitments-overdue">0</strong>
+                </article>
+                <article class="commitment-kpi tone-warning">
+                  <span>Vencen hoy</span>
+                  <strong id="dashboard-commitments-today">0</strong>
+                </article>
+                <article class="commitment-kpi tone-caution">
+                  <span>Proximos</span>
+                  <strong id="dashboard-commitments-upcoming">0</strong>
+                </article>
+                <article class="commitment-kpi tone-info">
+                  <span>Pendientes</span>
+                  <strong id="dashboard-commitments-pending">0</strong>
+                </article>
+                <article class="commitment-kpi tone-success">
+                  <span>Cerrados</span>
+                  <strong id="dashboard-commitments-closed">0</strong>
+                </article>
+              </div>
+              <div class="commitments-alerts" id="dashboard-commitments-alerts"></div>
+            </section>
+          </div>
+
               <div class="charts-grid">
                 <article class="chart-card">
                   <h3>Sprint Actual / Remaining Days</h3>
