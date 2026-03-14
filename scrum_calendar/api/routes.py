@@ -497,6 +497,13 @@ def require_user(db: Session, token: Optional[str]) -> Usuario:
     return user
 
 
+def require_task_write_access(user: Usuario, task: Task) -> None:
+    if user.rol == "admin":
+        return
+    if task.creado_por_usuario_id != user.id:
+        raise HTTPException(status_code=403, detail="Sin permisos")
+
+
 def get_current_user(
     scrum_session: Optional[str] = Cookie(default=None),
     db: Session = Depends(get_db),
@@ -5059,6 +5066,7 @@ def actualizar_task(
     task = db.get(Task, task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task no encontrada")
+    require_task_write_access(user, task)
 
     prev_estado = task.estado
     prev_start_date = getattr(task, "start_date", None)
@@ -5179,10 +5187,11 @@ def eliminar_task(
     db: Session = Depends(get_db),
     scrum_session: Optional[str] = Cookie(default=None),
 ):
-    require_user(db, scrum_session)
+    user = require_user(db, scrum_session)
     task = db.get(Task, task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task no encontrada")
+    require_task_write_access(user, task)
     db.delete(task)
     db.commit()
     return None

@@ -47,8 +47,7 @@ class Settings(BaseSettings):
 
     @property
     def cookie_secure(self) -> bool:
-        is_production = self.app_env.strip().lower() == "production"
-        return bool(self.session_cookie_secure or is_production)
+        return bool(self.session_cookie_secure)
 
 
 settings = Settings()

@@ -12,10 +12,19 @@ services:
 
   api:
     build: .
-    env_file:
-      - .env.example
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://${DB_USER:-scrum_user}:${DB_PASSWORD:-scrum_pass}@db:5432/${DB_NAME:-scrum_calendar}}
+      APP_ENV: ${APP_ENV:-development}
+      CORS_ORIGINS_RAW: ${CORS_ORIGINS_RAW:-http://localhost:8000}
+      CORS_ALLOW_CREDENTIALS: ${CORS_ALLOW_CREDENTIALS:-false}
+      PBKDF2_ROUNDS: ${PBKDF2_ROUNDS:-600000}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      DISABLE_DOCS_IN_PRODUCTION: ${DISABLE_DOCS_IN_PRODUCTION:-true}
+      LOGIN_RATE_LIMIT_ENABLED: ${LOGIN_RATE_LIMIT_ENABLED:-true}
+      LOGIN_RATE_LIMIT_MAX_ATTEMPTS: ${LOGIN_RATE_LIMIT_MAX_ATTEMPTS:-8}
+      LOGIN_RATE_LIMIT_WINDOW_SECONDS: ${LOGIN_RATE_LIMIT_WINDOW_SECONDS:-900}
+      LOGIN_RATE_LIMIT_BLOCK_SECONDS: ${LOGIN_RATE_LIMIT_BLOCK_SECONDS:-900}
+      SECURITY_AUDIT_LOG_ENABLED: ${SECURITY_AUDIT_LOG_ENABLED:-true}
     depends_on:
       - db
     ports:
