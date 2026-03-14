@@ -9305,15 +9305,42 @@
         .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
     };
 
+    const getTaskSegmentsManagerItems = () =>
+      [...(state.tasksSegments || [])]
+        .map((segment) => {
+          const nombre = normalizeSegmentName(segment?.nombre || segment);
+          const key = normalizeSegmentKey(nombre);
+          if (!nombre || !key) return null;
+          return {
+            id: Number(segment?.id || 0) || 0,
+            key,
+            nombre,
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
+
     const ensureTaskSegmentCatalogEntry = (value) => {
-      const name = normalizeSegmentName(value);
+      const source = value && typeof value === "object" ? value : null;
+      const name = normalizeSegmentName(source?.nombre || value);
       const key = normalizeSegmentKey(name);
       if (!name || !key) return;
-      const exists = (state.tasksSegments || []).some(
-        (segment) => normalizeSegmentKey(segment?.nombre || segment) === key
-      );
-      if (exists) return;
-      state.tasksSegments = [...(state.tasksSegments || []), { nombre: name }];
+      const nextId = Number(source?.id || 0) || 0;
+      let found = false;
+      state.tasksSegments = (state.tasksSegments || []).map((segment) => {
+        const currentKey = normalizeSegmentKey(segment?.nombre || segment);
+        if (currentKey !== key) return segment;
+        found = true;
+        const currentId = Number(segment?.id || 0) || 0;
+        return {
+          ...(typeof segment === "object" && segment ? segment : {}),
+          ...(source && typeof source === "object" ? source : {}),
+          id: nextId || currentId || undefined,
+          nombre: name,
+        };
+      });
+      if (found) return;
+      state.tasksSegments = [...(state.tasksSegments || []), nextId ? { id: nextId, nombre: name } : { nombre: name }];
     };
 
     const sanitizeTaskSegmentFilter = () => {
@@ -9501,7 +9528,7 @@
       const list = form.querySelector("#tasks-segment-modal-list");
       if (!list) return form;
       list.innerHTML = "";
-      const segments = getTaskSegmentsCatalog();
+      const segments = getTaskSegmentsManagerItems();
       if (!segments.length) {
         const empty = document.createElement("p");
         empty.className = "empty mb-0";
@@ -12788,7 +12815,7 @@
               submitBtn,
               async () => {
                 const created = await postJson("/tasks/segments", { nombre });
-                ensureTaskSegmentCatalogEntry(created?.nombre || nombre);
+                ensureTaskSegmentCatalogEntry(created || nombre);
               },
               "Guardando..."
             );
