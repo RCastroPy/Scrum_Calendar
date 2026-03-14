@@ -10643,6 +10643,15 @@
     const buildBacklogContext = (filtered, all) => {
       const byId = new Map((all || []).map((t) => [String(t.id), t]));
       const keep = new Map();
+      const statusFilter = (state.tasksStatusFilter || "").trim().toLowerCase();
+      const statusSet = new Set(
+        (state.tasksFilters?.statuses || []).map((value) => String(value || "").trim().toLowerCase()).filter(Boolean)
+      );
+      const statusAllowed = statusFilter ? new Set([statusFilter]) : statusSet.size ? statusSet : null;
+      const canKeepParentByStatus = (task) => {
+        if (!statusAllowed) return true;
+        return statusAllowed.has(String(task?.estado || "").trim().toLowerCase());
+      };
       (filtered || []).forEach((t) => {
         keep.set(String(t.id), t);
       });
@@ -10652,6 +10661,7 @@
           const parent = byId.get(parentId);
           if (!parent) break;
           if (keep.has(parentId)) break;
+          if (!canKeepParentByStatus(parent)) break;
           keep.set(parentId, parent);
           parentId = parent.parent_id ? String(parent.parent_id) : "";
         }
