@@ -527,6 +527,10 @@ class TaskSegmentCreate(BaseModel):
     nombre: str
 
 
+class TaskSegmentUpdate(BaseModel):
+    nombre: str
+
+
 class TaskSegmentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

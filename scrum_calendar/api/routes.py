@@ -95,6 +95,7 @@ from api.schemas import (
     TaskOut,
     TaskUpdate,
     TaskSegmentCreate,
+    TaskSegmentUpdate,
     TaskSegmentOut,
     TaskCommentCreate,
     TaskCommentUpdate,
@@ -4977,6 +4978,74 @@ def crear_task_segment(
     if not created:
         raise HTTPException(status_code=500, detail="No se pudo crear el segmento")
     return created
+
+
+@router.put("/tasks/segments/{segment_id}", response_model=TaskSegmentOut)
+def actualizar_task_segment(
+    segment_id: int,
+    payload: TaskSegmentUpdate,
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    user = require_user(db, scrum_session)
+    segment = (
+        db.query(TaskSegment)
+        .filter(TaskSegment.id == segment_id, TaskSegment.usuario_id == user.id)
+        .first()
+    )
+    if not segment:
+        raise HTTPException(status_code=404, detail="Segmento no encontrado")
+    old_name = clean_label(segment.nombre)
+    old_key = normalize_text(old_name)
+    new_name = clean_label(payload.nombre)
+    new_key = normalize_text(new_name)
+    if not new_name:
+        raise HTTPException(status_code=400, detail="Nombre requerido")
+    duplicate = (
+        db.query(TaskSegment)
+        .filter(
+            TaskSegment.usuario_id == user.id,
+            TaskSegment.nombre_key == new_key,
+            TaskSegment.id != segment.id,
+        )
+        .first()
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Ya existe un segmento con ese nombre")
+    segment.nombre = new_name
+    segment.nombre_key = new_key
+    if old_key != new_key:
+        user_tasks = db.query(Task).filter(Task.creado_por_usuario_id == user.id).all()
+        for task in user_tasks:
+            if normalize_text(clean_label(task.segmento or "")) == old_key:
+                task.segmento = new_name
+    db.commit()
+    db.refresh(segment)
+    return segment
+
+
+@router.delete("/tasks/segments/{segment_id}", status_code=status.HTTP_204_NO_CONTENT)
+def eliminar_task_segment(
+    segment_id: int,
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    user = require_user(db, scrum_session)
+    segment = (
+        db.query(TaskSegment)
+        .filter(TaskSegment.id == segment_id, TaskSegment.usuario_id == user.id)
+        .first()
+    )
+    if not segment:
+        raise HTTPException(status_code=404, detail="Segmento no encontrado")
+    segment_key = normalize_text(clean_label(segment.nombre))
+    user_tasks = db.query(Task).filter(Task.creado_por_usuario_id == user.id).all()
+    for task in user_tasks:
+        if normalize_text(clean_label(task.segmento or "")) == segment_key:
+            task.segmento = None
+    db.delete(segment)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.put("/tasks/{task_id}", response_model=TaskOut)

@@ -886,11 +886,12 @@
   function closeAdminModal(resetForm = false) {
     const modal = qs("#admin-edit-modal");
     if (!modal || !modalState.form) return;
+    const closingForm = modalState.form;
     if (modalState.placeholder && modalState.placeholder.parentNode) {
       modalState.placeholder.parentNode.insertBefore(modalState.form, modalState.placeholder);
       modalState.placeholder.remove();
     }
-    if (resetForm) {
+    if (resetForm && typeof modalState.form.reset === "function") {
       modalState.form.reset();
       const defaultText = modalState.form.dataset.defaultText || "Guardar";
       resetFormMode(modalState.form, defaultText);
@@ -898,6 +899,9 @@
     modalState.form = null;
     modalState.placeholder = null;
     modal.classList.remove("open");
+    if (closingForm) {
+      closingForm.dispatchEvent(new CustomEvent("adminmodal:closed"));
+    }
   }
 
   function formatDate(value) {
@@ -2530,9 +2534,9 @@
       });
     }
 
-    if (!form.dataset.bound) {
-      form.dataset.bound = "true";
-      form.addEventListener("submit", async (event) => {
+      if (!form.dataset.bound) {
+        form.dataset.bound = "true";
+        form.addEventListener("submit", async (event) => {
         event.preventDefault();
         if (!typeSelect?.value) {
           setStatus("#day-event-status", "Selecciona el tipo de evento.", "error");
@@ -9312,6 +9316,51 @@
       state.tasksSegments = [...(state.tasksSegments || []), { nombre: name }];
     };
 
+    const sanitizeTaskSegmentFilter = () => {
+      const activeName = normalizeSegmentName(state.tasksSegmentFilter || "");
+      const activeKey = normalizeSegmentKey(activeName);
+      if (!activeKey) return false;
+      const catalogHas = getTaskSegmentsCatalog().some((segment) => segment.key === activeKey);
+      const tasksHave = (state.tasksCache || []).some((task) => normalizeSegmentKey(task?.segmento || "") === activeKey);
+      if (catalogHas || tasksHave) return false;
+      state.tasksSegmentFilter = "";
+      saveTasksFiltersState();
+      return true;
+    };
+
+    const renameTaskSegmentInCache = (oldName, newName) => {
+      const oldKey = normalizeSegmentKey(oldName || "");
+      const cleanNew = normalizeSegmentName(newName || "");
+      if (!oldKey || !cleanNew) return;
+      state.tasksSegments = (state.tasksSegments || []).map((segment) => {
+        const currentName = segment?.nombre || segment;
+        if (normalizeSegmentKey(currentName) !== oldKey) return segment;
+        return { ...(typeof segment === "object" && segment ? segment : {}), nombre: cleanNew };
+      });
+      state.tasksCache = (state.tasksCache || []).map((task) => {
+        if (normalizeSegmentKey(task?.segmento || "") !== oldKey) return task;
+        return { ...task, segmento: cleanNew };
+      });
+      if (normalizeSegmentKey(state.tasksSegmentFilter || "") === oldKey) {
+        state.tasksSegmentFilter = cleanNew;
+      }
+    };
+
+    const deleteTaskSegmentInCache = (name) => {
+      const key = normalizeSegmentKey(name || "");
+      if (!key) return;
+      state.tasksSegments = (state.tasksSegments || []).filter(
+        (segment) => normalizeSegmentKey(segment?.nombre || segment) !== key
+      );
+      state.tasksCache = (state.tasksCache || []).map((task) => {
+        if (normalizeSegmentKey(task?.segmento || "") !== key) return task;
+        return { ...task, segmento: null };
+      });
+      if (normalizeSegmentKey(state.tasksSegmentFilter || "") === key) {
+        state.tasksSegmentFilter = "";
+      }
+    };
+
     const populateTaskSegmentSelect = (selectEl, currentValue = "") => {
       if (!selectEl) return;
       const current = normalizeSegmentName(currentValue);
@@ -9418,10 +9467,22 @@
         return form;
       }
       segments.forEach((segment) => {
-        const badge = document.createElement("span");
-        badge.className = "tasks-segment-badge";
-        badge.textContent = segment.nombre;
-        list.appendChild(badge);
+        const row = document.createElement("div");
+        row.className = "d-flex align-items-center justify-content-between gap-2 mb-2";
+        row.dataset.segmentId = String(segment.id || "");
+        row.dataset.segmentName = segment.nombre;
+        row.innerHTML = `
+          <span class="tasks-segment-badge mb-0">${segment.nombre}</span>
+          <span class="d-inline-flex align-items-center gap-1">
+            <button class="icon-btn" type="button" data-action="edit-segment" title="Editar segmento" aria-label="Editar segmento">
+              <i class="bi bi-pencil" aria-hidden="true"></i>
+            </button>
+            <button class="icon-btn text-danger" type="button" data-action="delete-segment" title="Eliminar segmento" aria-label="Eliminar segmento">
+              <i class="bi bi-trash" aria-hidden="true"></i>
+            </button>
+          </span>
+        `;
+        list.appendChild(row);
       });
       return form;
     };
@@ -12553,6 +12614,7 @@
         ]);
         state.tasksCache = Array.isArray(items) ? items : [];
         state.tasksSegments = Array.isArray(segments) ? segments : [];
+        sanitizeTaskSegmentFilter();
         const validTaskIds = new Set((state.tasksCache || []).map((t) => String(t.id)));
         Object.keys(state.tasksCommentCounts || {}).forEach((key) => {
           if (!validTaskIds.has(String(key))) {
@@ -12686,11 +12748,68 @@
             if (input) input.value = "";
             renderTaskSegmentsManager();
             renderTaskSegmentButtons();
+            renderAll();
           } catch (err) {
             if (status) {
               status.textContent = err.message || "No se pudo crear el segmento.";
               status.dataset.type = "error";
             }
+          }
+        });
+        taskSegmentsForm.addEventListener("click", async (event) => {
+          const btn = event.target.closest("button[data-action]");
+          if (!btn) return;
+          const status = taskSegmentsForm.querySelector("#tasks-segment-status");
+          const row = btn.closest("[data-segment-id][data-segment-name]");
+          const segmentId = Number(row?.dataset.segmentId || 0);
+          const currentName = String(row?.dataset.segmentName || "").trim();
+          if (!segmentId || !currentName) return;
+          try {
+            if (status) {
+              status.textContent = "";
+              delete status.dataset.type;
+            }
+            if (btn.dataset.action === "edit-segment") {
+              const nextName = window.prompt("Editar segmento", currentName);
+              if (nextName == null) return;
+              const cleanNext = normalizeSegmentName(nextName);
+              if (!cleanNext || cleanNext === currentName) return;
+              btn.disabled = true;
+              const updated = await putJson(`/tasks/segments/${segmentId}`, { nombre: cleanNext });
+              renameTaskSegmentInCache(currentName, updated?.nombre || cleanNext);
+              saveTasksFiltersState();
+              renderTaskSegmentsManager();
+              renderTaskSegmentButtons();
+              renderAll();
+              if (status) {
+                status.textContent = "Segmento actualizado.";
+                status.dataset.type = "ok";
+              }
+            } else if (btn.dataset.action === "delete-segment") {
+              if (!window.confirm(`Eliminar el segmento "${currentName}"?`)) return;
+              btn.disabled = true;
+              const res = await fetchWithFallback(`/tasks/segments/${segmentId}`, { method: "DELETE" });
+              if (!res.ok) {
+                const text = await res.text();
+                throw new Error(text || "No se pudo eliminar el segmento.");
+              }
+              deleteTaskSegmentInCache(currentName);
+              saveTasksFiltersState();
+              renderTaskSegmentsManager();
+              renderTaskSegmentButtons();
+              renderAll();
+              if (status) {
+                status.textContent = "Segmento eliminado.";
+                status.dataset.type = "ok";
+              }
+            }
+          } catch (err) {
+            if (status) {
+              status.textContent = err.message || "No se pudo actualizar el segmento.";
+              status.dataset.type = "error";
+            }
+          } finally {
+            btn.disabled = false;
           }
         });
       }
@@ -12702,9 +12821,19 @@
       };
       const toggleFilterPanel = (open) => {
         if (!filterPanel) return;
-        const next = open ?? filterPanel.classList.contains("hidden");
-        filterPanel.classList.toggle("hidden", !next);
-        syncFiltersButtonState(next);
+        const isOpen = qs("#admin-edit-modal")?.classList.contains("open") && !filterPanel.classList.contains("hidden");
+        const next = open ?? !isOpen;
+        if (next) {
+          filterPanel.classList.remove("hidden");
+          openAdminModal(filterPanel, "Filtros avanzados");
+          syncFiltersButtonState(true);
+          return;
+        }
+        filterPanel.classList.add("hidden");
+        syncFiltersButtonState(false);
+        if (modalState.form === filterPanel) {
+          closeAdminModal(false);
+        }
       };
       const toggleColumnsPanel = (open) => {
         if (!columnsPanel) return;
@@ -12730,6 +12859,13 @@
       if (filterCloseBtn && !filterCloseBtn.dataset.bound) {
         filterCloseBtn.dataset.bound = "true";
         filterCloseBtn.addEventListener("click", () => toggleFilterPanel(false));
+      }
+      if (filterPanel && !filterPanel.dataset.boundModalClose) {
+        filterPanel.dataset.boundModalClose = "true";
+        filterPanel.addEventListener("adminmodal:closed", () => {
+          filterPanel.classList.add("hidden");
+          syncFiltersButtonState(false);
+        });
       }
       syncFiltersButtonState(filterPanel ? !filterPanel.classList.contains("hidden") : false);
 
