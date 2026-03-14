@@ -1,26 +1,15 @@
 (() => {
-  // In PRD we must never "fallback" to localhost/127.0.0.1 because it causes long network timeouts
-  // (5-10s) on phones/browsers before eventually reaching the real host. Keep fallbacks only for local dev.
-  const isLocalHost = ["localhost", "127.0.0.1"].includes(window.location.hostname);
   const API_HOSTS = Array.from(
-    new Set(
-      (isLocalHost
-        ? [window.location.hostname, "localhost", "127.0.0.1"]
-        : [window.location.hostname]
-      ).filter(Boolean)
-    )
+    new Set([window.location.hostname, "localhost", "127.0.0.1"].filter(Boolean))
   );
   let API_BASE = `http://${API_HOSTS[0]}:8000`;
   const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-  const DEFAULT_HTTP_TIMEOUT_MS = 4500;
-  const DEFAULT_HTTP_RETRIES = 2;
 
   const xhrRequest = (url, options = {}) =>
     new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open(options.method || "GET", url, true);
       xhr.withCredentials = true;
-      xhr.timeout = options.timeoutMs || DEFAULT_HTTP_TIMEOUT_MS;
       const headers = options.headers || {};
       Object.entries(headers).forEach(([key, value]) => {
         if (value !== undefined) {
@@ -37,41 +26,23 @@
         resolve(response);
       };
       xhr.onerror = () => reject(new Error("XHR error"));
-      xhr.ontimeout = () => reject(new Error("XHR timeout"));
       xhr.send(options.body || null);
     });
-
-  const fetchRequest = async (url, options = {}) => {
-    const timeoutMs = options.timeoutMs || DEFAULT_HTTP_TIMEOUT_MS;
-    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-    const timer = controller
-      ? window.setTimeout(() => controller.abort(), timeoutMs)
-      : null;
-    try {
-      const { timeoutMs: _timeoutMs, ...rest } = options || {};
-      return await fetch(url, controller ? { ...rest, signal: controller.signal } : rest);
-    } finally {
-      if (timer) window.clearTimeout(timer);
-    }
-  };
 
   const fetchWithFallback = async (path, options) => {
     let lastError;
     for (const host of API_HOSTS) {
       const base = `http://${host}:8000`;
-      for (let attempt = 0; attempt < DEFAULT_HTTP_RETRIES; attempt += 1) {
-        try {
-          const mergedOptions = { credentials: "include", cache: "no-store", ...options };
-          const useFetch =
-            !isSafari || (window.location.port === "8000" && host === window.location.hostname);
-          const res = useFetch
-            ? await fetchRequest(`${base}${path}`, mergedOptions)
-            : await xhrRequest(`${base}${path}`, mergedOptions);
-          API_BASE = base;
-          return res;
-        } catch (err) {
-          lastError = err;
-        }
+      try {
+        const mergedOptions = { credentials: "include", ...options };
+        const useFetch = !isSafari || (window.location.port === "8000" && host === window.location.hostname);
+        const res = useFetch
+          ? await fetch(`${base}${path}`, mergedOptions)
+          : await xhrRequest(`${base}${path}`, mergedOptions);
+        API_BASE = base;
+        return res;
+      } catch (err) {
+        lastError = err;
       }
     }
     throw lastError;
@@ -134,10 +105,9 @@
     dailyPointsUserRows: [],
     dailyPointsUserSprintColumns: [],
     dailyPointsShowLabels: false,
-	    dailySprintManual: false,
-	    dailyGanttZoom: 1,
+    dailySprintManual: false,
     dailyRealtimeSignature: "",
-		    dailySprintOpen: false,
+	    dailySprintOpen: false,
 	    tasksView: "backlog",
 	    tasksSearch: "",
 	    tasksStatusFilter: "",
@@ -164,27 +134,24 @@
     pokerSessionId: "",
     pokerPresence: { total: 0, personas: [] },
     pokerVotes: [],
-	    tableSort: {},
-	    tableFilters: {},
-	    tableDataPage: {},
-	    tableDataState: {},
-	    releaseStatusFilter: "",
-	    releaseStatusValueFilter: "",
-	    releaseQuarterFilter: "",
-	    releaseCompNewFilters: [],
-	    releaseTypeFilters: [],
-	    releaseGanttQuarterFilter: "",
-	    releaseGanttQuarterInitialized: false,
-	    releaseGanttZoom: 1,
-	    releaseItemsSource: "api",
-	    releaseItemsFetchError: "",
-	    releaseTableRecoveryTried: false,
-	    releaseColumnsConfig: null,
-	    releaseColumnsPanelOpen: false,
-	    serverNow: null,
-	    serverToday: null,
-	    serverTimezone: "America/Asuncion",
-	  };
+    tableSort: {},
+    tableFilters: {},
+    tableDataPage: {},
+    tableDataState: {},
+    releaseStatusFilter: "",
+    releaseStatusValueFilter: "",
+    releaseQuarterFilter: "",
+    releaseCompNewFilters: [],
+    releaseTypeFilters: [],
+    releaseItemsSource: "api",
+    releaseItemsFetchError: "",
+    releaseTableRecoveryTried: false,
+    releaseColumnsConfig: null,
+    releaseColumnsPanelOpen: false,
+    serverNow: null,
+    serverToday: null,
+    serverTimezone: "America/Asuncion",
+  };
 
   const getAdminSelection = (tableKey) => {
     state.adminSelections = state.adminSelections || {};
@@ -481,20 +448,6 @@
     const socketKey = `__retroSocket_${key}`;
     const tokenKey = `__retroSocket_${key}_token`;
     const retryKey = `__retroSocketRetry_${key}`;
-    const onMsgKey = `__retroSocketOnMessage_${key}`;
-    const visKey = `__retroSocketVis_${key}`;
-    window[onMsgKey] = onMessage;
-    if (!window[visKey]) {
-      window[visKey] = true;
-      document.addEventListener("visibilitychange", () => {
-        if (document.hidden) return;
-        const t = window[tokenKey];
-        const cb = window[onMsgKey];
-        if (t && typeof cb === "function") {
-          ensureRetroSocket(t, key, cb);
-        }
-      });
-    }
     const current = window[socketKey];
     const currentToken = window[tokenKey];
     if (current && current.readyState <= 1 && currentToken === token) return;
@@ -522,7 +475,7 @@
       if (socket.readyState === 1) {
         socket.send("ping");
       }
-    }, 5000);
+    }, 15000);
     socket.addEventListener("message", (event) => {
       if (typeof onMessage === "function") {
         let payload = null;
@@ -540,8 +493,7 @@
       if (document.hidden) return;
       if (window[retryKey]) window.clearTimeout(window[retryKey]);
       window[retryKey] = window.setTimeout(() => {
-        const cb = window[onMsgKey] || onMessage;
-        ensureRetroSocket(token, key, cb);
+        ensureRetroSocket(token, key, onMessage);
       }, 2000);
     });
     socket.addEventListener("error", () => {
@@ -570,20 +522,6 @@
     const socketKey = `__pokerSocket_${key}`;
     const tokenKey = `__pokerSocket_${key}_token`;
     const retryKey = `__pokerSocketRetry_${key}`;
-    const onMsgKey = `__pokerSocketOnMessage_${key}`;
-    const visKey = `__pokerSocketVis_${key}`;
-    window[onMsgKey] = onMessage;
-    if (!window[visKey]) {
-      window[visKey] = true;
-      document.addEventListener("visibilitychange", () => {
-        if (document.hidden) return;
-        const t = window[tokenKey];
-        const cb = window[onMsgKey];
-        if (t && typeof cb === "function") {
-          ensurePokerSocket(t, key, cb);
-        }
-      });
-    }
     const current = window[socketKey];
     const currentToken = window[tokenKey];
     if (current && current.readyState <= 1 && currentToken === token) return current;
@@ -601,7 +539,7 @@
       if (socket.readyState === 1) {
         socket.send("ping");
       }
-    }, 5000);
+    }, 15000);
     socket.addEventListener("open", () => {
       const pending = window[`__pokerPresencePending_${key}`];
       if (pending) {
@@ -629,8 +567,7 @@
       if (document.hidden) return;
       if (window[retryKey]) window.clearTimeout(window[retryKey]);
       window[retryKey] = window.setTimeout(() => {
-        const cb = window[onMsgKey] || onMessage;
-        ensurePokerSocket(token, key, cb);
+        ensurePokerSocket(token, key, onMessage);
       }, 2000);
     });
     socket.addEventListener("error", () => {
@@ -3357,16 +3294,6 @@
     if (!select) return;
     const applyCells = (cells) => {
       const list = Array.isArray(cells) ? cells : [];
-      // Some views (retro/poker) require a specific cell to work; if the user has no saved selection,
-      // default to the first available cell so buttons like "Preparar link" don't appear to do nothing.
-      if (!state.selectedCelulaId && (pageName === "retro" || pageName === "poker") && list.length) {
-        state.selectedCelulaId = String(list[0].id);
-        try {
-          localStorage.setItem("scrum_calendar_celula_id", state.selectedCelulaId);
-        } catch (err) {
-          // ignore storage errors
-        }
-      }
       fillSelect(select, list, { includeEmpty: true, sortByLabel: true });
       if (select.options.length) {
         select.options[0].textContent = "Todas";
@@ -4016,23 +3943,6 @@
     const historyTable = qs("#oneonone-history-table");
     const commitmentsTable = qs("#oneonone-commitments-table");
     const commitmentsSummary = qs("#oneonone-commitments-summary");
-    const commitmentsStatusFilter = qs("#oneonone-commitments-status-filter");
-    const commitmentsScopePersonBtn = qs("#oneonone-commitments-scope-person");
-    const commitmentsScopeCellBtn = qs("#oneonone-commitments-scope-cell");
-    const editModal = qs("#oneonone-edit-modal");
-    const editModalTitle = qs("#oneonone-edit-modal-title");
-    const editModalDate = qs("#oneonone-edit-modal-date");
-    const editChecklistEl = qs("#oneonone-edit-checklist");
-    const editChecklistAddBtn = qs("#oneonone-edit-checklist-add");
-    const editAgreementsEl = qs("#oneonone-edit-agreements");
-    const editAgreementsAddBtn = qs("#oneonone-edit-agreements-add");
-    const editMoodSelect = qs("#oneonone-edit-mood");
-    const editMoodLabel = qs("#oneonone-edit-mood-label");
-    const editFeedbackPos = qs("#oneonone-edit-feedback-pos");
-    const editFeedbackNeg = qs("#oneonone-edit-feedback-neg");
-    const editGrowth = qs("#oneonone-edit-growth");
-    const editSaveBtn = qs("#oneonone-edit-save");
-    const editCancelBtn = qs("#oneonone-edit-cancel");
     if (!membersList || !calendarGrid || !eventsList || !kpiWrap) return;
 
     const normalizeLabel = (value) => String(value ?? "").trim().toLowerCase();
@@ -4076,8 +3986,6 @@
       if (emptyEl) emptyEl.textContent = "";
       kpiWrap.innerHTML = "";
       if (historyTable) historyTable.innerHTML = "";
-      if (commitmentsTable) commitmentsTable.innerHTML = "";
-      if (commitmentsSummary) commitmentsSummary.textContent = "";
       calendarGrid.innerHTML = "";
       return;
     }
@@ -4100,8 +4008,6 @@
       if (feedbackNeg) feedbackNeg.value = "";
       if (growthEl) growthEl.value = "";
       if (historyTable) historyTable.innerHTML = "";
-      if (commitmentsTable) commitmentsTable.innerHTML = "";
-      if (commitmentsSummary) commitmentsSummary.textContent = "";
       calendarGrid.innerHTML = "";
       return;
     }
@@ -4518,10 +4424,6 @@
           id: item.id ?? Date.now() + Math.random(),
           text: item.text ?? "",
           due: item.due ?? "",
-          estado:
-            item.estado ||
-            item.status ||
-            (Boolean(item.done) ? "cerrado" : "pendiente"),
           done: Boolean(item.done),
         })),
         mood: payload.mood || "",
@@ -4685,570 +4587,97 @@
         .join(" · ");
     };
 
-    const upsertSessionCaches = (saved, personaNameHint = "") => {
-      if (!saved) return;
-      state.oneononeSessionsCache = state.oneononeSessionsCache || {};
-
-      // Keep selected-persona history list in sync.
-      if (String(saved.persona_id) === String(selected.id)) {
-        if (Array.isArray(sessions)) {
-          const idx = sessions.findIndex((item) => String(item.id) === String(saved.id));
-          if (idx >= 0) {
-            sessions = sessions.map((item) => (String(item.id) === String(saved.id) ? saved : item));
-          } else {
-            sessions.unshift(saved);
-          }
-          state.oneononeSessionsCache[sessionsKey] = sessions;
-        }
-      }
-
-      // Keep the per-person cache in sync (used to build commitments across the cell).
-      if (saved.persona_id) {
-        const key = `${state.selectedCelulaId}:${saved.persona_id}`;
-        const cached = state.oneononeSessionsCache[key];
-        if (Array.isArray(cached)) {
-          const idx = cached.findIndex((item) => String(item.id) === String(saved.id));
-          if (idx >= 0) {
-            state.oneononeSessionsCache[key] = cached.map((item) =>
-              String(item.id) === String(saved.id) ? saved : item
-            );
-          } else {
-            state.oneononeSessionsCache[key] = [saved, ...cached];
-          }
-        }
-      }
-
-      // Update the commitments source list used by renderCommitments().
-      const existingIdx = commitmentSessions.findIndex((item) => String(item.id) === String(saved.id));
-      const persona_nombre =
-        (existingIdx >= 0 && commitmentSessions[existingIdx]?.persona_nombre) ||
-        personaNameHint ||
-        fullName ||
-        "";
-      const merged = { ...saved, persona_nombre };
-      if (existingIdx >= 0) {
-        commitmentSessions[existingIdx] = merged;
-      } else {
-        commitmentSessions.unshift(merged);
-      }
-    };
-
-    const bindModalShell = (modal) => {
-      if (!modal || modal.dataset.bound) return;
-      modal.dataset.bound = "true";
-      const closeBtn = modal.querySelector(".modal-close");
-      if (closeBtn) {
-        closeBtn.addEventListener("click", () => {
-          modal.classList.remove("open");
-          modal.setAttribute("aria-hidden", "true");
-          if (modal.id === "oneonone-edit-modal") {
-            state.oneononeEditSessionId = "";
-            state.oneononeEditDraft = null;
-          }
-        });
-      }
-      modal.addEventListener("click", (event) => {
-        if (event.target === modal) {
-          modal.classList.remove("open");
-          modal.setAttribute("aria-hidden", "true");
-          if (modal.id === "oneonone-edit-modal") {
-            state.oneononeEditSessionId = "";
-            state.oneononeEditDraft = null;
-          }
-        }
-      });
-      document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape") {
-          modal.classList.remove("open");
-          modal.setAttribute("aria-hidden", "true");
-          if (modal.id === "oneonone-edit-modal") {
-            state.oneononeEditSessionId = "";
-            state.oneononeEditDraft = null;
-          }
-        }
-      });
-    };
-
-    const openOneOnOneEditModal = (session) => {
-      if (!editModal || !session) return;
-      bindModalShell(editModal);
-
-      const normalizeChecklist = (items) =>
-        (Array.isArray(items) ? items : []).map((item) => ({
-          id: item?.id ?? Date.now() + Math.random(),
-          text: item?.text ?? "",
-          done: Boolean(item?.done),
-        }));
-      const normalizeAgreements = (items) =>
-        (Array.isArray(items) ? items : []).map((item) => ({
-          id: item?.id ?? Date.now() + Math.random(),
-          text: item?.text ?? "",
-          due: item?.due ?? "",
-          estado:
-            item?.estado || item?.status || (Boolean(item?.done) ? "cerrado" : "pendiente"),
-          done: Boolean(item?.done),
-        }));
-
-      state.oneononeEditSessionId = String(session.id);
-      state.oneononeEditDraft = {
-        fecha: session.fecha,
-        checklist: normalizeChecklist(session.checklist),
-        agreements: normalizeAgreements(session.agreements),
-        mood: session.mood || "",
-        feedback_pos: session.feedback_pos || "",
-        feedback_neg: session.feedback_neg || "",
-        growth: session.growth || "",
-      };
-
-      const renderEditList = (container, items, opts = {}) => {
-        if (!container) return;
-        container.innerHTML = "";
-        items.forEach((item) => {
-          const row = document.createElement("div");
-          row.className = "note-row";
-
-          const checkbox = document.createElement("input");
-          checkbox.type = "checkbox";
-          checkbox.checked = Boolean(item.done);
-          checkbox.addEventListener("change", () => {
-            item.done = checkbox.checked;
-          });
-
-          const textInput = document.createElement("input");
-          textInput.type = "text";
-          textInput.placeholder = opts.placeholder || "Detalle";
-          textInput.value = item.text || "";
-          textInput.addEventListener("input", () => {
-            item.text = textInput.value;
-          });
-
-          row.appendChild(checkbox);
-          row.appendChild(textInput);
-
-          if (opts.withDate) {
-            const dateInput = document.createElement("input");
-            dateInput.type = "date";
-            dateInput.value = item.due || "";
-            dateInput.addEventListener("input", () => {
-              item.due = dateInput.value;
-            });
-            row.appendChild(dateInput);
-          }
-
-          const removeBtn = document.createElement("button");
-          removeBtn.type = "button";
-          removeBtn.className = "note-remove";
-          removeBtn.textContent = "x";
-          removeBtn.addEventListener("click", () => {
-            const index = items.findIndex((entry) => String(entry.id) === String(item.id));
-            if (index >= 0) {
-              items.splice(index, 1);
-              renderEditModal();
-            }
-          });
-          row.appendChild(removeBtn);
-          container.appendChild(row);
-        });
-      };
-
-      const renderEditModal = () => {
-        const draft = state.oneononeEditDraft;
-        if (!draft) return;
-        if (editModalTitle) editModalTitle.textContent = "Editar 1:1";
-        if (editModalDate) editModalDate.textContent = formatSessionDate(draft.fecha);
-        renderEditList(editChecklistEl, draft.checklist, { placeholder: "Item" });
-        renderEditList(editAgreementsEl, draft.agreements, { placeholder: "Acuerdo", withDate: true });
-        if (editMoodSelect) editMoodSelect.value = draft.mood || "";
-        if (editMoodLabel) {
-          editMoodLabel.textContent = draft.mood ? `Seleccionado: ${draft.mood}` : "";
-        }
-        if (editFeedbackPos) editFeedbackPos.value = draft.feedback_pos || "";
-        if (editFeedbackNeg) editFeedbackNeg.value = draft.feedback_neg || "";
-        if (editGrowth) editGrowth.value = draft.growth || "";
-      };
-
-      if (editChecklistAddBtn) {
-        editChecklistAddBtn.onclick = () => {
-          state.oneononeEditDraft?.checklist?.push({
-            id: Date.now() + Math.random(),
-            text: "",
-            done: false,
-          });
-          renderEditModal();
-        };
-      }
-      if (editAgreementsAddBtn) {
-        editAgreementsAddBtn.onclick = () => {
-          state.oneononeEditDraft?.agreements?.push({
-            id: Date.now() + Math.random(),
-            text: "",
-            due: "",
-            estado: "pendiente",
-            done: false,
-          });
-          renderEditModal();
-        };
-      }
-
-      if (editMoodSelect) {
-        editMoodSelect.onchange = () => {
-          if (!state.oneononeEditDraft) return;
-          state.oneononeEditDraft.mood = editMoodSelect.value;
-          renderEditModal();
-        };
-      }
-      if (editFeedbackPos) {
-        editFeedbackPos.oninput = () => {
-          if (!state.oneononeEditDraft) return;
-          state.oneononeEditDraft.feedback_pos = editFeedbackPos.value;
-        };
-      }
-      if (editFeedbackNeg) {
-        editFeedbackNeg.oninput = () => {
-          if (!state.oneononeEditDraft) return;
-          state.oneononeEditDraft.feedback_neg = editFeedbackNeg.value;
-        };
-      }
-      if (editGrowth) {
-        editGrowth.oninput = () => {
-          if (!state.oneononeEditDraft) return;
-          state.oneononeEditDraft.growth = editGrowth.value;
-        };
-      }
-
-      if (editCancelBtn) {
-        editCancelBtn.onclick = () => {
-          editModal.classList.remove("open");
-          editModal.setAttribute("aria-hidden", "true");
-          state.oneononeEditSessionId = "";
-          state.oneononeEditDraft = null;
-        };
-      }
-
-      if (editSaveBtn) {
-        editSaveBtn.onclick = async () => {
-          const sessionId = state.oneononeEditSessionId;
-          const draft = state.oneononeEditDraft;
-          if (!sessionId || !draft) return;
-          const agreements = (draft.agreements || []).map((item) => ({
-            id: item.id ?? Date.now() + Math.random(),
-            text: String(item.text || "").trim(),
-            due: item.due || "",
-            estado: item.estado || (Boolean(item.done) ? "cerrado" : "pendiente"),
-            done: Boolean(item.done) || String(item.estado || "") === "cerrado",
-          }));
-          const missing = [];
-          if (!agreements.some((item) => item.text)) missing.push("Acuerdos");
-          if (!draft.mood) missing.push("Estado de animo");
-          if (missing.length) {
-            alert(`Campos obligatorios: ${missing.join(", ")}`);
-            return;
-          }
-          editSaveBtn.disabled = true;
-          try {
-            const updatePayload = {
-              fecha: draft.fecha,
-              checklist: (draft.checklist || []).map((item) => ({
-                id: item.id ?? Date.now() + Math.random(),
-                text: String(item.text || "").trim(),
-                done: Boolean(item.done),
-              })),
-              agreements,
-              mood: draft.mood || "",
-              feedback_pos: draft.feedback_pos || "",
-              feedback_neg: draft.feedback_neg || "",
-              growth: draft.growth || "",
-            };
-            const saved = await putJson(`/oneonone-sessions/${sessionId}`, updatePayload);
-            upsertSessionCaches(saved, fullName || "");
-            editModal.classList.remove("open");
-            editModal.setAttribute("aria-hidden", "true");
-            state.oneononeEditSessionId = "";
-            state.oneononeEditDraft = null;
-            renderSessions();
-          } catch {
-            // ignore
-          } finally {
-            editSaveBtn.disabled = false;
-          }
-        };
-      }
-
-      renderEditModal();
-      editModal.classList.add("open");
-      editModal.setAttribute("aria-hidden", "false");
-    };
-
     const renderCommitments = () => {
       if (!commitmentsTable) return;
       const todayValue = getToday();
-      const scope = state.oneononeCommitmentsScope || "persona"; // "persona" | "celula"
-      const selectedStatuses = new Set(state.oneononeCommitmentStatusFilters || []);
-      const shouldFilterByStatus = selectedStatuses.size > 0;
-      const normalizeEstado = (value, done) => {
-        const raw = String(value || "").trim().toLowerCase();
-        if (raw === "cerrado" || raw === "close" || raw === "closed") return "cerrado";
-        if (raw === "en_progreso" || raw === "en progreso" || raw === "progress") return "en_progreso";
-        if (raw === "pendiente" || raw === "pending") return "pendiente";
-        if (Boolean(done)) return "cerrado";
-        return "pendiente";
-      };
-      const estadoOptions = [
-        { value: "pendiente", label: "Pendiente", className: "status-danger" },
-        { value: "en_progreso", label: "En progreso", className: "status-warn" },
-        { value: "cerrado", label: "Cerrado", className: "status-ok" },
-      ];
-      const estadoToClass = Object.fromEntries(estadoOptions.map((o) => [o.value, o.className]));
       const entries = [];
-
-      const pushAgreement = (entry) => {
-        const normalizedEstado = normalizeEstado(entry.estado, entry.done);
-        if (shouldFilterByStatus && !selectedStatuses.has(normalizedEstado)) return;
-        entry.estado = normalizedEstado;
-        const dueDate = entry.due ? parseDateOnly(entry.due) : null;
-        const todayIso = formatISO(todayValue);
-        const dueIso = dueDate ? formatISO(dueDate) : "";
-        const isToday = Boolean(dueIso && dueIso === todayIso && entry.estado !== "cerrado");
-        const isOverdue = Boolean(dueDate && dueDate < todayValue && entry.estado !== "cerrado");
-        const dueSort = dueDate ? dueDate.getTime() : Number.POSITIVE_INFINITY;
-        const rank = isOverdue ? 0 : 1;
-        entries.push({ ...entry, isToday, isOverdue, dueSort, rank });
-      };
-
-      // Draft agreements (notes) should show up immediately as commitments.
-      (Array.isArray(notes.agreements) ? notes.agreements : []).forEach((item) => {
-        if (!item || !String(item.text || "").trim()) return;
-        pushAgreement({
-          source: "note",
-          agreementId: item.id ?? Date.now() + Math.random(),
-          text: String(item.text || "").trim(),
-          due: item.due || "",
-          estado: normalizeEstado(item.estado, item.done),
-          done: Boolean(item.done),
-          assignedLabel: fullName || "-",
-          sessionDate: "Borrador",
-        });
-      });
-
+      let pendingCount = 0;
+      let overdueCount = 0;
       commitmentSessions.forEach((session) => {
-        if (scope === "persona" && String(session.persona_id) !== String(selected.id)) {
-          return;
-        }
         const agreements = Array.isArray(session.agreements) ? session.agreements : [];
-        agreements.forEach((rawItem) => {
-          if (!rawItem || !String(rawItem.text || "").trim()) return;
-          const agreementId = rawItem.id ?? Date.now() + Math.random();
+        agreements.forEach((item) => {
+          if (!item || !String(item.text || "").trim()) return;
+          if (item.done) return;
+          const dueLabel = item.due ? formatDate(item.due) : "-";
           const assignedLabel =
-            rawItem.assignee ||
-            rawItem.asignado ||
-            rawItem.responsable ||
+            item.assignee ||
+            item.asignado ||
+            item.responsable ||
             session.persona_nombre ||
             fullName ||
             "-";
-          pushAgreement({
-            source: "session",
-            sessionId: session.id,
-            personaId: session.persona_id,
-            agreementId,
-            text: String(rawItem.text || "").trim(),
-            due: rawItem.due || "",
-            estado: normalizeEstado(rawItem.estado, rawItem.done),
-            done: Boolean(rawItem.done),
+          const dueDate = item.due ? parseDateOnly(item.due) : null;
+          let statusLabel = "Pendiente";
+          let statusClass = "status-warn";
+          if (dueDate && dueDate < todayValue) {
+            statusLabel = "Vencido";
+            statusClass = "status-danger";
+            overdueCount += 1;
+          } else {
+            pendingCount += 1;
+          }
+          entries.push({
+            text: item.text,
+            dueLabel,
             assignedLabel,
+            statusLabel,
+            statusClass,
             sessionDate: formatSessionDate(session.fecha),
+            rank: statusLabel === "Vencido" ? 0 : 1,
+            dueSort: dueDate ? dueDate.getTime() : Number.POSITIVE_INFINITY,
           });
         });
       });
-
       if (!entries.length) {
         commitmentsTable.innerHTML = '<p class="helper">Sin compromisos.</p>';
         if (commitmentsSummary) commitmentsSummary.textContent = "";
         return;
       }
-
-      const pendingCount = entries.filter((e) => e.estado === "pendiente").length;
-      const progressCount = entries.filter((e) => e.estado === "en_progreso").length;
-      const closedCount = entries.filter((e) => e.estado === "cerrado").length;
-      const overdueCount = entries.filter((e) => e.isOverdue).length;
       if (commitmentsSummary) {
-        commitmentsSummary.textContent = `Pendiente: ${pendingCount} · En progreso: ${progressCount} · Cerrados: ${closedCount} · Vencidos: ${overdueCount}`;
+        commitmentsSummary.textContent = `Pendientes: ${pendingCount} · Vencidos: ${overdueCount}`;
       }
-
-      const sorted = entries
-        .slice()
+      const rows = entries
         .sort((a, b) => {
           if (a.rank !== b.rank) return a.rank - b.rank;
           if (a.dueSort !== b.dueSort) return a.dueSort - b.dueSort;
           return String(a.text).localeCompare(String(b.text), "es");
-        });
-
-      commitmentsTable.innerHTML = "";
-      const table = document.createElement("table");
-      const thead = document.createElement("thead");
-      thead.innerHTML = `
-        <tr>
-          <th>Compromiso</th>
-          <th>Vence</th>
-          <th>Asignado</th>
-          <th>Estado</th>
-          <th>1:1</th>
-        </tr>
+        })
+        .map(
+          (entry) => `
+            <tr>
+              <td>${entry.text}</td>
+              <td>${entry.dueLabel}</td>
+              <td>${entry.assignedLabel}</td>
+              <td><span class="status-pill ${entry.statusClass}">${entry.statusLabel}</span></td>
+              <td>${entry.sessionDate}</td>
+            </tr>
+          `
+        )
+        .join("");
+      commitmentsTable.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>Compromiso</th>
+              <th>Vence</th>
+              <th>Asignado</th>
+              <th>Estado</th>
+              <th>1:1</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+          </tbody>
+        </table>
       `;
-      const tbody = document.createElement("tbody");
-
-      const setEstadoClass = (select, estado) => {
-        select.classList.remove("status-ok", "status-warn", "status-danger", "status-muted");
-        select.classList.add("status-pill", "session-status-select");
-        select.classList.add(estadoToClass[estado] || "status-muted");
-      };
-
-      const updateNoteAgreement = (agreementId, patch) => {
-        const idx = (notes.agreements || []).findIndex((a) => String(a.id) === String(agreementId));
-        if (idx < 0) return;
-        notes.agreements[idx] = { ...notes.agreements[idx], ...patch };
-        persistNotes();
-        renderNotesSection();
-      };
-
-      const updateSessionAgreement = async (sessionId, agreementId, patch) => {
-        const session = commitmentSessions.find((s) => String(s.id) === String(sessionId));
-        if (!session) return;
-        const rawAgreements = Array.isArray(session.agreements) ? session.agreements : [];
-        const normalized = rawAgreements.map((a) => ({
-          id: a?.id ?? Date.now() + Math.random(),
-          text: a?.text ?? "",
-          due: a?.due ?? "",
-          estado: normalizeEstado(a?.estado, a?.done),
-          done: Boolean(a?.done),
-        }));
-        const nextAgreements = normalized.map((a) => {
-          if (String(a.id) !== String(agreementId)) return a;
-          const next = { ...a, ...patch };
-          const estado = normalizeEstado(next.estado, next.done);
-          next.estado = estado;
-          next.done = estado === "cerrado";
-          return next;
-        });
-
-        const payload = {
-          fecha: session.fecha,
-          checklist: session.checklist || [],
-          agreements: nextAgreements,
-          mood: session.mood || "",
-          feedback_pos: session.feedback_pos || "",
-          feedback_neg: session.feedback_neg || "",
-          growth: session.growth || "",
-        };
-        const saved = await putJson(`/oneonone-sessions/${sessionId}`, payload);
-        upsertSessionCaches(saved, session.persona_nombre || "");
-
-        if (String(saved.persona_id) === String(selected.id)) {
-          renderSessions();
-        } else {
-          renderCommitments();
-        }
-      };
-
-      sorted.forEach((entry) => {
-        const tr = document.createElement("tr");
-        if (entry.isOverdue) tr.classList.add("is-overdue");
-
-        const tdText = document.createElement("td");
-        const textSpan = document.createElement("span");
-        textSpan.className = "commitment-text";
-        textSpan.textContent = entry.text;
-        tdText.appendChild(textSpan);
-
-        const tdDue = document.createElement("td");
-        const dueInput = document.createElement("input");
-        dueInput.type = "date";
-        dueInput.value = entry.due || "";
-        tdDue.appendChild(dueInput);
-        if (!entry.due) {
-          tdDue.classList.add("due-none");
-        } else if (entry.estado === "cerrado") {
-          tdDue.classList.add("due-closed");
-        } else if (entry.isOverdue) {
-          tdDue.classList.add("due-overdue");
-        } else if (entry.isToday) {
-          tdDue.classList.add("due-today");
-        } else {
-          tdDue.classList.add("due-future");
-        }
-
-        const tdAssigned = document.createElement("td");
-        tdAssigned.textContent = entry.assignedLabel || "-";
-
-        const tdEstado = document.createElement("td");
-        const estadoSelect = document.createElement("select");
-        estadoOptions.forEach((opt) => {
-          const option = document.createElement("option");
-          option.value = opt.value;
-          option.textContent = opt.label;
-          estadoSelect.appendChild(option);
-        });
-        estadoSelect.value = entry.estado || "pendiente";
-        setEstadoClass(estadoSelect, estadoSelect.value);
-        tdEstado.appendChild(estadoSelect);
-
-        const tdSession = document.createElement("td");
-        tdSession.textContent = entry.sessionDate || "";
-
-        const setBusy = (busy) => {
-          dueInput.disabled = busy;
-          estadoSelect.disabled = busy;
-        };
-
-        dueInput.addEventListener("change", async () => {
-          const nextDue = dueInput.value || "";
-          setBusy(true);
-          try {
-            if (entry.source === "note") {
-              updateNoteAgreement(entry.agreementId, { due: nextDue });
-              return;
-            }
-            await updateSessionAgreement(entry.sessionId, entry.agreementId, { due: nextDue });
-          } catch {
-            // ignore
-          } finally {
-            setBusy(false);
-          }
-        });
-
-        estadoSelect.addEventListener("change", async () => {
-          const nextEstado = estadoSelect.value;
-          setEstadoClass(estadoSelect, nextEstado);
-          setBusy(true);
-          try {
-            if (entry.source === "note") {
-              updateNoteAgreement(entry.agreementId, {
-                estado: nextEstado,
-                done: nextEstado === "cerrado",
-              });
-              return;
-            }
-            await updateSessionAgreement(entry.sessionId, entry.agreementId, { estado: nextEstado });
-          } catch {
-            // ignore
-          } finally {
-            setBusy(false);
-          }
-        });
-
-        tr.append(tdText, tdDue, tdAssigned, tdEstado, tdSession);
-        tbody.appendChild(tr);
-      });
-
-      table.appendChild(thead);
-      table.appendChild(tbody);
-      commitmentsTable.appendChild(table);
     };
 
     const renderSessions = () => {
       if (!historyTable) return;
       if (!sessions.length) {
         historyTable.innerHTML = '<p class="helper">Sin registros historicos.</p>';
-        renderCommitments();
+        if (commitmentsTable) commitmentsTable.innerHTML = '<p class="helper">Sin compromisos.</p>';
+        if (commitmentsSummary) commitmentsSummary.textContent = "";
         return;
       }
       const todayValue = getToday();
@@ -5367,7 +4796,6 @@
         const updatedAgreements = agreements.map((item) => ({
           ...item,
           done: doneValue ? true : false,
-          estado: doneValue ? "cerrado" : item.estado || "pendiente",
         }));
         const payload = {
           fecha: session.fecha,
@@ -5379,7 +4807,6 @@
           growth: session.growth || "",
         };
         const saved = await putJson(`/oneonone-sessions/${sessionId}`, payload);
-        upsertSessionCaches(saved, session.persona_nombre || fullName || "");
         sessions = sessions.map((item) =>
           String(item.id) === String(saved.id) ? saved : item
         );
@@ -5425,7 +4852,24 @@
           const sessionId = btn.dataset.id;
           const session = sessions.find((item) => String(item.id) === String(sessionId));
           if (!session) return;
-          openOneOnOneEditModal(session);
+          state.oneononeEditingSessionId = String(session.id);
+          notes.checklist = (session.checklist || []).map((item) => ({
+            id: item.id ?? Date.now() + Math.random(),
+            text: item.text ?? "",
+            done: Boolean(item.done),
+          }));
+          notes.agreements = (session.agreements || []).map((item) => ({
+            id: item.id ?? Date.now() + Math.random(),
+            text: item.text ?? "",
+            due: item.due ?? "",
+            done: Boolean(item.done),
+          }));
+          notes.mood = session.mood || "";
+          notes.feedback_pos = session.feedback_pos || "";
+          notes.feedback_neg = session.feedback_neg || "";
+          notes.growth = session.growth || "";
+          renderNotesSection();
+          if (sessionSaveBtn) sessionSaveBtn.textContent = "Actualizar 1:1";
         });
       });
 
@@ -5461,15 +4905,12 @@
       }
       const sessionDate = formatISO(getToday());
       const checklist = notes.checklist.map((item) => ({
-        id: item.id ?? Date.now() + Math.random(),
         text: (item.text || "").trim(),
         done: Boolean(item.done),
       }));
       const agreements = notes.agreements.map((item) => ({
-        id: item.id ?? Date.now() + Math.random(),
         text: (item.text || "").trim(),
         due: item.due || "",
-        estado: item.estado || (Boolean(item.done) ? "cerrado" : "pendiente"),
         done: Boolean(item.done),
       }));
       const payload = {
@@ -5486,6 +4927,9 @@
       const missing = [];
       if (!agreements.some((item) => item.text)) missing.push("Acuerdos");
       if (!payload.mood) missing.push("Estado de animo");
+      if (!payload.feedback_pos) missing.push("Feedback positivo");
+      if (!payload.feedback_neg) missing.push("Feedback negativo");
+      if (!payload.growth) missing.push("Foco de crecimiento");
       if (missing.length) {
         alert(`Campos obligatorios: ${missing.join(", ")}`);
         return;
@@ -5503,13 +4947,11 @@
             growth: payload.growth,
           };
           saved = await putJson(`/oneonone-sessions/${state.oneononeEditingSessionId}`, updatePayload);
-          upsertSessionCaches(saved, fullName || "");
           sessions = sessions.map((item) =>
             String(item.id) === String(saved.id) ? saved : item
           );
         } else {
           saved = await postJson("/oneonone-sessions", payload);
-          upsertSessionCaches(saved, fullName || "");
           sessions.unshift(saved);
         }
         state.oneononeSessionsCache[sessionsKey] = sessions;
@@ -5532,9 +4974,6 @@
     const renderNoteList = (container, items, opts = {}) => {
       if (!container) return;
       container.innerHTML = "";
-      const notify = () => {
-        if (typeof opts.onChange === "function") opts.onChange();
-      };
       items.forEach((item) => {
         const row = document.createElement("div");
         row.className = "note-row";
@@ -5545,7 +4984,6 @@
         checkbox.addEventListener("change", () => {
           item.done = checkbox.checked;
           persistNotes();
-          notify();
         });
 
         const textInput = document.createElement("input");
@@ -5555,7 +4993,6 @@
         textInput.addEventListener("input", () => {
           item.text = textInput.value;
           persistNotes();
-          notify();
         });
 
         row.appendChild(checkbox);
@@ -5568,7 +5005,6 @@
           dateInput.addEventListener("input", () => {
             item.due = dateInput.value;
             persistNotes();
-            notify();
           });
           row.appendChild(dateInput);
         }
@@ -5583,7 +5019,6 @@
             items.splice(index, 1);
             persistNotes();
             renderNotesSection();
-            notify();
           }
         });
         row.appendChild(removeBtn);
@@ -5593,11 +5028,7 @@
 
     const renderNotesSection = () => {
       renderNoteList(checklistEl, notes.checklist, { placeholder: "Item" });
-      renderNoteList(agreementsEl, notes.agreements, {
-        placeholder: "Acuerdo",
-        withDate: true,
-        onChange: () => renderCommitments(),
-      });
+      renderNoteList(agreementsEl, notes.agreements, { placeholder: "Acuerdo", withDate: true });
       if (moodSelect) {
         moodSelect.value = notes.mood || "";
       }
@@ -5609,107 +5040,7 @@
       if (growthEl) growthEl.value = notes.growth || "";
     };
 
-    const getOneOnOneCommitmentsStatusOptions = () => [
-      { value: "pendiente", label: "Pendiente" },
-      { value: "en_progreso", label: "En progreso" },
-      { value: "cerrado", label: "Cerrado" },
-    ];
-
-    const renderCommitmentsControls = () => {
-      const opts = getOneOnOneCommitmentsStatusOptions();
-
-      if (!state.oneononeCommitmentsScope) {
-        state.oneononeCommitmentsScope = "persona";
-      }
-      if (!Array.isArray(state.oneononeCommitmentStatusFilters) || !state.oneononeCommitmentStatusFilters.length) {
-        state.oneononeCommitmentStatusFilters = opts.map((o) => o.value);
-        state.oneononeCommitmentStatusTouched = false;
-      }
-
-      if (commitmentsScopePersonBtn) {
-        commitmentsScopePersonBtn.classList.toggle("is-active", state.oneononeCommitmentsScope === "persona");
-        commitmentsScopePersonBtn.onclick = () => {
-          state.oneononeCommitmentsScope = "persona";
-          renderCommitmentsControls();
-          renderCommitments();
-        };
-      }
-      if (commitmentsScopeCellBtn) {
-        commitmentsScopeCellBtn.classList.toggle("is-active", state.oneononeCommitmentsScope === "celula");
-        commitmentsScopeCellBtn.onclick = () => {
-          state.oneononeCommitmentsScope = "celula";
-          renderCommitmentsControls();
-          renderCommitments();
-        };
-      }
-
-      if (commitmentsStatusFilter) {
-        commitmentsStatusFilter.innerHTML = "";
-        const wrapper = document.createElement("div");
-        wrapper.className = "status-filter";
-        if (state.oneononeCommitmentStatusOpen) {
-          wrapper.classList.add("open");
-        }
-        const trigger = document.createElement("button");
-        trigger.type = "button";
-        trigger.className = "status-filter-trigger";
-        const selectedValues = (state.oneononeCommitmentStatusFilters || []).filter(Boolean);
-        const labelMap = Object.fromEntries(opts.map((o) => [o.value, o.label]));
-        const triggerText = selectedValues.length
-          ? selectedValues.map((v) => labelMap[v] || v).join(", ")
-          : "Todos";
-        trigger.innerHTML = `<span>${triggerText}</span><span class="status-filter-caret">▾</span>`;
-        trigger.addEventListener("click", (event) => {
-          event.stopPropagation();
-          state.oneononeCommitmentStatusOpen = !state.oneononeCommitmentStatusOpen;
-          renderCommitmentsControls();
-        });
-        const panel = document.createElement("div");
-        panel.className = "status-filter-panel";
-        panel.addEventListener("click", (event) => event.stopPropagation());
-        opts.forEach((opt) => {
-          const label = document.createElement("label");
-          label.className = "status-filter-option";
-          const input = document.createElement("input");
-          input.type = "checkbox";
-          input.value = opt.value;
-          input.checked = (state.oneononeCommitmentStatusFilters || []).includes(opt.value);
-          input.addEventListener("change", () => {
-            const selectedSet = new Set(state.oneononeCommitmentStatusFilters || []);
-            if (input.checked) {
-              selectedSet.add(opt.value);
-            } else {
-              selectedSet.delete(opt.value);
-            }
-            state.oneononeCommitmentStatusFilters = Array.from(selectedSet);
-            state.oneononeCommitmentStatusOpen = true;
-            state.oneononeCommitmentStatusTouched = true;
-            renderCommitmentsControls();
-            renderCommitments();
-          });
-          const text = document.createElement("span");
-          text.textContent = opt.label;
-          label.appendChild(input);
-          label.appendChild(text);
-          panel.appendChild(label);
-        });
-        wrapper.appendChild(trigger);
-        wrapper.appendChild(panel);
-        commitmentsStatusFilter.appendChild(wrapper);
-      }
-
-      if (!state.oneononeCommitmentsOutsideBound) {
-        state.oneononeCommitmentsOutsideBound = true;
-        document.addEventListener("click", () => {
-          if (!state.oneononeCommitmentStatusOpen) return;
-          state.oneononeCommitmentStatusOpen = false;
-          renderCommitmentsControls();
-        });
-      }
-    };
-
     renderNotesSection();
-    renderCommitmentsControls();
     renderSessions();
 
     if (checklistAddBtn) {
@@ -5722,13 +5053,7 @@
 
     if (agreementsAddBtn) {
       agreementsAddBtn.onclick = () => {
-        notes.agreements.push({
-          id: Date.now() + Math.random(),
-          text: "",
-          due: "",
-          estado: "pendiente",
-          done: false,
-        });
+        notes.agreements.push({ id: Date.now() + Math.random(), text: "", due: "", done: false });
         persistNotes();
         renderNotesSection();
       };
@@ -7000,13 +6325,6 @@
     const pointsUserChart = qs("#daily-points-user-line-chart");
     const pointsUserLegend = qs("#daily-points-user-legend");
     const pointsUserTable = qs("#daily-points-user-table");
-    const ganttBoard = qs("#daily-gantt-board");
-    const ganttSummary = qs("#daily-gantt-summary");
-    const ganttContext = qs("#daily-gantt-context");
-    const ganttZoomInput = qs("#daily-gantt-zoom");
-    const ganttZoomOutBtn = qs("#daily-gantt-zoom-out");
-    const ganttZoomInBtn = qs("#daily-gantt-zoom-in");
-    const ganttZoomLabel = qs("#daily-gantt-zoom-label");
     const syncLabelsToggle = () => {
       if (!pointsLabelsToggle) return;
       const active = Boolean(state.dailyPointsShowLabels);
@@ -7016,85 +6334,6 @@
     };
 
     const sprints = getDailySprints(base);
-    if (!sprints.length) {
-      if (sprintSelect) sprintSelect.innerHTML = "";
-      if (remainingEl) remainingEl.textContent = "-";
-      if (sprintLabel) sprintLabel.textContent = "Sin sprint";
-      if (teamSprintLabel) teamSprintLabel.textContent = "-";
-      if (itemsSprintLabel) itemsSprintLabel.textContent = "-";
-      renderDailyItemsSummary(itemsCount, 0);
-      if (devTable) devTable.innerHTML = '<p class="empty">Sin datos</p>';
-      if (itemsTable) itemsTable.innerHTML = '<p class="empty">Sin items cargados.</p>';
-      if (pointsUserSelect) pointsUserSelect.innerHTML = '<option value="">Todos</option>';
-      syncLabelsToggle();
-      if (pointsUserSummary) pointsUserSummary.textContent = "Sin datos";
-      if (pointsUserChart) {
-        const svg = pointsUserChart.querySelector("svg");
-        if (svg) svg.innerHTML = "";
-      }
-      if (pointsUserLegend) pointsUserLegend.innerHTML = "";
-      if (pointsUserTable) pointsUserTable.innerHTML = '<p class="empty">Sin datos</p>';
-      state.dailyPointsUserRows = [];
-      state.dailyPointsUserSprintColumns = [];
-      if (ganttBoard) ganttBoard.innerHTML = '<p class="empty">Sin items para visualizar en Gantt.</p>';
-      if (ganttSummary) ganttSummary.textContent = "Sin datos";
-      if (ganttContext) ganttContext.textContent = "Total celula";
-      if (status) status.textContent = "";
-      return;
-    }
-
-    const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-    const addDays = (date, days) => {
-      const copy = new Date(date.getTime());
-      copy.setDate(copy.getDate() + days);
-      copy.setHours(0, 0, 0, 0);
-      return copy;
-    };
-    const dayDiff = (end, start) => Math.round((end - start) / 86400000);
-    const startOfWeek = (date) => {
-      const copy = new Date(date.getTime());
-      copy.setHours(0, 0, 0, 0);
-      const day = copy.getDay();
-      const diff = day === 0 ? -6 : 1 - day;
-      copy.setDate(copy.getDate() + diff);
-      return copy;
-    };
-    const getIsoWeek = (date) => {
-      const copy = new Date(date.getTime());
-      copy.setHours(0, 0, 0, 0);
-      const day = copy.getDay() || 7;
-      copy.setDate(copy.getDate() + 4 - day);
-      const yearStart = new Date(copy.getFullYear(), 0, 1);
-      return Math.ceil(((copy - yearStart) / 86400000 + 1) / 7);
-    };
-    const formatShortDate = (date) =>
-      date.toLocaleDateString("es-PY", { day: "2-digit", month: "2-digit" });
-    const setDailyGanttZoom = (nextPct) => {
-      const normalizedPct = clamp(Math.round(nextPct), 60, 250);
-      const nextZoom = normalizedPct / 100;
-      if (Math.abs((state.dailyGanttZoom || 1) - nextZoom) < 0.001) return;
-      state.dailyGanttZoom = nextZoom;
-      renderDaily(state.base);
-    };
-    if (ganttZoomInput && !ganttZoomInput.dataset.bound) {
-      ganttZoomInput.dataset.bound = "true";
-      ganttZoomInput.addEventListener("change", () => {
-        setDailyGanttZoom(Number(ganttZoomInput.value || 100));
-      });
-    }
-    if (ganttZoomOutBtn && !ganttZoomOutBtn.dataset.bound) {
-      ganttZoomOutBtn.dataset.bound = "true";
-      ganttZoomOutBtn.addEventListener("click", () => {
-        setDailyGanttZoom(Math.round((state.dailyGanttZoom || 1) * 100) - 10);
-      });
-    }
-    if (ganttZoomInBtn && !ganttZoomInBtn.dataset.bound) {
-      ganttZoomInBtn.dataset.bound = "true";
-      ganttZoomInBtn.addEventListener("click", () => {
-        setDailyGanttZoom(Math.round((state.dailyGanttZoom || 1) * 100) + 10);
-      });
-    }
-
     const sprintIdByName = new Map(
       sprints
         .map((sprint) => [normalizeText(sprint?.nombre || ""), sprint.id])
@@ -7144,6 +6383,29 @@
       }
     });
     const dailyItemsSource = Array.from(dailyItemsMap.values());
+    if (!sprints.length) {
+      if (sprintSelect) sprintSelect.innerHTML = "";
+      if (remainingEl) remainingEl.textContent = "-";
+      if (sprintLabel) sprintLabel.textContent = "Sin sprint";
+      if (teamSprintLabel) teamSprintLabel.textContent = "-";
+      if (itemsSprintLabel) itemsSprintLabel.textContent = "-";
+      renderDailyItemsSummary(itemsCount, 0);
+      if (devTable) devTable.innerHTML = '<p class="empty">Sin datos</p>';
+      if (itemsTable) itemsTable.innerHTML = '<p class="empty">Sin items cargados.</p>';
+      if (pointsUserSelect) pointsUserSelect.innerHTML = '<option value="">Todos</option>';
+      syncLabelsToggle();
+      if (pointsUserSummary) pointsUserSummary.textContent = "Sin datos";
+      if (pointsUserChart) {
+        const svg = pointsUserChart.querySelector("svg");
+        if (svg) svg.innerHTML = "";
+      }
+      if (pointsUserLegend) pointsUserLegend.innerHTML = "";
+      if (pointsUserTable) pointsUserTable.innerHTML = '<p class="empty">Sin datos</p>';
+      state.dailyPointsUserRows = [];
+      state.dailyPointsUserSprintColumns = [];
+      if (status) status.textContent = "";
+      return;
+    }
 
     const hasDataForSprint = (sprint) => {
       if (!sprint) return false;
@@ -8776,243 +8038,6 @@
       renderBasicItemsTable(itemsTable, items, itemsColumns);
     }
 
-    const selectedPersona = selectedPersonaId
-      ? personasFiltradas.find((persona) => String(persona.id) === String(selectedPersonaId))
-      : null;
-    const scopeLabel = selectedPersona
-      ? `Persona: ${selectedPersona.nombre} ${selectedPersona.apellido}`
-      : selectedAssignee
-        ? `Asignado: ${selectedAssignee}`
-        : "Total celula";
-    if (ganttContext) ganttContext.textContent = scopeLabel;
-
-    const ganttZoomPct = clamp(Math.round((state.dailyGanttZoom || 1) * 100), 60, 250);
-    state.dailyGanttZoom = ganttZoomPct / 100;
-    if (ganttZoomInput) ganttZoomInput.value = String(ganttZoomPct);
-    if (ganttZoomLabel) ganttZoomLabel.textContent = `${ganttZoomPct}%`;
-
-    if (ganttBoard) {
-      if (!ganttBoard.dataset.boundDates) {
-        ganttBoard.dataset.boundDates = "true";
-        ganttBoard.addEventListener("click", (event) => {
-          if (event.target.closest(".daily-gantt-bar")) return;
-          ganttBoard
-            .querySelectorAll(".daily-gantt-bar.show-dates")
-            .forEach((el) => el.classList.remove("show-dates"));
-        });
-      }
-
-      const today = getToday();
-      const ganttRows = items
-        .map((item) => {
-          const hasCompleteDates =
-            Boolean(parseDateOnly(item.start_date)) &&
-            Boolean(parseDateOnly(item.end_date)) &&
-            Boolean(parseDateOnly(item.due_date));
-          let start =
-            parseDateOnly(item.start_date) ||
-            parseDateOnly(item.due_date) ||
-            parseDateOnly(item.end_date);
-          let end =
-            parseDateOnly(item.end_date) ||
-            parseDateOnly(item.due_date) ||
-            start;
-          let isUnscheduled = false;
-          if (!start || !end) {
-            start = today;
-            end = today;
-            isUnscheduled = true;
-          }
-          if (end < start) {
-            const tmp = start;
-            start = end;
-            end = tmp;
-          }
-          return { item, start, end, isUnscheduled, hasCompleteDates };
-        })
-        .sort((a, b) => {
-          const byStart = a.start - b.start;
-          if (byStart) return byStart;
-          const byEnd = a.end - b.end;
-          if (byEnd) return byEnd;
-          return String(a.item.issue_key || "").localeCompare(String(b.item.issue_key || ""), "es", {
-            numeric: true,
-          });
-        });
-
-      if (!ganttRows.length) {
-        ganttBoard.innerHTML = '<p class="empty">Sin items para visualizar en Gantt.</p>';
-        if (ganttSummary) {
-          const sprintPrefix = selectedSprint?.nombre ? `${selectedSprint.nombre} · ` : "";
-          ganttSummary.textContent = `${sprintPrefix}0 items visibles de ${itemsAll.length} · ${scopeLabel}`;
-        }
-      } else {
-        let minDate = ganttRows[0].start;
-        let maxDate = ganttRows[0].end;
-        ganttRows.forEach((row) => {
-          if (row.start < minDate) minDate = row.start;
-          if (row.end > maxDate) maxDate = row.end;
-        });
-        minDate = addDays(minDate, -3);
-        maxDate = addDays(maxDate, 3);
-        if (dayDiff(maxDate, minDate) < 13) {
-          maxDate = addDays(minDate, 13);
-        }
-        const dayWidth = Math.max(12, Math.round(18 * state.dailyGanttZoom));
-        const totalDays = dayDiff(maxDate, minDate) + 1;
-        const timelineWidth = Math.max(640, totalDays * dayWidth);
-        const todayLeft = dayDiff(today, minDate) * dayWidth;
-        const showToday = today >= minDate && today <= maxDate;
-
-        const grid = document.createElement("div");
-        grid.className = "daily-gantt-grid";
-        grid.style.setProperty("--timeline-width", `${timelineWidth}px`);
-        grid.style.setProperty("--day-width", `${dayWidth}px`);
-
-        const headLabel = document.createElement("div");
-        headLabel.className = "daily-gantt-head-label";
-        headLabel.textContent = "Tareas";
-        grid.appendChild(headLabel);
-
-        const headTrack = document.createElement("div");
-        headTrack.className = "daily-gantt-head-track";
-        headTrack.style.width = `${timelineWidth}px`;
-        const monthsWrap = document.createElement("div");
-        monthsWrap.className = "daily-gantt-months";
-        let monthCursor = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
-        monthCursor.setHours(0, 0, 0, 0);
-        while (monthCursor <= maxDate) {
-          const monthStart = new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1);
-          monthStart.setHours(0, 0, 0, 0);
-          const monthEnd = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0);
-          monthEnd.setHours(0, 0, 0, 0);
-          const segmentStart = monthStart < minDate ? minDate : monthStart;
-          const segmentEnd = monthEnd > maxDate ? maxDate : monthEnd;
-          const spanDays = dayDiff(segmentEnd, segmentStart) + 1;
-          const monthCell = document.createElement("div");
-          monthCell.className = "daily-gantt-month";
-          monthCell.style.width = `${Math.max(dayWidth, spanDays * dayWidth)}px`;
-          monthCell.textContent = segmentStart.toLocaleDateString("es-PY", {
-            month: "short",
-            year: "numeric",
-          });
-          monthsWrap.appendChild(monthCell);
-          monthCursor = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 1);
-          monthCursor.setHours(0, 0, 0, 0);
-        }
-
-        const weeksWrap = document.createElement("div");
-        weeksWrap.className = "daily-gantt-weeks";
-        let weekCursor = startOfWeek(minDate);
-        while (weekCursor <= maxDate) {
-          const weekStart = new Date(weekCursor.getTime());
-          weekStart.setHours(0, 0, 0, 0);
-          const weekEnd = addDays(weekStart, 6);
-          const segmentStart = weekStart < minDate ? minDate : weekStart;
-          const segmentEnd = weekEnd > maxDate ? maxDate : weekEnd;
-          const spanDays = dayDiff(segmentEnd, segmentStart) + 1;
-          const weekCell = document.createElement("div");
-          weekCell.className = "daily-gantt-week";
-          weekCell.style.width = `${Math.max(dayWidth, spanDays * dayWidth)}px`;
-          weekCell.textContent = `S${getIsoWeek(segmentStart)} ${formatShortDate(segmentStart)}-${formatShortDate(
-            segmentEnd
-          )}`;
-          weeksWrap.appendChild(weekCell);
-          weekCursor = addDays(weekCursor, 7);
-        }
-        headTrack.appendChild(monthsWrap);
-        headTrack.appendChild(weeksWrap);
-        if (showToday) {
-          const todayLine = document.createElement("span");
-          todayLine.className = "daily-gantt-today";
-          todayLine.style.left = `${todayLeft}px`;
-          headTrack.appendChild(todayLine);
-        }
-        grid.appendChild(headTrack);
-
-        ganttRows.forEach((row, rowIndex) => {
-          const labelCell = document.createElement("div");
-          labelCell.className = "daily-gantt-row-label";
-          const orderPrefix = `#${rowIndex + 1} · `;
-          const title = document.createElement("div");
-          title.className = "daily-gantt-title";
-          title.textContent = `${orderPrefix}${row.item.issue_key || "ITEM"} - ${
-            row.item.summary || "Sin resumen"
-          }`;
-          const meta = document.createElement("div");
-          meta.className = "daily-gantt-meta";
-          const assignee =
-            resolvePersonaNameFromItem(row.item, personaLookup, personaMap) ||
-            row.item.assignee_nombre ||
-            "Sin asignar";
-          const statusText = getStatusLabel(row.item.status) || row.item.status || "Sin estado";
-          meta.textContent = `${assignee} · ${statusText} · ${row.item.start_date || "-"} -> ${
-            row.item.end_date || row.item.due_date || "-"
-          }`;
-          labelCell.appendChild(title);
-          labelCell.appendChild(meta);
-          grid.appendChild(labelCell);
-
-          const trackCell = document.createElement("div");
-          trackCell.className = "daily-gantt-row-track";
-          trackCell.style.width = `${timelineWidth}px`;
-          if (showToday) {
-            const todayLine = document.createElement("span");
-            todayLine.className = "daily-gantt-today";
-            todayLine.style.left = `${todayLeft}px`;
-            trackCell.appendChild(todayLine);
-          }
-          const bar = document.createElement("div");
-          bar.className = "daily-gantt-bar";
-          const normalizedStatus = normalizeText(getStatusLabel(row.item.status) || row.item.status || "");
-          if (normalizedStatus.includes("cancelad")) bar.classList.add("is-cancelled");
-          else if (normalizedStatus.includes("finaliz")) bar.classList.add("is-done");
-          else if (normalizedStatus.includes("progress")) bar.classList.add("is-progress");
-          else bar.classList.add("is-pending");
-          if (row.hasCompleteDates) bar.classList.add("is-complete-dates");
-          if (row.isUnscheduled) bar.classList.add("is-unscheduled");
-          const left = dayDiff(row.start, minDate) * dayWidth;
-          const width = Math.max(dayWidth, (dayDiff(row.end, row.start) + 1) * dayWidth);
-          bar.style.left = `${left}px`;
-          bar.style.width = `${width}px`;
-          const barLabel = document.createElement("span");
-          barLabel.className = "daily-gantt-bar-label";
-          barLabel.textContent = `${orderPrefix}${row.item.issue_key || row.item.summary || "Item"}`;
-          const dateStart = document.createElement("span");
-          dateStart.className = "daily-gantt-bar-date is-start";
-          dateStart.textContent = formatISO(row.start);
-          const dateEnd = document.createElement("span");
-          dateEnd.className = "daily-gantt-bar-date is-end";
-          dateEnd.textContent = formatISO(row.end);
-          bar.addEventListener("click", (event) => {
-            event.stopPropagation();
-            const shouldOpen = !bar.classList.contains("show-dates");
-            ganttBoard
-              .querySelectorAll(".daily-gantt-bar.show-dates")
-              .forEach((el) => el.classList.remove("show-dates"));
-            if (shouldOpen) bar.classList.add("show-dates");
-          });
-          bar.appendChild(barLabel);
-          bar.appendChild(dateStart);
-          bar.appendChild(dateEnd);
-          trackCell.appendChild(bar);
-          grid.appendChild(trackCell);
-        });
-
-        ganttBoard.innerHTML = "";
-        ganttBoard.appendChild(grid);
-        if (ganttSummary) {
-          const sprintPrefix = selectedSprint?.nombre ? `${selectedSprint.nombre} · ` : "";
-          const completeDatesCount = ganttRows.filter((row) => row.hasCompleteDates).length;
-          ganttSummary.textContent = `${sprintPrefix}${ganttRows.length} items visibles de ${
-            itemsAll.length
-          } · ${scopeLabel} · Con Start+End+Due: ${completeDatesCount} · Rango ${formatISO(
-            minDate
-          )} a ${formatISO(maxDate)}`;
-        }
-      }
-    }
-
     if (form) {
       const preservedPersonaId = String(form.persona_id?.value || "");
       const preservedSprintId = String(form.sprint_id?.value || "");
@@ -9375,17 +8400,16 @@
     }
   }
 
-	  function initTasks() {
-	    const root = qs("#tasks-root");
-	    if (!root || !state.base) return;
+  function initTasks() {
+    const root = qs("#tasks-root");
+    if (!root || !state.base) return;
 
-	    // Prevent page-level horizontal scrolling; backlog table scrolls in its own container.
-	    try {
-	      document.documentElement.classList.add("page-tasks");
-	      document.body.classList.add("page-tasks");
-	    } catch {
-	      // ignore
-	    }
+    try {
+      document.documentElement.classList.add("page-tasks");
+      document.body.classList.add("page-tasks");
+    } catch {
+      // ignore
+    }
 
     const base = state.base;
     const statusEl = qs("#tasks-status");
@@ -9416,6 +8440,8 @@
     const filterClearBtn = qs("#tasks-filter-clear");
     const filterCloseBtn = qs("#tasks-filter-close");
     const columnsBtn = qs("#tasks-columns-btn");
+    const segmentButtons = qs("#tasks-segment-buttons");
+    const segmentManageBtn = qs("#tasks-segment-manage-btn");
     const priorityKpis = qs("#tasks-priority-kpis");
     const columnsPanel = qs("#tasks-columns-panel");
     const columnsList = qs("#tasks-columns-list");
@@ -9428,6 +8454,8 @@
     const hasBacklogDataTable = Boolean(window.jQuery && window.jQuery.fn && window.jQuery.fn.DataTable);
     let backlogDataTable = null;
     let cleanupBacklogHorizontalBar = null;
+    let backlogDataTableSearchFilter = null;
+    state.tasksSegments = Array.isArray(state.tasksSegments) ? state.tasksSegments : [];
     state.tasksCommentCounts = state.tasksCommentCounts && typeof state.tasksCommentCounts === "object"
       ? state.tasksCommentCounts
       : {};
@@ -9446,6 +8474,9 @@
       alta: "Alta",
       urgente: "Urgente",
     };
+    const TASK_PRIORITY_KEYS = ["baja", "media", "alta", "urgente"];
+    const normalizeSegmentName = (value) => String(value || "").replace(/\s+/g, " ").trim().slice(0, 80);
+    const normalizeSegmentKey = (value) => normalizeText(normalizeSegmentName(value));
     const TASK_FAMILY_COLORS = [
       "#0d6efd",
       "#6f42c1",
@@ -9457,14 +8488,6 @@
       "#3f51b5",
       "#5c7cfa",
       "#795548",
-    ];
-
-    const TASK_TYPES = [
-      { id: "", nombre: "Sin tipo" },
-      { id: "feature", nombre: "Feature" },
-      { id: "bug", nombre: "Bug" },
-      { id: "spike", nombre: "Spike" },
-      { id: "chore", nombre: "Chore" },
     ];
 
     const TASK_COLUMNS_KEY = "scrum_calendar_tasks_columns_v4";
@@ -9536,6 +8559,7 @@
       const search = String(raw?.search || "").slice(0, 300);
       const statusFilterRaw = String(raw?.statusFilter || "").trim().toLowerCase();
       const statusFilter = STATUS_ORDER.includes(statusFilterRaw) ? statusFilterRaw : "";
+      const segmentFilter = normalizeSegmentName(raw?.segmentFilter || "");
       const datePreset = normalizeDatePreset(raw?.datePreset);
 
       const defaults = cloneDefaultTasksAdvancedFilters();
@@ -9573,6 +8597,7 @@
         view,
         search,
         statusFilter,
+        segmentFilter,
         datePreset,
         filters,
         backlogSort,
@@ -9593,6 +8618,7 @@
           view: state.tasksView,
           search: state.tasksSearch,
           statusFilter: state.tasksStatusFilter,
+          segmentFilter: state.tasksSegmentFilter,
           datePreset: state.tasksDatePreset,
           filters: state.tasksFilters,
           backlogSort: state.tasksBacklogSort,
@@ -9643,14 +8669,12 @@
             )
           : {};
 
-      // Normalize: keep only known columns, append new ones so reorder works.
       const order = orderRaw.filter((k) => DEFAULT_COLUMNS.includes(k));
       DEFAULT_COLUMNS.forEach((k) => {
         if (!order.includes(k)) order.push(k);
       });
 
       state.tasksColumnsConfig = { order, hidden: hiddenRaw, widths: widthsRaw };
-      // Persist normalization so up/down & drag always work even after schema changes.
       saveColumnsConfig();
       return state.tasksColumnsConfig;
     };
@@ -9818,6 +8842,7 @@
       state.tasksView = savedTasksFiltersState.view;
       state.tasksSearch = savedTasksFiltersState.search;
       state.tasksStatusFilter = savedTasksFiltersState.statusFilter;
+      state.tasksSegmentFilter = savedTasksFiltersState.segmentFilter || "";
       state.tasksDatePreset = savedTasksFiltersState.datePreset || "";
       state.tasksFilters = {
         ...cloneDefaultTasksAdvancedFilters(),
@@ -9919,6 +8944,12 @@
         }
         cleanupBacklogHorizontalBar = null;
       }
+      if (backlogDataTableSearchFilter && window.jQuery?.fn?.dataTable?.ext?.search) {
+        const filters = window.jQuery.fn.dataTable.ext.search;
+        const idx = filters.indexOf(backlogDataTableSearchFilter);
+        if (idx >= 0) filters.splice(idx, 1);
+        backlogDataTableSearchFilter = null;
+      }
       if (!hasBacklogDataTable) return;
       if (backlogDataTable) {
         try {
@@ -9941,6 +8972,20 @@
     const initBacklogDataTable = (table, visibleColumns) => {
       if (!hasBacklogDataTable || !table) return;
       const $table = window.jQuery(table);
+      if (backlogDataTableSearchFilter && window.jQuery?.fn?.dataTable?.ext?.search) {
+        const filters = window.jQuery.fn.dataTable.ext.search;
+        const idx = filters.indexOf(backlogDataTableSearchFilter);
+        if (idx >= 0) filters.splice(idx, 1);
+      }
+      backlogDataTableSearchFilter = (settings, _searchData, dataIndex) => {
+        if (settings?.nTable !== table) return true;
+        const query = normalizeText(settings?.oPreviousSearch?.sSearch || "");
+        if (!query) return true;
+        const rowNode = settings?.aoData?.[dataIndex]?.nTr;
+        const haystack = normalizeText(rowNode?.textContent || "");
+        return haystack.includes(query);
+      };
+      window.jQuery.fn.dataTable.ext.search.push(backlogDataTableSearchFilter);
       backlogDataTable = $table.DataTable({
         destroy: true,
         stateSave: true,
@@ -10005,8 +9050,8 @@
             next: "Siguiente",
             previous: "Anterior",
           },
-	        },
-	      });
+        },
+      });
       const applyBacklogTableMinWidth = () => {
         const raw = Number(table.dataset.minWidth || 0);
         if (!Number.isFinite(raw) || raw <= 0) return;
@@ -10023,14 +9068,14 @@
         $wrapper.find(".dataTable").css("width", width);
         $wrapper.find(".dataTable").css("min-width", width);
       };
-	      $table.on("draw.dt column-sizing.dt", applyBacklogTableMinWidth);
-	      applyBacklogTableMinWidth();
-	      try {
-	        window.requestAnimationFrame(applyBacklogTableMinWidth);
-	      } catch {
-	        // ignore
-	      }
-	    };
+      $table.on("draw.dt column-sizing.dt", applyBacklogTableMinWidth);
+      applyBacklogTableMinWidth();
+      try {
+        window.requestAnimationFrame(applyBacklogTableMinWidth);
+      } catch {
+        // ignore
+      }
+    };
 
     const attachBacklogHorizontalBar = (wrap, scroll, useBacklogDataTable) => {
       if (!wrap) return;
@@ -10048,8 +9093,8 @@
 
       const bar = document.createElement("div");
       bar.className = "tasks-horizontal-bar hidden";
-	      bar.innerHTML = `<input class="tasks-horizontal-range" type="range" min="0" max="0" step="1" value="0" aria-label="Scroll horizontal de tabla" />`;
-	      wrap.appendChild(bar);
+      bar.innerHTML = `<input class="tasks-horizontal-range" type="range" min="0" max="0" step="1" value="0" aria-label="Scroll horizontal de tabla" />`;
+      wrap.appendChild(bar);
 
       const range = bar.querySelector(".tasks-horizontal-range");
       if (!range) return;
@@ -10162,12 +9207,12 @@
       };
 
       const bindScrollable = () => {
-	        const nextScrollable = resolveScrollable();
-	        if (!nextScrollable) return;
-	        if (currentScrollable === nextScrollable) return;
-	        if (currentScrollable && currentOnScroll) {
-	          currentScrollable.removeEventListener("scroll", currentOnScroll);
-	        }
+        const nextScrollable = resolveScrollable();
+        if (!nextScrollable) return;
+        if (currentScrollable === nextScrollable) return;
+        if (currentScrollable && currentOnScroll) {
+          currentScrollable.removeEventListener("scroll", currentOnScroll);
+        }
         currentScrollable = nextScrollable;
         currentOnScroll = () => {
           const max = Math.max(measureMax(currentScrollable), computeHardMax());
@@ -10241,38 +9286,219 @@
       statusEl.dataset.type = type;
     };
 
-    const updatePrioritySummaryButton = (items = []) => {
-      if (!priorityKpis) return;
-      const counts = { urgente: 0, alta: 0, media: 0, baja: 0 };
-      (Array.isArray(items) ? items : []).forEach((task) => {
-        const key = String(task?.prioridad || "").trim().toLowerCase();
-        if (Object.prototype.hasOwnProperty.call(counts, key)) counts[key] += 1;
+    const getTaskSegmentsCatalog = () => {
+      const segmentsMap = new Map();
+      const addSegment = (value) => {
+        const name = normalizeSegmentName(value);
+        const key = normalizeSegmentKey(name);
+        if (!name || !key || segmentsMap.has(key)) return;
+        segmentsMap.set(key, name);
+      };
+      (state.tasksSegments || []).forEach((segment) => addSegment(segment?.nombre || segment));
+      (state.tasksCache || []).forEach((task) => addSegment(task?.segmento || ""));
+      return Array.from(segmentsMap.entries())
+        .map(([key, nombre]) => ({ key, nombre }))
+        .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
+    };
+
+    const ensureTaskSegmentCatalogEntry = (value) => {
+      const name = normalizeSegmentName(value);
+      const key = normalizeSegmentKey(name);
+      if (!name || !key) return;
+      const exists = (state.tasksSegments || []).some(
+        (segment) => normalizeSegmentKey(segment?.nombre || segment) === key
+      );
+      if (exists) return;
+      state.tasksSegments = [...(state.tasksSegments || []), { nombre: name }];
+    };
+
+    const populateTaskSegmentSelect = (selectEl, currentValue = "") => {
+      if (!selectEl) return;
+      const current = normalizeSegmentName(currentValue);
+      if (current) ensureTaskSegmentCatalogEntry(current);
+      const segments = getTaskSegmentsCatalog();
+      selectEl.innerHTML = "";
+      const empty = document.createElement("option");
+      empty.value = "";
+      empty.textContent = "Sin segmento";
+      selectEl.appendChild(empty);
+      segments.forEach((segment) => {
+        const option = document.createElement("option");
+        option.value = segment.nombre;
+        option.textContent = segment.nombre;
+        selectEl.appendChild(option);
       });
-      ["urgente", "alta", "media", "baja"].forEach((key) => {
-        const el = priorityKpis.querySelector(`[data-priority-kpi="${key}"]`);
-        if (el) el.textContent = String(counts[key] || 0);
+      selectEl.value = current || "";
+    };
+
+    const renderTaskSegmentButtons = () => {
+      if (!segmentButtons) return;
+      const segments = getTaskSegmentsCatalog();
+      const activeKey = normalizeSegmentKey(state.tasksSegmentFilter || "");
+      const counts = new Map();
+      (state.tasksCache || []).forEach((task) => {
+        const key = normalizeSegmentKey(task?.segmento || "");
+        if (!key) return;
+        counts.set(key, (counts.get(key) || 0) + 1);
+      });
+      segmentButtons.innerHTML = "";
+      const buildButton = (label, count, value, isActive) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `tasks-segment-btn${isActive ? " is-active" : ""}`;
+        button.dataset.segmentFilter = value || "";
+        const text = document.createElement("span");
+        text.textContent = label;
+        const total = document.createElement("strong");
+        total.textContent = String(count);
+        button.appendChild(text);
+        button.appendChild(total);
+        return button;
+      };
+      segmentButtons.appendChild(
+        buildButton("Todos", Number(state.tasksCache?.length || 0), "", !activeKey)
+      );
+      segments.forEach((segment) => {
+        segmentButtons.appendChild(
+          buildButton(segment.nombre, counts.get(segment.key) || 0, segment.nombre, activeKey === segment.key)
+        );
       });
     };
 
-	    const setActiveView = (view) => {
-	      state.tasksView = view;
-	      try {
-	        root.dataset.tasksView = view;
-	      } catch {
-	        // ignore
-	      }
-	      // Ensure toolbar stays visible even if the user previously scrolled horizontally.
-	      try {
-	        document.documentElement.scrollLeft = 0;
-	        document.body.scrollLeft = 0;
-	      } catch {
-	        // ignore
-	      }
-	      if (backlogPanel) backlogPanel.classList.toggle("hidden", view !== "backlog");
-	      if (boardPanel) boardPanel.classList.toggle("hidden", view !== "board");
-	      if (reportsPanel) reportsPanel.classList.toggle("hidden", view !== "reports");
-	      const map = {
-	        backlog: qs("#tasks-view-backlog"),
+    const applyTaskSegmentFilter = (value = "") => {
+      state.tasksSegmentFilter = normalizeSegmentName(value);
+      saveTasksFiltersState();
+      renderTaskSegmentButtons();
+      renderAll();
+      renderFilterChips();
+    };
+
+    const ensureTaskSegmentsManagerForm = () => {
+      let form = qs("#tasks-segments-form");
+      if (form) return form;
+      let host = qs("#tasks-segments-form-host");
+      if (!host) {
+        host = document.createElement("div");
+        host.id = "tasks-segments-form-host";
+        host.style.display = "none";
+        document.body.appendChild(host);
+      }
+      form = document.createElement("form");
+      form.id = "tasks-segments-form";
+      form.className = "adminlte-form";
+      form.innerHTML = `
+        <div class="mb-3">
+          <label class="form-label" for="tasks-segment-name">Nuevo segmento</label>
+          <div class="input-group">
+            <input class="form-control" id="tasks-segment-name" name="nombre" type="text" maxlength="80" placeholder="Ej: Daily, Retro, Avisos" required />
+            <button class="btn btn-primary" type="submit">Guardar</button>
+          </div>
+        </div>
+        <div class="mb-2">
+          <div class="form-label mb-2">Segmentos actuales</div>
+          <div id="tasks-segment-modal-list" class="tasks-segment-modal-list"></div>
+        </div>
+        <p class="form-status mt-2 mb-0" id="tasks-segment-status"></p>
+      `;
+      host.appendChild(form);
+      return form;
+    };
+
+    const renderTaskSegmentsManager = () => {
+      const form = ensureTaskSegmentsManagerForm();
+      const list = form.querySelector("#tasks-segment-modal-list");
+      if (!list) return form;
+      list.innerHTML = "";
+      const segments = getTaskSegmentsCatalog();
+      if (!segments.length) {
+        const empty = document.createElement("p");
+        empty.className = "empty mb-0";
+        empty.textContent = "Aun no hay segmentos creados.";
+        list.appendChild(empty);
+        return form;
+      }
+      segments.forEach((segment) => {
+        const badge = document.createElement("span");
+        badge.className = "tasks-segment-badge";
+        badge.textContent = segment.nombre;
+        list.appendChild(badge);
+      });
+      return form;
+    };
+
+    const openTaskSegmentsManager = () => {
+      const form = renderTaskSegmentsManager();
+      const input = form.querySelector("#tasks-segment-name");
+      const status = form.querySelector("#tasks-segment-status");
+      if (status) {
+        status.textContent = "";
+        delete status.dataset.type;
+      }
+      if (input) input.value = "";
+      openAdminModal(form, "Segmentos de tareas");
+      input?.focus();
+    };
+
+    const syncPriorityFilterCheckboxes = () => {
+      const active = new Set((state.tasksFilters?.priorities || []).map((value) => String(value || "").toLowerCase()));
+      root.querySelectorAll("#tasks-filter-priorities input[type='checkbox']").forEach((cb) => {
+        cb.checked = active.has(String(cb.value || "").toLowerCase());
+      });
+    };
+
+    const getActivePriorityKpiKey = () => {
+      const selected = Array.from(
+        new Set((state.tasksFilters?.priorities || []).map((value) => String(value || "").trim().toLowerCase()))
+      ).filter((value) => TASK_PRIORITY_KEYS.includes(value));
+      if (selected.length === TASK_PRIORITY_KEYS.length) return "total";
+      if (selected.length === 1) return selected[0];
+      return "";
+    };
+
+    const syncPriorityKpiState = () => {
+      if (!priorityKpis) return;
+      const activeKey = getActivePriorityKpiKey();
+      priorityKpis.querySelectorAll(".tasks-priority-kpi[data-priority-filter]").forEach((button) => {
+        const key = String(button.dataset.priorityFilter || "").trim().toLowerCase();
+        const isActive = Boolean(activeKey) && key === activeKey;
+        button.classList.toggle("is-active", isActive);
+        button.setAttribute("aria-pressed", isActive ? "true" : "false");
+      });
+    };
+
+    const updatePrioritySummaryButton = (items = []) => {
+      if (!priorityKpis) return;
+      const counts = { total: 0, urgente: 0, alta: 0, media: 0, baja: 0 };
+      (Array.isArray(items) ? items : []).forEach((task) => {
+        counts.total += 1;
+        const key = String(task?.prioridad || "").trim().toLowerCase();
+        if (Object.prototype.hasOwnProperty.call(counts, key)) counts[key] += 1;
+      });
+      ["total", "urgente", "alta", "media", "baja"].forEach((key) => {
+        const el = priorityKpis.querySelector(`[data-priority-kpi="${key}"]`);
+        if (el) el.textContent = String(counts[key] || 0);
+      });
+      syncPriorityKpiState();
+    };
+
+    const setActiveView = (view) => {
+      state.tasksView = view;
+      try {
+        root.dataset.tasksView = view;
+      } catch {
+        // ignore
+      }
+      try {
+        document.documentElement.scrollLeft = 0;
+        document.body.scrollLeft = 0;
+      } catch {
+        // ignore
+      }
+      if (backlogPanel) backlogPanel.classList.toggle("hidden", view !== "backlog");
+      if (boardPanel) boardPanel.classList.toggle("hidden", view !== "board");
+      if (reportsPanel) reportsPanel.classList.toggle("hidden", view !== "reports");
+      const map = {
+        backlog: qs("#tasks-view-backlog"),
         board: qs("#tasks-view-board"),
         reports: qs("#tasks-view-reports"),
       };
@@ -10375,6 +9601,10 @@
                   <option value="alta">Alta</option>
                   <option value="urgente">Urgente</option>
                 </select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="task-segmento">Segmento</label>
+                <select class="form-select" id="task-segmento" name="segmento"></select>
               </div>
               <div class="mb-3">
                 <label class="form-label" for="task-assignee">Responsable</label>
@@ -10871,14 +10101,15 @@
 	        form.titulo.value = task.titulo || "";
 	        form.descripcion.value = task.descripcion || "";
 	        form.estado.value = task.estado || "backlog";
-	        form.prioridad.value = task.prioridad || "media";
-	        form.assignee_persona_id.value = task.assignee_persona_id ? String(task.assignee_persona_id) : "";
-	        form.fecha_vencimiento.value = task.fecha_vencimiento || "";
-	        form.start_date.value = task.start_date || "";
-	        form.end_date.value = task.end_date || "";
-	        setFormMode(form, "edit", task.id, "Guardar");
-	        if (deleteBtn) deleteBtn.classList.remove("hidden");
-	        existingOnlyBlocks.forEach((node) => node.classList.remove("hidden"));
+        form.prioridad.value = task.prioridad || "media";
+        populateTaskSegmentSelect(form.segmento, task.segmento || "");
+        form.assignee_persona_id.value = task.assignee_persona_id ? String(task.assignee_persona_id) : "";
+        form.fecha_vencimiento.value = task.fecha_vencimiento || "";
+        form.start_date.value = task.start_date || "";
+        form.end_date.value = task.end_date || "";
+        setFormMode(form, "edit", task.id, "Guardar");
+        if (deleteBtn) deleteBtn.classList.remove("hidden");
+        existingOnlyBlocks.forEach((node) => node.classList.remove("hidden"));
 	        if (newSubtasksWrap) newSubtasksWrap.classList.add("hidden");
 	        if (newSubtaskPanel) newSubtaskPanel.classList.add("hidden");
 	        if (newSubtaskToggle) {
@@ -10889,15 +10120,16 @@
 	        refreshDetails();
 	      } else {
 	        form.dataset.currentTaskId = "";
-	        form.reset();
-	        resetFormMode(form, "Guardar");
-	        form.estado.value = status || "backlog";
-	        if (status) form.estado.value = status;
-	        form.start_date.value = "";
-	        form.end_date.value = "";
-	        if (deleteBtn) deleteBtn.classList.add("hidden");
-	        existingOnlyBlocks.forEach((node) => node.classList.add("hidden"));
-	        const canUseDraftSubtasks = !parentId;
+        form.reset();
+        resetFormMode(form, "Guardar");
+        form.estado.value = status || "backlog";
+        if (status) form.estado.value = status;
+        populateTaskSegmentSelect(form.segmento, "");
+        form.start_date.value = "";
+        form.end_date.value = "";
+        if (deleteBtn) deleteBtn.classList.add("hidden");
+        existingOnlyBlocks.forEach((node) => node.classList.add("hidden"));
+        const canUseDraftSubtasks = !parentId;
 	        if (newSubtasksWrap) newSubtasksWrap.classList.toggle("hidden", !canUseDraftSubtasks);
 	        if (newSubtaskPanel) newSubtaskPanel.classList.add("hidden");
 	        if (newSubtaskToggle) {
@@ -10910,6 +10142,35 @@
 
       if (formStatus) formStatus.textContent = "";
       openAdminModal(form, task ? "Editar tarea" : parentId ? "Nueva subtarea" : "Nueva tarea");
+
+      if (!form.dataset.boundSubmitOnEnter) {
+        form.dataset.boundSubmitOnEnter = "true";
+        form.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) {
+            return;
+          }
+          const target = event.target;
+          const tag = String(target?.tagName || "").toLowerCase();
+          if (!target || tag === "textarea" || tag === "button" || tag === "select") return;
+          if (
+            target.id === "task-subtask-title" ||
+            target.id === "task-new-subtask-title" ||
+            target.id === "task-comment-text" ||
+            target.closest("#task-new-subtask-panel") ||
+            target.closest(".task-existing-only")
+          ) {
+            return;
+          }
+          event.preventDefault();
+          const submitBtn = form.querySelector("button[type='submit']");
+          if (submitBtn?.disabled) return;
+          if (typeof form.requestSubmit === "function") {
+            form.requestSubmit(submitBtn || undefined);
+          } else {
+            submitBtn?.click();
+          }
+        });
+      }
 
       if (form.estado && !form.estado.dataset.boundDateRules) {
         form.estado.dataset.boundDateRules = "true";
@@ -10965,6 +10226,7 @@
 	              descripcion: null,
 	              estado: parent.estado || "backlog",
 	              prioridad: parent.prioridad || "media",
+                segmento: parent.segmento || null,
 	              celula_id: parent.celula_id || resolveCelulaId() || null,
 	              parent_id: taskId,
 	              assignee_persona_id: parent.assignee_persona_id || null,
@@ -11141,6 +10403,7 @@
             descripcion: form.descripcion.value || null,
             estado: (form.estado.value || "backlog").trim().toLowerCase(),
             prioridad: (form.prioridad.value || "media").trim().toLowerCase(),
+            segmento: normalizeSegmentName(form.segmento?.value || "") || null,
             celula_id: Number(form.dataset.celulaId || 0) || null,
             parent_id: form.dataset.parentId ? Number(form.dataset.parentId) : null,
             assignee_persona_id: form.assignee_persona_id.value ? Number(form.assignee_persona_id.value) : null,
@@ -11163,9 +10426,11 @@
 	                if (editId) {
 	                  const updated = await putJson(`/tasks/${editId}`, payload);
 	                  upsertTaskInCache(updated);
+                    ensureTaskSegmentCatalogEntry(updated?.segmento || payload.segmento || "");
 	                } else {
 	                  const created = await postJson("/tasks", payload);
 	                  upsertTaskInCache(created);
+                    ensureTaskSegmentCatalogEntry(created?.segmento || payload.segmento || "");
 	                  const createdId = Number(created?.id || 0);
 	                  if (createdId && draftSubtasks.length) {
 	                    for (const subTitle of draftSubtasks) {
@@ -11174,6 +10439,7 @@
 	                        descripcion: null,
 	                        estado: payload.estado || "backlog",
 	                        prioridad: payload.prioridad || "media",
+                          segmento: payload.segmento || null,
 	                        celula_id: payload.celula_id,
 	                        parent_id: createdId,
 	                        assignee_persona_id: payload.assignee_persona_id || null,
@@ -11216,10 +10482,12 @@
       const dueTo = state.tasksFilters?.dueTo ? String(state.tasksFilters.dueTo) : "";
       const noDueDate = Boolean(state.tasksFilters?.noDueDate);
       const hideSubtasks = Boolean(state.tasksFilters?.hideSubtasks);
+      const segmentKey = normalizeSegmentKey(state.tasksSegmentFilter || "");
       return items.filter((task) => {
         if (hideSubtasks && task.parent_id) return false;
         if (statusAllowed && !statusAllowed.has(String(task.estado || "").toLowerCase())) return false;
         if (prioritySet.size && !prioritySet.has(String(task.prioridad || "").toLowerCase())) return false;
+        if (segmentKey && normalizeSegmentKey(task?.segmento || "") !== segmentKey) return false;
         if (assigneeSet.size) {
           const key = task.assignee_persona_id ? String(task.assignee_persona_id) : "__none__";
           if (!assigneeSet.has(key)) return false;
@@ -11321,10 +10589,10 @@
       if (!backlogList) return;
       destroyBacklogDataTable();
 
-	      const tasks = buildBacklogContext(filtered || [], all || []);
+      const tasks = buildBacklogContext(filtered || [], all || []);
       const taskById = new Map((tasks || []).map((t) => [String(t.id), t]));
-	      // Backlog should always behave like AdminLTE DataTable.
-	      const useBacklogDataTable = hasBacklogDataTable;
+      // Backlog should always behave like AdminLTE DataTable.
+      const useBacklogDataTable = hasBacklogDataTable;
 
       const taskCelulaIds = new Set(
         tasks
@@ -11552,14 +10820,19 @@
         pill.className = "tasks-notion-pill";
         const select = document.createElement("select");
         select.className = "";
-        select.dataset.field = "tipo";
-        TASK_TYPES.forEach((t) => {
+        select.dataset.field = "segmento";
+        const segments = getTaskSegmentsCatalog();
+        const options = [{ nombre: "Sin segmento", value: "" }, ...segments.map((segment) => ({
+          nombre: segment.nombre,
+          value: segment.nombre,
+        }))];
+        options.forEach((segment) => {
           const opt = document.createElement("option");
-          opt.value = t.id;
-          opt.textContent = t.nombre;
+          opt.value = segment.value;
+          opt.textContent = segment.nombre;
           select.appendChild(opt);
         });
-        select.value = task.tipo ? String(task.tipo) : "";
+        select.value = task.segmento ? String(task.segmento) : "";
         pill.appendChild(select);
         const cell = document.createElement("div");
         cell.className = "tasks-notion-cell";
@@ -11772,7 +11045,7 @@
         if (key === "titulo") return normalizeText(task.titulo || "");
         if (key === "estado") return statusRank[String(task.estado || "backlog").toLowerCase()] ?? 0;
         if (key === "prioridad") return priorityRank[String(task.prioridad || "media").toLowerCase()] ?? 0;
-        if (key === "tipo") return normalizeText(task.tipo || "");
+        if (key === "tipo") return normalizeText(task.segmento || "");
         if (key === "etiquetas") return normalizeText(task.etiquetas || "");
         if (key === "assignee_persona_id") {
           const personId = task.assignee_persona_id ? String(task.assignee_persona_id) : "";
@@ -11895,6 +11168,15 @@
             : `Subtareas (${children.length})`;
           main.appendChild(subtasksMeta);
         }
+        if (task.segmento) {
+          const segmentWrap = document.createElement("div");
+          segmentWrap.className = "tasks-title-segment";
+          const segmentBadge = document.createElement("span");
+          segmentBadge.className = "tasks-segment-badge";
+          segmentBadge.textContent = String(task.segmento);
+          segmentWrap.appendChild(segmentBadge);
+          main.appendChild(segmentWrap);
+        }
         titleWrap.appendChild(main);
 
         queueTaskCommentCount(task.id);
@@ -12014,7 +11296,7 @@
           }
           if (key === "tipo") {
             td.appendChild(buildTypeSelect(task));
-            setCellOrder(td, normalizeText(task.tipo || ""));
+            setCellOrder(td, normalizeText(task.segmento || ""));
             return td;
           }
           if (key === "etiquetas") {
@@ -12152,6 +11434,7 @@
               descripcion: null,
               estado: statusKey,
               prioridad: "media",
+              segmento: state.tasksSegmentFilter || null,
               celula_id: celulaId,
               sprint_id: resolveSelectedSprintId() || null,
               parent_id: null,
@@ -12159,6 +11442,7 @@
               fecha_vencimiento: null,
             });
             upsertTaskInCache(created);
+            ensureTaskSegmentCatalogEntry(created?.segmento || state.tasksSegmentFilter || "");
             if (input) input.value = "";
             refreshTasksUi("all");
           } catch (err) {
@@ -12266,6 +11550,15 @@
           `;
 
           card.appendChild(top);
+          if (task.segmento) {
+            const segment = document.createElement("div");
+            segment.className = "task-card-segment";
+            const badge = document.createElement("span");
+            badge.className = "tasks-segment-badge";
+            badge.textContent = String(task.segmento);
+            segment.appendChild(badge);
+            card.appendChild(segment);
+          }
           if (parentLabel) {
             const parentHint = document.createElement("div");
             parentHint.className = "task-card-parent";
@@ -12582,6 +11875,34 @@
           }
         }
       }
+    };
+
+    const syncBacklogRowAfterSegmentUpdate = (rowEl, updatedTask) => {
+      if (!rowEl || !updatedTask) return;
+      const segmentSelect = rowEl.querySelector("select[data-field='segmento'], select[data-field='tipo']");
+      if (segmentSelect) {
+        segmentSelect.value = String(updatedTask.segmento || "");
+      }
+      const main = rowEl.querySelector(".tasks-notion-name-main");
+      if (!main) return;
+      const currentWrap = main.querySelector(".tasks-title-segment");
+      const segmentValue = String(updatedTask.segmento || "").trim();
+      if (!segmentValue) {
+        currentWrap?.remove();
+        return;
+      }
+      if (currentWrap) {
+        const badge = currentWrap.querySelector(".tasks-segment-badge");
+        if (badge) badge.textContent = segmentValue;
+        return;
+      }
+      const wrap = document.createElement("div");
+      wrap.className = "tasks-title-segment";
+      const badge = document.createElement("span");
+      badge.className = "tasks-segment-badge";
+      badge.textContent = segmentValue;
+      wrap.appendChild(badge);
+      main.appendChild(wrap);
     };
 
     const syncBacklogHeaderSortState = () => {
@@ -12996,6 +12317,7 @@
 
     const renderAll = () => {
       const filtered = applyFilters(state.tasksCache || []);
+      renderTaskSegmentButtons();
       updatePrioritySummaryButton(filtered);
       renderBacklog(filtered, state.tasksCache || []);
       renderBoard(filtered, state.tasksCache || []);
@@ -13225,8 +12547,12 @@
 
       try {
         setTasksStatus("Cargando tareas...", "info");
-        const items = await fetchJson("/tasks");
+        const [items, segments] = await Promise.all([
+          fetchJson("/tasks"),
+          fetchJson("/tasks/segments").catch(() => []),
+        ]);
         state.tasksCache = Array.isArray(items) ? items : [];
+        state.tasksSegments = Array.isArray(segments) ? segments : [];
         const validTaskIds = new Set((state.tasksCache || []).map((t) => String(t.id)));
         Object.keys(state.tasksCommentCounts || {}).forEach((key) => {
           if (!validTaskIds.has(String(key))) {
@@ -13320,6 +12646,55 @@
         });
       }
 
+      if (segmentButtons && !segmentButtons.dataset.bound) {
+        segmentButtons.dataset.bound = "true";
+        segmentButtons.addEventListener("click", (event) => {
+          const button = event.target.closest("button[data-segment-filter]");
+          if (!button) return;
+          applyTaskSegmentFilter(button.dataset.segmentFilter || "");
+        });
+      }
+
+      if (segmentManageBtn && !segmentManageBtn.dataset.bound) {
+        segmentManageBtn.dataset.bound = "true";
+        segmentManageBtn.addEventListener("click", () => openTaskSegmentsManager());
+      }
+
+      const taskSegmentsForm = ensureTaskSegmentsManagerForm();
+      if (taskSegmentsForm && !taskSegmentsForm.dataset.bound) {
+        taskSegmentsForm.dataset.bound = "true";
+        taskSegmentsForm.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const input = taskSegmentsForm.nombre || taskSegmentsForm.querySelector("#tasks-segment-name");
+          const status = taskSegmentsForm.querySelector("#tasks-segment-status");
+          const submitBtn = taskSegmentsForm.querySelector("button[type='submit']");
+          const nombre = normalizeSegmentName(input?.value || "");
+          if (!nombre) return;
+          try {
+            if (status) {
+              status.textContent = "";
+              delete status.dataset.type;
+            }
+            await withButtonBusy(
+              submitBtn,
+              async () => {
+                const created = await postJson("/tasks/segments", { nombre });
+                ensureTaskSegmentCatalogEntry(created?.nombre || nombre);
+              },
+              "Guardando..."
+            );
+            if (input) input.value = "";
+            renderTaskSegmentsManager();
+            renderTaskSegmentButtons();
+          } catch (err) {
+            if (status) {
+              status.textContent = err.message || "No se pudo crear el segmento.";
+              status.dataset.type = "error";
+            }
+          }
+        });
+      }
+
       const syncFiltersButtonState = (isOpen) => {
         if (!filtersBtn) return;
         filtersBtn.classList.toggle("btn-primary", Boolean(isOpen));
@@ -13346,28 +12721,6 @@
             renderBacklogPreservingViewport();
           }
         }
-        if (!next) return;
-        // Position as a Notion-style popover anchored to the "Columnas" button.
-        if (!columnsBtn) return;
-        window.requestAnimationFrame(() => {
-          try {
-            const rootRect = root.getBoundingClientRect();
-            const btnRect = columnsBtn.getBoundingClientRect();
-            const panelRect = columnsPanel.getBoundingClientRect();
-            const gap = 8;
-            const desiredTop = btnRect.bottom - rootRect.top + gap;
-            const desiredLeft = btnRect.left - rootRect.left;
-            const maxLeft = Math.max(gap, rootRect.width - panelRect.width - gap);
-            const maxTop = Math.max(gap, rootRect.height - panelRect.height - gap);
-            const left = Math.max(gap, Math.min(desiredLeft, maxLeft));
-            const top = Math.max(gap, Math.min(desiredTop, maxTop));
-            columnsPanel.style.left = `${Math.round(left)}px`;
-            columnsPanel.style.top = `${Math.round(top)}px`;
-            columnsPanel.style.right = "auto";
-          } catch {
-            // ignore positioning errors
-          }
-        });
       };
 
       if (filtersBtn && !filtersBtn.dataset.bound) {
@@ -13544,20 +12897,6 @@
         });
       }
 
-      if (!state.tasksColumnsOutsideBound) {
-        state.tasksColumnsOutsideBound = true;
-        document.addEventListener("click", (event) => {
-          if (!columnsPanel || columnsPanel.classList.contains("hidden")) return;
-          if (columnsPanel.contains(event.target)) return;
-          if (columnsBtn && columnsBtn.contains(event.target)) return;
-          toggleColumnsPanel(false);
-        });
-        window.addEventListener("resize", () => {
-          if (!columnsPanel || columnsPanel.classList.contains("hidden")) return;
-          toggleColumnsPanel(true);
-        });
-      }
-
       if (!window.__tasksColumnsSyncBound) {
         window.__tasksColumnsSyncBound = true;
         window.addEventListener("tasks:columns-updated", () => renderColumnsManager());
@@ -13566,6 +12905,7 @@
         filterClearBtn.dataset.bound = "true";
         filterClearBtn.addEventListener("click", () => {
           state.tasksStatusFilter = "";
+          state.tasksSegmentFilter = "";
           if (statusSelect) statusSelect.value = "";
           state.tasksDatePreset = "";
           state.tasksFilters = cloneDefaultTasksAdvancedFilters();
@@ -13627,6 +12967,12 @@
             label: `Estado: ${STATUS_LABEL[state.tasksStatusFilter] || state.tasksStatusFilter}`,
           });
         }
+        if (state.tasksSegmentFilter) {
+          chips.push({
+            key: "segmento",
+            label: `Segmento: ${state.tasksSegmentFilter}`,
+          });
+        }
         const s = state.tasksFilters?.statuses || [];
         const p = state.tasksFilters?.priorities || [];
         const a = state.tasksFilters?.assignees || [];
@@ -13665,6 +13011,30 @@
 
       root.__tasksRenderFilterChips = renderFilterChips;
 
+      if (priorityKpis && !priorityKpis.dataset.bound) {
+        priorityKpis.dataset.bound = "true";
+        priorityKpis.addEventListener("click", (event) => {
+          const button = event.target.closest(".tasks-priority-kpi[data-priority-filter]");
+          if (!button) return;
+          const key = String(button.dataset.priorityFilter || "").trim().toLowerCase();
+          if (!key) return;
+          const activeKey = getActivePriorityKpiKey();
+          const nextPriorities =
+            key === "total" || activeKey === key
+              ? [...TASK_PRIORITY_KEYS]
+              : TASK_PRIORITY_KEYS.filter((priority) => priority === key);
+          state.tasksFilters = {
+            ...state.tasksFilters,
+            priorities: nextPriorities,
+          };
+          syncPriorityFilterCheckboxes();
+          saveTasksFiltersState();
+          renderAll();
+          renderFilterChips();
+          syncPriorityKpiState();
+        });
+      }
+
       if (filterPanel && !filterPanel.dataset.bound) {
         filterPanel.dataset.bound = "true";
         filterPanel.addEventListener("change", (event) => {
@@ -13685,6 +13055,9 @@
           if (key === "estado") {
             state.tasksStatusFilter = "";
             if (statusSelect) statusSelect.value = "";
+          } else if (key === "segmento") {
+            state.tasksSegmentFilter = "";
+            renderTaskSegmentButtons();
           } else if (key === "statuses") {
             root.querySelectorAll("#tasks-filter-statuses input[type='checkbox']").forEach((cb) => {
               cb.checked = cb.value !== "archived";
@@ -13715,29 +13088,28 @@
         });
       }
 
-	      if (backlogList && !backlogList.dataset.bound) {
-	        backlogList.dataset.bound = "true";
-	        // Confine horizontal wheel/trackpad scrolling to the backlog table, not the whole page.
-	        backlogList.addEventListener(
-	          "wheel",
-	          (event) => {
+      if (backlogList && !backlogList.dataset.bound) {
+        backlogList.dataset.bound = "true";
+        backlogList.addEventListener(
+          "wheel",
+          (event) => {
             const scroller = event.target.closest?.(".tasks-notion-scroll, .dataTables_scrollBody");
-	            if (!scroller) return;
-	            const dx = Number(event.deltaX || 0);
-	            const dy = Number(event.deltaY || 0);
-	            const wantsHorizontal = Math.abs(dx) > Math.abs(dy) || event.shiftKey;
-	            if (!wantsHorizontal) return;
-	            event.preventDefault();
-	            scroller.scrollLeft += dx || dy;
-	          },
-	          { passive: false }
-	        );
+            if (!scroller) return;
+            const dx = Number(event.deltaX || 0);
+            const dy = Number(event.deltaY || 0);
+            const wantsHorizontal = Math.abs(dx) > Math.abs(dy) || event.shiftKey;
+            if (!wantsHorizontal) return;
+            event.preventDefault();
+            scroller.scrollLeft += dx || dy;
+          },
+          { passive: false }
+        );
 
-	        backlogList.addEventListener("pointerdown", (event) => {
-	          const th = event.target.closest("th[data-col-key]");
-	          if (!th) return;
-	          const key = th.dataset.colKey;
-	          if (!key) return;
+        backlogList.addEventListener("pointerdown", (event) => {
+          const th = event.target.closest("th[data-col-key]");
+          if (!th) return;
+          const key = th.dataset.colKey;
+          if (!key) return;
           const table = th.closest("table");
           if (!table) return;
           const isDataTableActive =
@@ -13745,7 +13117,7 @@
 
           // Resize
           const handle = event.target.closest("[data-action='resize-col']");
-	          if (handle) {
+          if (handle) {
             const selectorKey = CSS.escape(key);
             const col = table.querySelector(`colgroup col[data-col-key="${selectorKey}"]`);
             const startX = event.clientX;
@@ -13951,13 +13323,24 @@
               );
               return;
             }
-            if (field === "tipo") {
-              await updateTaskLocal(
+            if (field === "tipo" || field === "segmento") {
+              const nextSegment = normalizeSegmentName(String(el.value || ""));
+              const updated = await updateTaskLocal(
                 taskId,
-                { tipo: String(el.value || "").trim().toLowerCase() || null },
+                { segmento: nextSegment || null },
                 "Actualizado.",
                 { rerender: "none" }
               );
+              ensureTaskSegmentCatalogEntry(updated?.segmento || nextSegment || "");
+              syncBacklogRowAfterSegmentUpdate(row, updated);
+              renderTaskSegmentButtons();
+              const filtered = applyFilters(state.tasksCache || []);
+              updatePrioritySummaryButton(filtered);
+              renderReports(filtered);
+              const sortState = getTasksBacklogSort();
+              if (state.tasksSegmentFilter || sortState.key === "tipo") {
+                reorderBacklogRowsInPlace({ prune: true });
+              }
               return;
             }
             if (field === "etiquetas") {
@@ -14183,6 +13566,7 @@
     };
     setCheckboxes("#tasks-filter-statuses", state.tasksFilters?.statuses || []);
     setCheckboxes("#tasks-filter-priorities", state.tasksFilters?.priorities || []);
+    syncPriorityKpiState();
     if (filterAssignee) {
       const opts = [
         { id: "__none__", nombre: "Sin responsable" },
@@ -14202,6 +13586,7 @@
     if (filterDueFrom) filterDueFrom.value = state.tasksFilters?.dueFrom || "";
     if (filterDueTo) filterDueTo.value = state.tasksFilters?.dueTo || "";
     if (filterHideSubtasks) filterHideSubtasks.checked = Boolean(state.tasksFilters?.hideSubtasks);
+    state.tasksSegmentFilter = normalizeSegmentName(state.tasksSegmentFilter || "");
     setActiveView(state.tasksView || "backlog");
     loadAndRender();
     if (root.__tasksRenderFilterChips) root.__tasksRenderFilterChips();
@@ -14242,423 +13627,6 @@
     if (completionEl) {
       const pct = counts.total ? Math.round((counts.finalizadas / counts.total) * 100) : 0;
       completionEl.textContent = `${pct}%`;
-    }
-  }
-
-  function initReleaseGantt() {
-    const panel = qs("#release-gantt-page");
-    if (!panel || !state.base) return;
-    const board = qs("#release-gantt-board", panel);
-    const quarterFilterEl = qs("#release-gantt-quarter-filter", panel);
-    const summaryEl = qs("#release-gantt-summary", panel);
-    const kpiTotalEl = qs("#release-gantt-kpi-total", panel);
-    const kpiTotalContextEl = qs("#release-gantt-kpi-total-context", panel);
-    const kpiQuarterTotalEl = qs("#release-gantt-kpi-quarter-total", panel);
-    const kpiQuarterContextEl = qs("#release-gantt-kpi-quarter-context", panel);
-    const zoomInput = qs("#release-gantt-zoom", panel);
-    const zoomOutBtn = qs("#release-gantt-zoom-out", panel);
-    const zoomInBtn = qs("#release-gantt-zoom-in", panel);
-    const zoomLabel = qs("#release-gantt-zoom-label", panel);
-    if (!board || !quarterFilterEl || !zoomInput) return;
-
-    const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-    const addDays = (date, days) => {
-      const copy = new Date(date.getTime());
-      copy.setDate(copy.getDate() + days);
-      copy.setHours(0, 0, 0, 0);
-      return copy;
-    };
-    const getIsoWeek = (date) => {
-      const copy = new Date(date.getTime());
-      copy.setHours(0, 0, 0, 0);
-      const day = copy.getDay() || 7;
-      copy.setDate(copy.getDate() + 4 - day);
-      const yearStart = new Date(copy.getFullYear(), 0, 1);
-      return Math.ceil(((copy - yearStart) / 86400000 + 1) / 7);
-    };
-    const startOfWeek = (date) => {
-      const copy = new Date(date.getTime());
-      copy.setHours(0, 0, 0, 0);
-      const day = copy.getDay();
-      const diff = day === 0 ? -6 : 1 - day;
-      copy.setDate(copy.getDate() + diff);
-      return copy;
-    };
-    const formatShortDate = (date) =>
-      date.toLocaleDateString("es-PY", { day: "2-digit", month: "2-digit" });
-    const dayDiff = (end, start) => Math.round((end - start) / 86400000);
-    const getQuarterLabel = (row) => {
-      if (row.quarter) return row.quarter;
-      const startDate = parseDateOnly(row.start_date);
-      const dueDate = parseDateOnly(row.due_date);
-      const date = startDate || dueDate;
-      if (date) {
-        const quarter = Math.floor(date.getMonth() / 3) + 1;
-        return `Q${quarter} ${date.getFullYear()}`;
-      }
-      if (row.sprint_nombre) {
-        const rank = getSprintRank(row.sprint_nombre);
-        if (rank) {
-          const year = Math.floor(rank / 100);
-          const week = rank % 100;
-          const quarter = Math.min(4, Math.max(1, Math.floor((week - 1) / 13) + 1));
-          return `Q${quarter} ${year}`;
-        }
-      }
-      return "-";
-    };
-    const getQuarterFilterValue = (item) => {
-      const label = getQuarterLabel(item);
-      return label && label !== "-" ? label : "__none__";
-    };
-    const buildQuarterOptions = (rows, manual = []) => {
-      const set = new Set();
-      manual.forEach((value) => {
-        if (value) set.add(value);
-      });
-      rows.forEach((item) => {
-        if (item.quarter) {
-          set.add(item.quarter);
-          return;
-        }
-        const label = getQuarterLabel(item);
-        if (label && label !== "-") {
-          set.add(label);
-        }
-      });
-      return Array.from(set).sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
-    };
-    const isReleaseRow = (item) => {
-      const issueType = normalizeText(item.issue_type || "");
-      const tipo = normalizeText(item.release_tipo || "");
-      return issueType === "release" || (!!tipo && tipo !== "tarea");
-    };
-    const getReleaseYear = (row) => {
-      const startDate = parseDateOnly(row.start_date);
-      const dueDate = parseDateOnly(row.due_date);
-      const endDate = parseDateOnly(row.end_date);
-      const baseDate = startDate || dueDate || endDate;
-      if (baseDate) return baseDate.getFullYear();
-      const quarterLabel = row.quarter || getQuarterLabel(row);
-      const quarterMatch = String(quarterLabel || "").match(/(\d{4})/);
-      if (quarterMatch) return Number(quarterMatch[1]);
-      if (row.sprint_nombre) {
-        const rank = getSprintRank(row.sprint_nombre);
-        if (rank) return Math.floor(rank / 100);
-      }
-      return null;
-    };
-
-    const setZoomPct = (nextPct) => {
-      const normalizedPct = clamp(Math.round(nextPct), 60, 250);
-      const nextZoom = normalizedPct / 100;
-      if (Math.abs((state.releaseGanttZoom || 1) - nextZoom) < 0.001) return;
-      state.releaseGanttZoom = nextZoom;
-      initReleaseGantt();
-    };
-
-    if (!zoomInput.dataset.bound) {
-      zoomInput.dataset.bound = "true";
-      zoomInput.addEventListener("change", () => {
-        setZoomPct(Number(zoomInput.value || 100));
-      });
-    }
-    if (zoomOutBtn && !zoomOutBtn.dataset.bound) {
-      zoomOutBtn.dataset.bound = "true";
-      zoomOutBtn.addEventListener("click", () => {
-        setZoomPct(Math.round((state.releaseGanttZoom || 1) * 100) - 10);
-      });
-    }
-    if (zoomInBtn && !zoomInBtn.dataset.bound) {
-      zoomInBtn.dataset.bound = "true";
-      zoomInBtn.addEventListener("click", () => {
-        setZoomPct(Math.round((state.releaseGanttZoom || 1) * 100) + 10);
-      });
-    }
-
-    const releaseItemsRows = Array.isArray(state.base.releaseItems) ? state.base.releaseItems : [];
-    const releaseImportRows = Array.isArray(state.base.releaseImportItems)
-      ? normalizeReleaseRowsForUi(state.base.releaseImportItems)
-      : [];
-    const allReleaseRows = releaseItemsRows.length ? releaseItemsRows : releaseImportRows;
-    let releaseRowsByCell = allReleaseRows.filter((item) => {
-      if (state.selectedCelulaId) return String(item.celula_id) === String(state.selectedCelulaId);
-      return true;
-    });
-    if (!releaseRowsByCell.length && state.selectedCelulaId) {
-      releaseRowsByCell = [...allReleaseRows];
-    }
-    const releaseRowsStrict = releaseRowsByCell.filter((item) => isReleaseRow(item));
-    const releasesFiltrados = releaseRowsStrict.length ? releaseRowsStrict : releaseRowsByCell;
-
-    const manualQuarters = (state.base.quarters || []).map((item) => item.label).filter(Boolean);
-    const quarterOptions = buildQuarterOptions(releasesFiltrados, manualQuarters);
-    const prevQuarter = state.releaseGanttQuarterFilter || "";
-    const todayForQuarter = getToday();
-    const currentYear = todayForQuarter.getFullYear();
-    const releasesCurrentYear = releasesFiltrados.filter((item) => getReleaseYear(item) === currentYear);
-    const currentQuarterLabel = `Q${Math.floor(todayForQuarter.getMonth() / 3) + 1} ${todayForQuarter.getFullYear()}`;
-    quarterFilterEl.innerHTML = `
-      <option value="">Todos</option>
-      ${quarterOptions.map((label) => `<option value="${label}">${label}</option>`).join("")}
-      <option value="__none__">Sin quarter</option>
-    `;
-    const optionValues = Array.from(quarterFilterEl.options).map((opt) => opt.value);
-    const hasCurrentQuarterData = releasesFiltrados.some(
-      (item) => getQuarterFilterValue(item) === currentQuarterLabel
-    );
-    let nextQuarter = prevQuarter;
-    if (!state.releaseGanttQuarterInitialized && !nextQuarter && optionValues.includes(currentQuarterLabel)) {
-      nextQuarter = hasCurrentQuarterData ? currentQuarterLabel : "";
-    }
-    if (nextQuarter && !optionValues.includes(nextQuarter)) {
-      nextQuarter =
-        optionValues.includes(currentQuarterLabel) && hasCurrentQuarterData
-          ? currentQuarterLabel
-          : "";
-    }
-    state.releaseGanttQuarterFilter = nextQuarter;
-    state.releaseGanttQuarterInitialized = true;
-    quarterFilterEl.value = state.releaseGanttQuarterFilter || "";
-    if (!quarterFilterEl.dataset.bound) {
-      quarterFilterEl.dataset.bound = "true";
-      quarterFilterEl.addEventListener("change", () => {
-        state.releaseGanttQuarterFilter = quarterFilterEl.value || "";
-        initReleaseGantt();
-      });
-    }
-
-    const quarterFiltered = state.releaseGanttQuarterFilter
-      ? releasesFiltrados.filter((item) => getQuarterFilterValue(item) === state.releaseGanttQuarterFilter)
-      : releasesFiltrados;
-    const selectedCell = state.selectedCelulaId
-      ? (state.base.celulas || []).find((item) => String(item.id) === String(state.selectedCelulaId))
-      : null;
-    const cellLabel = selectedCell?.nombre || "Todas las celulas";
-    const quarterLabel = state.releaseGanttQuarterFilter
-      ? state.releaseGanttQuarterFilter === "__none__"
-        ? "Sin quarter"
-        : state.releaseGanttQuarterFilter
-      : "Todos";
-    if (kpiTotalEl) kpiTotalEl.textContent = String(releasesCurrentYear.length || 0);
-    if (kpiTotalContextEl) kpiTotalContextEl.textContent = `${cellLabel} · ${currentYear}`;
-    if (kpiQuarterTotalEl) kpiQuarterTotalEl.textContent = String(quarterFiltered.length || 0);
-    if (kpiQuarterContextEl) kpiQuarterContextEl.textContent = `${cellLabel} · ${quarterLabel}`;
-    const today = getToday();
-    const rows = quarterFiltered
-      .map((item) => {
-        const hasCompleteDates =
-          Boolean(parseDateOnly(item.start_date)) &&
-          Boolean(parseDateOnly(item.end_date)) &&
-          Boolean(parseDateOnly(item.due_date));
-        let start = parseDateOnly(item.start_date) || parseDateOnly(item.due_date) || parseDateOnly(item.end_date);
-        let end = parseDateOnly(item.end_date) || parseDateOnly(item.due_date) || start;
-        let isUnscheduled = false;
-        if (!start || !end) {
-          start = today;
-          end = today;
-          isUnscheduled = true;
-        }
-        if (end < start) {
-          const tmp = start;
-          start = end;
-          end = tmp;
-        }
-        return {
-          item,
-          start,
-          end,
-          isUnscheduled,
-          hasCompleteDates,
-          quarter: getQuarterLabel(item),
-        };
-      })
-      .sort((a, b) => {
-        const byStart = a.start - b.start;
-        if (byStart) return byStart;
-        const byEnd = a.end - b.end;
-        if (byEnd) return byEnd;
-        return String(a.item.issue_key || "").localeCompare(String(b.item.issue_key || ""), "es", { numeric: true });
-      });
-
-    const zoomPct = clamp(Math.round((state.releaseGanttZoom || 1) * 100), 60, 250);
-    state.releaseGanttZoom = zoomPct / 100;
-    zoomInput.value = String(zoomPct);
-    if (zoomLabel) zoomLabel.textContent = `${zoomPct}%`;
-
-    if (!rows.length) {
-      board.innerHTML = '<p class="empty">Sin releases para visualizar en Gantt.</p>';
-      if (summaryEl) summaryEl.textContent = "No hay datos para el filtro seleccionado.";
-      return;
-    }
-
-    let minDate = rows[0].start;
-    let maxDate = rows[0].end;
-    rows.forEach((row) => {
-      if (row.start < minDate) minDate = row.start;
-      if (row.end > maxDate) maxDate = row.end;
-    });
-    minDate = addDays(minDate, -3);
-    maxDate = addDays(maxDate, 3);
-    if (dayDiff(maxDate, minDate) < 13) {
-      maxDate = addDays(minDate, 13);
-    }
-
-    const dayWidth = Math.max(12, Math.round(18 * state.releaseGanttZoom));
-    const totalDays = dayDiff(maxDate, minDate) + 1;
-    const timelineWidth = Math.max(640, totalDays * dayWidth);
-    const todayLeft = dayDiff(today, minDate) * dayWidth;
-    const showToday = today >= minDate && today <= maxDate;
-    if (!board.dataset.boundGanttDates) {
-      board.dataset.boundGanttDates = "true";
-      board.addEventListener("click", (event) => {
-        if (event.target.closest(".release-gantt-bar")) return;
-        board
-          .querySelectorAll(".release-gantt-bar.show-dates")
-          .forEach((el) => el.classList.remove("show-dates"));
-      });
-    }
-
-    const grid = document.createElement("div");
-    grid.className = "release-gantt-grid";
-    grid.style.setProperty("--timeline-width", `${timelineWidth}px`);
-    grid.style.setProperty("--day-width", `${dayWidth}px`);
-
-    const headerLabel = document.createElement("div");
-    headerLabel.className = "release-gantt-head-label";
-    headerLabel.textContent = "Releases";
-    grid.appendChild(headerLabel);
-
-    const headerTimeline = document.createElement("div");
-    headerTimeline.className = "release-gantt-head-track";
-    headerTimeline.style.width = `${timelineWidth}px`;
-    const monthsWrap = document.createElement("div");
-    monthsWrap.className = "release-gantt-months";
-    let cursor = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
-    cursor.setHours(0, 0, 0, 0);
-    while (cursor <= maxDate) {
-      const monthStart = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
-      monthStart.setHours(0, 0, 0, 0);
-      const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
-      monthEnd.setHours(0, 0, 0, 0);
-      const segmentStart = monthStart < minDate ? minDate : monthStart;
-      const segmentEnd = monthEnd > maxDate ? maxDate : monthEnd;
-      const spanDays = dayDiff(segmentEnd, segmentStart) + 1;
-      const monthCell = document.createElement("div");
-      monthCell.className = "release-gantt-month";
-      monthCell.style.width = `${Math.max(dayWidth, spanDays * dayWidth)}px`;
-      monthCell.textContent = segmentStart.toLocaleDateString("es-PY", { month: "short", year: "numeric" });
-      monthsWrap.appendChild(monthCell);
-      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
-      cursor.setHours(0, 0, 0, 0);
-    }
-    const weeksWrap = document.createElement("div");
-    weeksWrap.className = "release-gantt-weeks";
-    let weekCursor = startOfWeek(minDate);
-    while (weekCursor <= maxDate) {
-      const weekStart = new Date(weekCursor.getTime());
-      weekStart.setHours(0, 0, 0, 0);
-      const weekEnd = addDays(weekStart, 6);
-      const segmentStart = weekStart < minDate ? minDate : weekStart;
-      const segmentEnd = weekEnd > maxDate ? maxDate : weekEnd;
-      const spanDays = dayDiff(segmentEnd, segmentStart) + 1;
-      const weekCell = document.createElement("div");
-      weekCell.className = "release-gantt-week";
-      weekCell.style.width = `${Math.max(dayWidth, spanDays * dayWidth)}px`;
-      weekCell.textContent = `S${getIsoWeek(segmentStart)} ${formatShortDate(segmentStart)}-${formatShortDate(
-        segmentEnd
-      )}`;
-      weeksWrap.appendChild(weekCell);
-      weekCursor = addDays(weekCursor, 7);
-    }
-    headerTimeline.appendChild(monthsWrap);
-    headerTimeline.appendChild(weeksWrap);
-    if (showToday) {
-      const todayLine = document.createElement("span");
-      todayLine.className = "release-gantt-today";
-      todayLine.style.left = `${todayLeft}px`;
-      headerTimeline.appendChild(todayLine);
-    }
-    grid.appendChild(headerTimeline);
-
-    rows.forEach((row, rowIndex) => {
-      const labelCell = document.createElement("div");
-      labelCell.className = "release-gantt-row-label";
-      const key = row.item.issue_key || "Release";
-      const title = row.item.summary || "Sin resumen";
-      const orderPrefix = `#${rowIndex + 1} · `;
-      const titleEl = document.createElement("div");
-      titleEl.className = "release-gantt-title";
-      titleEl.textContent = `${orderPrefix}${key} - ${title}`;
-      const metaEl = document.createElement("div");
-      metaEl.className = "release-gantt-meta";
-      const startText = row.item.start_date || "-";
-      const endText = row.item.end_date || row.item.due_date || "-";
-      const quarterText = row.quarter && row.quarter !== "-" ? row.quarter : "Sin quarter";
-      metaEl.textContent = `${quarterText} · ${startText} -> ${endText}`;
-      labelCell.appendChild(titleEl);
-      labelCell.appendChild(metaEl);
-      grid.appendChild(labelCell);
-
-      const trackCell = document.createElement("div");
-      trackCell.className = "release-gantt-row-track";
-      trackCell.style.width = `${timelineWidth}px`;
-      if (showToday) {
-        const todayLine = document.createElement("span");
-        todayLine.className = "release-gantt-today";
-        todayLine.style.left = `${todayLeft}px`;
-        trackCell.appendChild(todayLine);
-      }
-      const bar = document.createElement("div");
-      const statusBucket = classifyReleaseStatus(row.item.status);
-      const normalizedStatus = normalizeText(row.item.status || "");
-      bar.className = "release-gantt-bar";
-      if (normalizedStatus.includes("cancelad")) bar.classList.add("is-cancelled");
-      else if (statusBucket === "finalizada") bar.classList.add("is-done");
-      else if (statusBucket === "progreso") bar.classList.add("is-progress");
-      else bar.classList.add("is-pending");
-      if (row.hasCompleteDates) bar.classList.add("is-complete-dates");
-      if (row.isUnscheduled) bar.classList.add("is-unscheduled");
-      const left = dayDiff(row.start, minDate) * dayWidth;
-      const width = Math.max(dayWidth, (dayDiff(row.end, row.start) + 1) * dayWidth);
-      bar.style.left = `${left}px`;
-      bar.style.width = `${width}px`;
-      const label = document.createElement("span");
-      label.className = "release-gantt-bar-label";
-      label.textContent = `${orderPrefix}${row.item.issue_key || row.item.summary || "Release"}`;
-      const dateStart = document.createElement("span");
-      dateStart.className = "release-gantt-bar-date is-start";
-      dateStart.textContent = formatISO(row.start);
-      const dateEnd = document.createElement("span");
-      dateEnd.className = "release-gantt-bar-date is-end";
-      dateEnd.textContent = formatISO(row.end);
-      bar.addEventListener("click", (event) => {
-        event.stopPropagation();
-        const shouldOpen = !bar.classList.contains("show-dates");
-        board
-          .querySelectorAll(".release-gantt-bar.show-dates")
-          .forEach((el) => el.classList.remove("show-dates"));
-        if (shouldOpen) bar.classList.add("show-dates");
-      });
-      bar.appendChild(label);
-      bar.appendChild(dateStart);
-      bar.appendChild(dateEnd);
-      trackCell.appendChild(bar);
-      grid.appendChild(trackCell);
-    });
-
-    board.innerHTML = "";
-    board.appendChild(grid);
-    if (summaryEl) {
-      const quarterText = state.releaseGanttQuarterFilter
-        ? `Quarter: ${
-            state.releaseGanttQuarterFilter === "__none__" ? "Sin quarter" : state.releaseGanttQuarterFilter
-          }`
-        : "Todos los quarters";
-      const completeDatesCount = rows.filter((row) => row.hasCompleteDates).length;
-      summaryEl.textContent = `${rows.length} releases · ${quarterText} · Completos (Start+End+Due): ${completeDatesCount} · Rango ${formatISO(
-        minDate
-      )} a ${formatISO(maxDate)}`;
     }
   }
 
@@ -15355,11 +14323,6 @@
         const label = document.createElement("span");
         label.textContent = name;
         li.appendChild(label);
-        const online = persona.online !== false;
-        const dot = document.createElement("span");
-        dot.className = `presence-dot ${online ? "online" : "offline"}`;
-        dot.title = online ? "Conectado" : "Desconectado";
-        li.insertBefore(dot, label);
         const personaId = persona.persona_id;
         if (personaId != null && submittedIds.has(String(personaId))) {
           const badge = document.createElement("span");
@@ -15454,15 +14417,6 @@
 
     if (!state.selectedCelulaId) {
       setRetroStatus("Selecciona una celula para gestionar retros.", "warn");
-      if (createBtn && !createBtn.dataset.boundNoCell) {
-        // Avoid "no-op": the create button exists in the UI but retro requires a selected cell.
-        createBtn.dataset.boundNoCell = "true";
-        createBtn.addEventListener("click", () => {
-          if (!state.selectedCelulaId) {
-            setRetroStatus("Selecciona una celula para gestionar retros.", "warn");
-          }
-        });
-      }
       renderPresence({ personas: [], total: 0 });
       if (summaryTable) summaryTable.innerHTML = '<p class="empty">Sin celula seleccionada.</p>';
       if (itemsTable) itemsTable.innerHTML = "";
@@ -15623,28 +14577,13 @@
         commitmentFields.classList.toggle("hidden", pendingValues.tipo !== "compromiso");
       }
     }
-    if (!pendingValues && tipoSelect) {
-      const lastTipo = state.retroLastTipo;
-      if (
-        lastTipo &&
-        Array.from(tipoSelect.options || []).some((opt) => opt && String(opt.value) === String(lastTipo))
-      ) {
-        tipoSelect.value = lastTipo;
-        if (commitmentFields) {
-          commitmentFields.classList.toggle("hidden", lastTipo !== "compromiso");
-        }
-      } else if (tipoSelect.value) {
-        // Seed once so resetForm can restore it consistently.
-        state.retroLastTipo = tipoSelect.value;
-      }
-    }
 
     const sprintId = Number(sprintSelect?.value || state.selectedSprintId || 0);
     if (!skipPolling && !window.__retroAdminPoll) {
       window.__retroAdminPoll = window.setInterval(() => {
         if (document.hidden) return;
         initRetrospective({ skipPolling: true });
-      }, 8000);
+      }, 2000);
     }
     if (state.retroActiveId) {
       const exists = retros.some((retro) => String(retro.id) === state.retroActiveId);
@@ -15736,13 +14675,12 @@
       }
     }
     let items = [];
-    const detailRetro = shareRetro || currentRetro;
-    if (detailRetro) {
+    if (currentRetro) {
       try {
-        const detail = await fetchJson(`/retros/${detailRetro.id}`);
+        const detail = await fetchJson(`/retros/${currentRetro.id}`);
         items = detail.items || [];
         try {
-          state.retroPresence = await fetchJson(`/retros/${detailRetro.id}/presence`);
+          state.retroPresence = await fetchJson(`/retros/${currentRetro.id}/presence`);
           renderPresence(state.retroPresence);
         } catch {
           // ignore
@@ -15752,53 +14690,17 @@
         items = [];
       }
     }
-    // Presence needs its own polling so "online/offline" reflects mobile lock/unlock quickly,
-    // even when no one is actively joining/leaving (stale heartbeat is computed server-side).
-    if (detailRetro?.id) {
-      const pollKey = "__retroPresencePollId";
-      const timerKey = "__retroPresencePoll";
-      const retroIdStr = String(detailRetro.id);
-      if (window[pollKey] !== retroIdStr) {
-        if (window[timerKey]) {
-          window.clearInterval(window[timerKey]);
-          window[timerKey] = null;
-        }
-        window[pollKey] = retroIdStr;
-        window[timerKey] = window.setInterval(async () => {
-          if (document.hidden) return;
-          try {
-            state.retroPresence = await fetchJson(`/retros/${detailRetro.id}/presence`);
-            renderPresence(state.retroPresence);
-          } catch {
-            // ignore
-          }
-        }, 3000);
-      }
-    }
     if (shareRetro && shareRetro.estado !== "abierta") {
       state.retroPresence = { total: 0, personas: [] };
       renderPresence(state.retroPresence);
     }
-    const getActivePhase = () => shareRetro?.fase || currentRetro?.fase || "";
-    const getActiveEstado = () => shareRetro?.estado || currentRetro?.estado || "";
-    const computeSubmittedIds = (phase) =>
-      new Set(
-        items
-          .filter((item) => item?.persona_id && item.tipo === phase)
-          .map((item) => String(item.persona_id))
-      );
-    const syncSubmittedIds = (phase = getActivePhase()) => {
-      if (getActiveEstado() === "cerrada") {
-        state.retroSubmittedIds = new Set();
-        return;
-      }
-      if (!phase || phase === "espera" || phase === "compromiso") {
-        state.retroSubmittedIds = new Set();
-        return;
-      }
-      state.retroSubmittedIds = computeSubmittedIds(phase);
-    };
-    syncSubmittedIds();
+    const currentPhase = shareRetro?.fase || currentRetro?.fase || "";
+    const submittedIds = new Set(
+      items
+        .filter((item) => item?.persona_id && item.tipo === currentPhase)
+        .map((item) => String(item.persona_id))
+    );
+    state.retroSubmittedIds = submittedIds;
 
     const updateShareSection = () => {
       if (!shareUrl) return;
@@ -15828,11 +14730,7 @@
       }
       const origin = window.location.origin;
       const basePath = window.location.pathname.replace(/[^/]+$/, "retro-public.html");
-      // Include token so the public page can always resolve the session even if it's closed
-      // (celula+sprint endpoint only returns abierta).
-      const shareLink = `${origin}${basePath}?token=${encodeURIComponent(
-        shareRetro.token
-      )}&celula_id=${shareRetro.celula_id}&sprint_id=${shareRetro.sprint_id}`;
+      const shareLink = `${origin}${basePath}?celula_id=${shareRetro.celula_id}&sprint_id=${shareRetro.sprint_id}`;
       shareUrl.value = shareLink;
       shareUrl.readOnly = true;
       if (shareQr) {
@@ -15915,7 +14813,12 @@
               initRetrospective({ skipPolling: true });
               return;
             }
-            syncSubmittedIds();
+            const activePhase = shareRetro?.fase || currentRetro?.fase || "";
+            state.retroSubmittedIds = new Set(
+              items
+                .filter((entry) => entry?.persona_id && entry.tipo === activePhase)
+                .map((entry) => String(entry.persona_id))
+            );
             renderItems();
             renderCommitments();
             renderPresence(state.retroPresence);
@@ -15923,7 +14826,6 @@
           }
         }
         if (payload?.type === "retro_updated" && shareRetro && payload.retro_id === shareRetro.id) {
-          const prevPhase = shareRetro.fase;
           shareRetro = {
             ...shareRetro,
             fase: payload.fase || shareRetro.fase,
@@ -15935,18 +14837,7 @@
           if (shareRetro.estado !== "abierta") {
             state.retroPresence = { total: 0, personas: [] };
             state.retroClaimedIds = new Set();
-            state.retroSubmittedIds = new Set();
             renderPresence(state.retroPresence);
-          }
-          if (prevPhase !== shareRetro.fase) {
-            if (shareRetro.fase === "bien" || shareRetro.fase === "mal") {
-              state.retroLastTipo = shareRetro.fase;
-              if (tipoSelect) tipoSelect.value = shareRetro.fase;
-              if (commitmentFields) commitmentFields.classList.add("hidden");
-            }
-            syncSubmittedIds(shareRetro.fase);
-            renderPresence(state.retroPresence);
-            renderItems();
           }
           updateShareSection();
           updatePhaseControls();
@@ -16057,14 +14948,8 @@
           async () => {
             if (shareRetro) {
               shareRetro = { ...shareRetro, fase: "bien", estado: "abierta" };
-              state.retroLastTipo = "bien";
-              if (tipoSelect) tipoSelect.value = "bien";
-              if (commitmentFields) commitmentFields.classList.add("hidden");
               updateShareSection();
               updatePhaseControls();
-              syncSubmittedIds("bien");
-              renderPresence(state.retroPresence);
-              renderItems();
             }
             await putJson(`/retros/${shareRetro.id}`, { fase: "bien", estado: "abierta" });
             initRetrospective();
@@ -16086,14 +14971,8 @@
           async () => {
             if (shareRetro) {
               shareRetro = { ...shareRetro, fase: "mal", estado: "abierta" };
-              state.retroLastTipo = "mal";
-              if (tipoSelect) tipoSelect.value = "mal";
-              if (commitmentFields) commitmentFields.classList.add("hidden");
               updateShareSection();
               updatePhaseControls();
-              syncSubmittedIds("mal");
-              renderPresence(state.retroPresence);
-              renderItems();
             }
             await putJson(`/retros/${shareRetro.id}`, { fase: "mal", estado: "abierta" });
             initRetrospective();
@@ -16158,169 +15037,55 @@
 
     const renderItems = () => {
       if (!itemsTable) return;
-      const activePhase = getActivePhase();
       const grouped = {
         bien: [],
         mal: [],
         compromiso: [],
       };
       items.forEach((item) => {
-        if (!item || !grouped[item.tipo]) return;
-        grouped[item.tipo].push(item);
+        if (grouped[item.tipo]) {
+          if (item.tipo === "compromiso") {
+            const assigned = item.asignado_id ? personaMap[item.asignado_id] || "" : "";
+            const dateLabel = item.fecha_compromiso ? formatDate(item.fecha_compromiso) : "";
+            const parts = [item.detalle];
+            if (assigned) parts.push(assigned);
+            if (dateLabel) parts.push(dateLabel);
+            grouped[item.tipo].push(parts.join(" · "));
+          } else {
+            grouped[item.tipo].push(item.detalle);
+          }
+        }
       });
-      ["bien", "mal", "compromiso"].forEach((key) => {
-        grouped[key] = grouped[key].slice().sort((a, b) => (a.id || 0) - (b.id || 0));
-      });
-
-      const makeCard = ({ title, className, bodyNode }) => {
+      const cardSpecs = [
+        { key: "bien", title: "Que hicimos bien?", className: "retro-card--good" },
+        { key: "mal", title: "Que pudimos hacer mejor?", className: "retro-card--bad" },
+        { key: "compromiso", title: "Que nos comprometemos?", className: "retro-card--commit" },
+      ];
+      const wrapper = document.createElement("div");
+      wrapper.className = "retro-cards";
+      cardSpecs.forEach((spec) => {
         const card = document.createElement("div");
-        card.className = `retro-card ${className}`;
-        const h = document.createElement("h4");
-        h.textContent = title;
-        card.appendChild(h);
-        card.appendChild(bodyNode);
-        return card;
-      };
-
-      const buildMiniList = (entries, opts = {}) => {
-        const showAuthor = opts.showAuthor !== false;
-        const list = document.createElement("ol");
-        list.className = "retro-mini-list";
+        card.className = `retro-card ${spec.className}`;
+        const title = document.createElement("h4");
+        title.textContent = spec.title;
+        const list = document.createElement("ul");
+        const entries = grouped[spec.key];
         if (!entries.length) {
           const empty = document.createElement("li");
           empty.className = "empty";
           empty.textContent = "Sin aportes.";
           list.appendChild(empty);
-          return list;
+        } else {
+          entries.forEach((text) => {
+            const li = document.createElement("li");
+            li.textContent = text;
+            list.appendChild(li);
+          });
         }
-        entries.forEach((entry) => {
-          const li = document.createElement("li");
-          if (showAuthor) {
-            const author = entry.persona_id ? personaMap[entry.persona_id] || "" : "";
-            li.textContent = author ? `${author}: ${entry.detalle}` : entry.detalle;
-          } else {
-            li.textContent = entry.detalle || "";
-          }
-          list.appendChild(li);
-        });
-        return list;
-      };
-
-      const buildCardGrid = (entries) => {
-        const grid = document.createElement("div");
-        grid.className = "retro-item-grid";
-        if (!entries.length) {
-          const empty = document.createElement("p");
-          empty.className = "empty";
-          empty.textContent = "Sin aportes.";
-          grid.appendChild(empty);
-          return grid;
-        }
-        entries.forEach((entry) => {
-          const card = document.createElement("div");
-          card.className = "retro-item-card";
-          const meta = document.createElement("div");
-          meta.className = "retro-item-meta";
-          const author = document.createElement("strong");
-          author.textContent = entry.persona_id ? personaMap[entry.persona_id] || "Usuario" : "Usuario";
-          const seq = document.createElement("span");
-          seq.textContent = entry.id ? `#${entry.id}` : "";
-          meta.appendChild(author);
-          meta.appendChild(seq);
-          const body = document.createElement("div");
-          body.className = "retro-item-body";
-          body.textContent = entry.detalle || "";
-          card.appendChild(meta);
-          card.appendChild(body);
-          grid.appendChild(card);
-        });
-        return grid;
-      };
-
-      const wrapper = document.createElement("div");
-      if (getActiveEstado() === "cerrada") {
-        wrapper.className = "retro-focus is-closed";
-        const left = document.createElement("div");
-        left.className = "retro-focus-half";
-        left.appendChild(
-          makeCard({
-            title: "Que hicimos bien? (lista)",
-            className: "retro-card--good",
-            bodyNode: buildMiniList(grouped.bien, { showAuthor: false }),
-          })
-        );
-        const right = document.createElement("div");
-        right.className = "retro-focus-half";
-        right.appendChild(
-          makeCard({
-            title: "Que pudimos hacer mejor? (lista)",
-            className: "retro-card--bad",
-            bodyNode: buildMiniList(grouped.mal, { showAuthor: false }),
-          })
-        );
-        wrapper.appendChild(left);
-        wrapper.appendChild(right);
-      } else if (activePhase === "mal") {
-        wrapper.className = "retro-focus is-mal";
-        const main = document.createElement("div");
-        main.className = "retro-focus-main";
-        main.appendChild(
-          makeCard({
-            title: "Que pudimos hacer mejor?",
-            className: "retro-card--bad",
-            bodyNode: buildCardGrid(grouped.mal),
-          })
-        );
-        const side = document.createElement("div");
-        side.className = "retro-focus-side";
-        side.appendChild(
-          makeCard({
-            title: "Que hicimos bien? (resumen)",
-            className: "retro-card--good",
-            bodyNode: buildMiniList(grouped.bien, { showAuthor: false }),
-          })
-        );
-        wrapper.appendChild(main);
-        wrapper.appendChild(side);
-      } else if (activePhase === "bien") {
-        wrapper.className = "retro-focus is-bien";
-        const main = document.createElement("div");
-        main.className = "retro-focus-main";
-        main.appendChild(
-          makeCard({
-            title: "Que hicimos bien?",
-            className: "retro-card--good",
-            bodyNode: buildCardGrid(grouped.bien),
-          })
-        );
-        const side = document.createElement("div");
-        side.className = "retro-focus-side";
-        side.appendChild(
-          makeCard({
-            title: "Que pudimos hacer mejor? (pendiente)",
-            className: "retro-card--bad",
-            bodyNode: buildMiniList(grouped.mal, { showAuthor: false }),
-          })
-        );
-        wrapper.appendChild(main);
-        wrapper.appendChild(side);
-      } else {
-        wrapper.className = "retro-cards";
-        wrapper.appendChild(
-          makeCard({
-            title: "Que hicimos bien? (lista)",
-            className: "retro-card--good",
-            bodyNode: buildMiniList(grouped.bien),
-          })
-        );
-        wrapper.appendChild(
-          makeCard({
-            title: "Que pudimos hacer mejor? (lista)",
-            className: "retro-card--bad",
-            bodyNode: buildMiniList(grouped.mal),
-          })
-        );
-      }
+        card.appendChild(title);
+        card.appendChild(list);
+        wrapper.appendChild(card);
+      });
       itemsTable.innerHTML = "";
       itemsTable.appendChild(wrapper);
     };
@@ -16330,9 +15095,8 @@
       if (authorSelect) authorSelect.value = "";
       if (assigneeSelect) assigneeSelect.value = "";
       if (dueInput) dueInput.value = "";
-      const lastTipo = state.retroLastTipo || tipoSelect?.value || "bien";
-      if (tipoSelect) tipoSelect.value = lastTipo;
-      if (commitmentFields) commitmentFields.classList.toggle("hidden", lastTipo !== "compromiso");
+      if (tipoSelect) tipoSelect.value = "bien";
+      if (commitmentFields) commitmentFields.classList.add("hidden");
       if (form) {
         form.dataset.editId = "";
         form.dataset.retroId = "";
@@ -16522,7 +15286,6 @@
       tipoSelect.dataset.bound = "true";
       tipoSelect.addEventListener("change", () => {
         const isCommitment = tipoSelect.value === "compromiso";
-        state.retroLastTipo = tipoSelect.value || state.retroLastTipo || "bien";
         if (commitmentFields) {
           commitmentFields.classList.toggle("hidden", !isCommitment);
         }
@@ -16605,8 +15368,6 @@
                 await postJson(`/retros/${retroId}/items`, payload);
                 setRetroStatus("Item agregado.", "ok");
               }
-              // Keep the last selected type after saving (Notion-like: keep user context).
-              state.retroLastTipo = tipo;
               resetForm();
               initRetrospective();
             } catch (err) {
@@ -16693,8 +15454,8 @@
     let personasLoaded = false;
     const phaseMap = {
       espera: "Esperando inicio del SM.",
-      bien: "Que hicimos bien",
-      mal: "Que pudimos hacer mejor",
+      bien: "Ahora: Que hicimos bien",
+      mal: "Ahora: Que pudimos hacer mejor",
       compromiso: "Compromisos (solo SM)",
     };
     const fillPersona = (select, placeholder, personas) => {
@@ -16738,12 +15499,9 @@
       if (title) {
         title.textContent = `Retro · ${retroInfo.celula_nombre} · ${retroInfo.sprint_nombre}`;
       }
-      const setPhaseLabel = (state, text, variant = "info") => {
+      const setPhaseLabel = (state, text) => {
         if (!phaseLabel) return;
         phaseLabel.textContent = text;
-        phaseLabel.classList.add("section-alert");
-        phaseLabel.classList.remove("success", "warning", "danger", "info");
-        if (variant) phaseLabel.classList.add(variant);
         phaseLabel.classList.remove("is-waiting", "is-active", "is-closed");
         if (state === "waiting") phaseLabel.classList.add("is-waiting");
         if (state === "active") phaseLabel.classList.add("is-active");
@@ -16758,28 +15516,7 @@
         });
         fillPersona(authorSelect, "Tu nombre", personas);
         fillPersona(assigneeSelect, "Asignado", personas);
-        if (authorSelect) {
-          let restored = "";
-          try {
-            const k = resolvedToken ? `retro_public_author_${resolvedToken}` : "";
-            restored = k ? window.localStorage.getItem(k) || "" : "";
-          } catch {
-            restored = "";
-          }
-          if (restored && Array.from(authorSelect.options).some((opt) => opt.value === restored)) {
-            authorSelect.value = restored;
-            // Trigger claim + presence (same flow as user interaction).
-            window.setTimeout(() => {
-              try {
-                authorSelect.dispatchEvent(new Event("change", { bubbles: true }));
-              } catch {
-                // ignore
-              }
-            }, 0);
-          } else {
-            authorSelect.value = "";
-          }
-        }
+        if (authorSelect) authorSelect.value = "";
         if (assigneeSelect) assigneeSelect.value = "";
         personasLoaded = true;
       }
@@ -16795,19 +15532,8 @@
             el.disabled = true;
           });
         }
-        setPhaseLabel("closed", "Sesion cerrada", "danger");
-        setStatusText("La sesion ha sido cerrada por el SM.", "warn");
-        if (container && !container.dataset.closedShown) {
-          container.dataset.closedShown = "true";
-          container.innerHTML = `
-            <div class="card daily-card">
-              <div class="card-body">
-                <h3>Sesion cerrada</h3>
-                <p>La sesion fue cerrada por el Scrum Master. Puedes cerrar esta ventana.</p>
-              </div>
-            </div>
-          `;
-        }
+        setPhaseLabel("closed", "Retro cerrada");
+        setStatusText("Retro cerrada por el SM.", "warn");
         return;
       }
 
@@ -16843,8 +15569,7 @@
           });
         }
         if (authorSelect) authorSelect.disabled = false;
-        const variant = retroInfo.fase === "bien" ? "success" : "warning";
-        setPhaseLabel("active", `${phaseMap[retroInfo.fase] || ""}`, variant);
+        setPhaseLabel("active", `Activo: ${phaseMap[retroInfo.fase] || ""}`);
         if (!hasAuthor) {
           setStatusText("Selecciona tu nombre para continuar.", "warn");
         } else {
@@ -16866,30 +15591,13 @@
         if (formActions) formActions.classList.add("hidden");
         if (commitmentFields) commitmentFields.classList.add("hidden");
         if (authorLabel) authorLabel.classList.remove("hidden");
-        setPhaseLabel("waiting", "En espera de inicio", "info");
+        setPhaseLabel("waiting", "En espera de inicio");
         setStatusText("Esperando inicio del SM.", "warn");
       }
     };
 
     const handleRealtimeEvent = (payload) => {
       if (!payload) return;
-      if (payload.type === "submit_ack" || payload.type === "submit_error") {
-        const pending = window.__retroPublicSubmitPending;
-        if (pending && pending.token === resolvedToken) {
-          window.__retroPublicSubmitPending = null;
-          try {
-            if (pending.timer) window.clearTimeout(pending.timer);
-          } catch {
-            // ignore
-          }
-          if (payload.type === "submit_ack") {
-            pending.resolve(payload.item || null);
-          } else {
-            pending.reject(new Error(payload.detail || "No se pudo guardar."));
-          }
-          return;
-        }
-      }
       if (payload.type === "retro_closed") {
         if (form) form.classList.add("retro-public-closed");
         if (form) {
@@ -16898,26 +15606,11 @@
           });
         }
         if (phaseLabel) {
-          phaseLabel.textContent = "Sesion cerrada";
-          phaseLabel.classList.add("section-alert");
-          phaseLabel.classList.remove("success", "warning", "danger", "info");
-          phaseLabel.classList.add("danger");
+          phaseLabel.textContent = "Retro cerrada";
           phaseLabel.classList.remove("is-waiting", "is-active");
           phaseLabel.classList.add("is-closed");
         }
-        setStatusText("La sesion ha sido cerrada por el SM.", "warn");
-        // Replace the body of the page with a clear message so users understand the session ended.
-        if (container && !container.dataset.closedShown) {
-          container.dataset.closedShown = "true";
-          container.innerHTML = `
-            <div class="card daily-card">
-              <div class="card-body">
-                <h3>Sesion cerrada</h3>
-                <p>La sesion fue cerrada por el Scrum Master. Puedes cerrar esta ventana.</p>
-              </div>
-            </div>
-          `;
-        }
+        setStatusText("Retro cerrada por el SM.", "warn");
         return;
       }
       if (payload.type === "claims_updated") {
@@ -16937,27 +15630,6 @@
       loadRetroInfo();
     };
 
-    const submitItemViaWs = (itemPayload) =>
-      new Promise((resolve, reject) => {
-        if (!resolvedToken) return reject(new Error("Link invalido. Falta token."));
-        const socket = window.__retroSocket_public;
-        if (!socket || socket.readyState !== 1) return reject(new Error("WS no conectado"));
-        const timer = window.setTimeout(() => {
-          if (window.__retroPublicSubmitPending?.token === resolvedToken) {
-            window.__retroPublicSubmitPending = null;
-          }
-          reject(new Error("WS timeout"));
-        }, 4500);
-        window.__retroPublicSubmitPending = { token: resolvedToken, resolve, reject, timer };
-        try {
-          socket.send(JSON.stringify({ type: "submit_item", item: itemPayload }));
-        } catch (err) {
-          window.clearTimeout(timer);
-          window.__retroPublicSubmitPending = null;
-          reject(err);
-        }
-      });
-
     const loadRetroInfo = async () => {
       try {
         const info = tokenParam
@@ -16967,24 +15639,6 @@
         applyRetroInfo(info);
         return info;
       } catch (err) {
-        const isTransient = (() => {
-          const name = (err && err.name ? String(err.name) : "").toLowerCase();
-          const msg = (err && err.message ? String(err.message) : "").toLowerCase();
-          return (
-            name.includes("abort") ||
-            msg.includes("abort") ||
-            msg.includes("timeout") ||
-            msg.includes("failed to fetch") ||
-            msg.includes("networkerror") ||
-            msg.includes("xhr error") ||
-            msg.includes("xhr timeout")
-          );
-        })();
-        if (isTransient) {
-          // Phones frequently pause/retry network when locking/unlocking; don't show raw abort errors.
-          setStatusText("Conectando...", "warn");
-          return null;
-        }
         let detail = "No se pudo cargar la retro.";
         if (err && typeof err.message === "string") {
           try {
@@ -17007,32 +15661,16 @@
       }
     };
 
-    let initialInfo = null;
-    for (let attempt = 0; attempt < 3 && !initialInfo; attempt += 1) {
-      initialInfo = await loadRetroInfo();
-      if (!initialInfo) {
-        await new Promise((resolve) => window.setTimeout(resolve, 600 * (attempt + 1)));
-      }
-    }
+    const initialInfo = await loadRetroInfo();
     if (!initialInfo) return;
     if (!skipPolling && !window.__retroPublicPoll) {
       window.__retroPublicPoll = window.setInterval(() => {
         if (document.hidden) return;
-        if (window.__retroPublicSubmitting) return;
         loadRetroInfo();
-      }, 8000);
-    }
-    if (!window.__retroPublicVis) {
-      window.__retroPublicVis = true;
-      document.addEventListener("visibilitychange", () => {
-        if (!document.hidden) {
-          loadRetroInfo();
-        }
-      });
+      }, 4000);
     }
 
-    if (authorSelect && !authorSelect.dataset.boundClaim) {
-      authorSelect.dataset.boundClaim = "true";
+    if (authorSelect) {
       authorSelect.addEventListener("change", () => {
         if (retroInfo) {
           applyRetroInfo(retroInfo);
@@ -17042,18 +15680,12 @@
           setStatusText("Link invalido. Falta token.", "error");
           return;
         }
-        try {
-          const k = `retro_public_author_${resolvedToken}`;
-          if (nextId) {
-            window.localStorage.setItem(k, String(nextId));
-          } else {
-            window.localStorage.removeItem(k);
-          }
-        } catch {
-          // ignore storage errors
-        }
         if (!nextId) {
-          // Keep the claim reserved unless user explicitly changes to another name.
+          if (claimedPersonaId) {
+            fetchWithFallback(`/retros/public/${resolvedToken}/claim/${claimedPersonaId}`, {
+              method: "DELETE",
+            }).catch(() => {});
+          }
           claimedPersonaId = null;
           updateClaimedOptions();
           emitPresence();
@@ -17145,14 +15777,7 @@
                 setStatusText("Link invalido. Falta token.", "error");
                 return;
               }
-              window.__retroPublicSubmitting = true;
-              // Websocket-first: it's the only way to make this truly realtime and avoid mobile HTTP stalls.
-              // Fallback to HTTP if WS isn't available.
-              try {
-                await submitItemViaWs(payload);
-              } catch (wsErr) {
-                await postJson(`/retros/public/${resolvedToken}/items`, payload);
-              }
+              await postJson(`/retros/public/${resolvedToken}/items`, payload);
               if (detailInput) detailInput.value = "";
               if (assigneeSelect) assigneeSelect.value = "";
               if (dueInput) dueInput.value = "";
@@ -17162,8 +15787,6 @@
               emitPresence();
             } catch {
               setStatusText("No se pudo guardar.", "error");
-            } finally {
-              window.__retroPublicSubmitting = false;
             }
           },
           "Enviando..."
@@ -17244,7 +15867,6 @@
     const celulaForm = qs("#form-celula");
     const personaForm = qs("#form-persona");
     const sprintForm = qs("#form-sprint");
-    const quarterForm = qs("#form-quarter");
     const feriadoForm = qs("#form-feriado");
     const eventoForm = qs("#form-evento");
     const tipoForm = qs("#form-evento-tipo");
@@ -17982,7 +16604,7 @@
     );
 
     renderAdminTable(
-      qs("#admin-eventos-tipo") || qs("#admin-tipos"),
+      qs("#admin-eventos-tipo"),
       tiposBuscados,
       [
         { key: "_index", label: "#" },
@@ -18266,7 +16888,6 @@
     initCelulaSelector(base);
     initDaily();
     initTasks();
-    initReleaseGantt();
     initReleaseTable();
     initOneToOne();
     initRetrospective();
@@ -18309,7 +16930,6 @@
       initDataEntrySections();
       initDaily();
       initTasks();
-      initReleaseGantt();
       initReleaseTable();
       initOneToOne();
       initRetrospective();
@@ -18407,21 +17027,9 @@
       filtered.forEach((persona) => {
         const li = document.createElement("li");
         li.className = "poker-user";
-        const name = persona.nombre || "";
-        const label = document.createElement("span");
-        label.textContent = name;
-        const dot = document.createElement("span");
-        const online = persona.online !== false;
-        dot.className = `presence-dot ${online ? "online" : "offline"}`;
-        dot.title = online ? "Conectado" : "Desconectado";
-        li.appendChild(dot);
-        li.appendChild(label);
+        li.textContent = persona.nombre || "";
         if (persona.persona_id && votedIds.has(String(persona.persona_id))) {
-          const badge = document.createElement("span");
-          badge.className = "retro-submitted";
-          badge.textContent = "✅";
-          badge.title = "Voto enviado";
-          li.appendChild(badge);
+          li.classList.add("is-voted");
         }
         connectedList.appendChild(li);
       });
@@ -18557,7 +17165,6 @@
       }
       const origin = window.location.origin;
       const basePath = window.location.pathname.replace(/[^/]+$/, "poker-public.html");
-      // Share a stable link by celula (no token in URL). The public page resolves token internally.
       const shareLink = `${origin}${basePath}?celula_id=${currentSession.celula_id}`;
       shareUrl.value = shareLink;
       shareUrl.readOnly = true;
@@ -18793,8 +17400,8 @@
     };
     const setConnectionStatus = (connected) => {
       if (!connectionStatus) return;
-      connectionStatus.textContent = connected ? "Conectado" : "Conectando...";
-      connectionStatus.dataset.type = connected ? "ok" : "warn";
+      connectionStatus.textContent = connected ? "Conectado" : "Desconectado";
+      connectionStatus.dataset.type = connected ? "ok" : "error";
     };
 
     const params = new URLSearchParams(window.location.search);
@@ -18827,45 +17434,6 @@
         });
         cardsWrap.appendChild(btn);
       });
-    };
-
-    const showClosedUI = () => {
-      if (container && !container.dataset.closedShown) {
-        container.dataset.closedShown = "true";
-      }
-      if (form) {
-        form.classList.add("retro-public-closed");
-        form.querySelectorAll("input, select, textarea, button").forEach((el) => {
-          el.disabled = true;
-        });
-      }
-      if (phaseLabel) {
-        phaseLabel.textContent = "Sesion cerrada";
-        phaseLabel.classList.add("section-alert");
-        phaseLabel.classList.remove("success", "warning", "info");
-        phaseLabel.classList.add("danger");
-      }
-      setConnectionStatus(false);
-      setStatusText("La sesion ha sido cerrada por el SM.", "warn");
-      if (cardsWrap) cardsWrap.classList.add("hidden");
-      renderCards(false);
-      if (authorSelect) {
-        authorSelect.value = "";
-        delete authorSelect.dataset.userChosen;
-        authorSelect.disabled = true;
-      }
-      // Replace content like retro-public so mobile users understand what happened.
-      if (container && !container.dataset.closedBody) {
-        container.dataset.closedBody = "true";
-        container.innerHTML = `
-          <div class="card daily-card">
-            <div class="card-body">
-              <h3>Sesion cerrada</h3>
-              <p>La sesion fue cerrada por el Scrum Master. Puedes cerrar esta ventana.</p>
-            </div>
-          </div>
-        `;
-      }
     };
 
     const updateAuthorAvailability = () => {
@@ -18914,30 +17482,6 @@
           authorSelect.value = "";
         }
         updateAuthorAvailability();
-        // Auto-restore author (phone lock/unlock / refresh) like retro-public.
-        if (celulaParam && !authorSelect.dataset.userChosen && !container.dataset.authorRestored) {
-          container.dataset.authorRestored = "true";
-          try {
-            const restored =
-              window.localStorage.getItem(`poker_public_author_celula_${celulaParam}`) || "";
-            if (restored && Array.from(authorSelect.options).some((opt) => opt.value === restored)) {
-              authorSelect.value = restored;
-              window.setTimeout(() => {
-                try {
-                  authorSelect.dispatchEvent(new Event("change", { bubbles: true }));
-                } catch {
-                  // ignore
-                }
-              }, 0);
-            }
-          } catch {
-            // ignore
-          }
-        }
-      }
-      if (info.estado === "cerrada") {
-        showClosedUI();
-        return;
       }
       if (info.estado !== "abierta") {
         if (phaseLabel) phaseLabel.textContent = "Esperando inicio del SM.";
@@ -18968,11 +17512,7 @@
         setStatusText("", "info");
       }
       if (info.fase === "revelado") {
-        if (phaseLabel) {
-          phaseLabel.textContent = "Resultados visibles";
-          phaseLabel.classList.add("section-alert", "info");
-          phaseLabel.classList.remove("success", "warning", "danger");
-        }
+        if (phaseLabel) phaseLabel.textContent = "Resultados visibles.";
         if (cardsWrap) cardsWrap.classList.add("hidden");
         renderCards(false);
         if (form) {
@@ -18985,11 +17525,7 @@
           authorSelect.removeAttribute("disabled");
         }
       } else {
-        if (phaseLabel) {
-          phaseLabel.textContent = "Votacion activa";
-          phaseLabel.classList.add("section-alert", "success");
-          phaseLabel.classList.remove("info", "warning", "danger");
-        }
+        if (phaseLabel) phaseLabel.textContent = "Votacion activa.";
         const hasAuthor = Boolean(authorSelect?.value);
         if (cardsWrap) cardsWrap.classList.toggle("hidden", !hasAuthor);
         renderCards(hasAuthor);
@@ -19013,110 +17549,23 @@
         resolvedToken = info.token;
         applyInfo(info);
         return info;
-      } catch (err) {
-        if (container?.dataset?.closedShown) {
-          // Do not override closed UI.
-          return null;
-        }
-        // If there's no open session yet, keep the page in "waiting" mode and retry.
-        if (err && typeof err.message === "string" && err.message.includes("{")) {
-          try {
-            const parsed = JSON.parse(err.message);
-            const detail = parsed?.detail;
-            if (
-              typeof detail === "string" &&
-              detail.toLowerCase().includes("sesion") &&
-              detail.toLowerCase().includes("no encontrada")
-            ) {
-              if (phaseLabel) phaseLabel.textContent = "Esperando inicio del SM.";
-              setStatusText("Esperando inicio del SM.", "warn");
-              return null;
-            }
-          } catch {
-            // ignore
-          }
-        }
-        const isTransient = (() => {
-          const name = (err && err.name ? String(err.name) : "").toLowerCase();
-          const msg = (err && err.message ? String(err.message) : "").toLowerCase();
-          return (
-            name.includes("abort") ||
-            msg.includes("abort") ||
-            msg.includes("timeout") ||
-            msg.includes("failed to fetch") ||
-            msg.includes("networkerror") ||
-            msg.includes("xhr error") ||
-            msg.includes("xhr timeout")
-          );
-        })();
-        if (isTransient) {
-          setStatusText("Conectando...", "warn");
-          return null;
-        }
+      } catch {
         setStatusText("No se pudo cargar Poker Planning.", "error");
         return null;
       }
     };
 
-    const scheduleRetry = () => {
-      if (window.__pokerPublicRetry) return;
-      window.__pokerPublicRetry = window.setTimeout(() => {
-        window.__pokerPublicRetry = null;
-        initPokerPublic({ skipPolling: true });
-      }, 1200);
-    };
-
     const info = await loadInfo();
-    if (!info) {
-      if (cardsWrap) cardsWrap.classList.add("hidden");
-      renderCards(false);
-      if (authorSelect) authorSelect.disabled = true;
-      scheduleRetry();
-      return;
-    }
-
-    const submitVoteViaWs = (votePayload) =>
-      new Promise((resolve, reject) => {
-        if (!resolvedToken) return reject(new Error("Link invalido. Falta token."));
-        const socket = window.__pokerSocket_public;
-        if (!socket || socket.readyState !== 1) return reject(new Error("WS no conectado"));
-        const timer = window.setTimeout(() => {
-          if (window.__pokerPublicVotePending?.token === resolvedToken) {
-            window.__pokerPublicVotePending = null;
-          }
-          reject(new Error("WS timeout"));
-        }, 4500);
-        window.__pokerPublicVotePending = { token: resolvedToken, resolve, reject, timer };
-        try {
-          socket.send(JSON.stringify({ type: "submit_vote", vote: votePayload }));
-        } catch (err) {
-          window.clearTimeout(timer);
-          window.__pokerPublicVotePending = null;
-          reject(err);
-        }
-      });
+    if (!info) return;
 
     const socket = resolvedToken
       ? ensurePokerSocket(resolvedToken, "public", (payload) => {
-          if (payload?.type === "submit_ack" || payload?.type === "submit_error") {
-            const pending = window.__pokerPublicVotePending;
-            if (pending && pending.token === resolvedToken) {
-              window.__pokerPublicVotePending = null;
-              try {
-                if (pending.timer) window.clearTimeout(pending.timer);
-              } catch {
-                // ignore
-              }
-              if (payload.type === "submit_ack") {
-                pending.resolve(payload.vote || null);
-              } else {
-                pending.reject(new Error(payload.detail || "No se pudo enviar el voto."));
-              }
-              return;
-            }
-          }
           if (payload?.type === "poker_closed") {
-            showClosedUI();
+            if (lastInfo) {
+              lastInfo = { ...lastInfo, estado: "cerrada", fase: "espera" };
+              applyInfo(lastInfo);
+            }
+            setStatusText("Sesion cerrada por el SM.", "warn");
             return;
           }
           if (payload?.type === "claims_updated") {
@@ -19152,7 +17601,13 @@
           loadInfo();
         })
       : null;
-    const handleDisconnect = () => setConnectionStatus(false);
+    const handleDisconnect = () => {
+      if (lastInfo?.estado === "cerrada") {
+        setConnectionStatus(false);
+      } else {
+        setConnectionStatus(true);
+      }
+    };
     if (socket) {
       setConnectionStatus(socket.readyState === 1 || lastInfo?.estado !== "cerrada");
       if (!socket.__boundStatus) {
@@ -19168,7 +17623,6 @@
     if (!skipPolling && !window.__pokerPublicPoll) {
       window.__pokerPublicPoll = window.setInterval(() => {
         if (document.hidden) return;
-        if (container?.dataset?.closedShown) return;
         loadInfo();
       }, 8000);
     }
@@ -19182,13 +17636,6 @@
           if (cardsWrap) cardsWrap.classList.add("hidden");
           renderCards(false);
           delete authorSelect.dataset.userChosen;
-          try {
-            if (celulaParam) {
-              window.localStorage.removeItem(`poker_public_author_celula_${celulaParam}`);
-            }
-          } catch {
-            // ignore
-          }
           if (selectedPersonaId) {
             presenceIds.delete(String(selectedPersonaId));
             if (authorSelect.selectedOptions?.[0]) {
@@ -19235,13 +17682,6 @@
           presenceIds = new Set(claims.map((pid) => String(pid)));
         }
         authorSelect.dataset.userChosen = "true";
-        try {
-          if (celulaParam) {
-            window.localStorage.setItem(`poker_public_author_celula_${celulaParam}`, String(id));
-          }
-        } catch {
-          // ignore
-        }
         if (selectedPersonaId && selectedPersonaId !== id) {
           presenceIds.delete(String(selectedPersonaId));
           if (authorSelect.selectedOptions?.[0]) {
@@ -19286,13 +17726,10 @@
                 setStatusText("Link invalido. Falta token.", "error");
                 return;
               }
-              // Websocket-first: realtime + avoids mobile HTTP stalls.
-              const votePayload = { persona_id: personaId, valor: selectedValue };
-              try {
-                await submitVoteViaWs(votePayload);
-              } catch (wsErr) {
-                await postJson(`/poker/public/${resolvedToken}/vote`, votePayload);
-              }
+              await postJson(`/poker/public/${resolvedToken}/vote`, {
+                persona_id: personaId,
+                valor: selectedValue,
+              });
               const sentValue = selectedValue;
               selectedValue = null;
               const canVote = lastInfo?.estado === "abierta" && lastInfo?.fase !== "revelado";

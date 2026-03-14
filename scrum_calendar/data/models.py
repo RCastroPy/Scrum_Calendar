@@ -319,6 +319,7 @@ class Task(Base):
     # Fecha real de cierre (se setea automaticamente al pasar a "done")
     end_date = Column(Date, nullable=True)
     fecha_vencimiento = Column(Date, nullable=True)
+    segmento = Column(String(80), nullable=True)
     tipo = Column(String(30), nullable=True)
     etiquetas = Column(Text, nullable=True)  # Comma-separated for now: "ui, backend"
     puntos = Column(Float, nullable=True)
@@ -337,6 +338,22 @@ class Task(Base):
     parent = relationship("Task", remote_side=[id], back_populates="subtasks")
     subtasks = relationship("Task", back_populates="parent", cascade="all, delete-orphan")
     comments = relationship("TaskComment", back_populates="task", cascade="all, delete-orphan")
+
+
+class TaskSegment(Base):
+    __tablename__ = "task_segments"
+    __table_args__ = (
+        UniqueConstraint("usuario_id", "nombre_key", name="uq_task_segments_usuario_nombre"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    nombre = Column(String(80), nullable=False)
+    nombre_key = Column(String(80), nullable=False)
+    creado_en = Column(DateTime, nullable=False, default=now_py)
+    actualizado_en = Column(DateTime, nullable=False, default=now_py, onupdate=now_py)
+
+    usuario = relationship("Usuario")
 
 
 class TaskComment(Base):

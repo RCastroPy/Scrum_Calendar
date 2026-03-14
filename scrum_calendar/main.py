@@ -236,6 +236,8 @@ def startup():
             conn.execute(text("alter table tasks add column start_date date"))
         if "end_date" not in column_names:
             conn.execute(text("alter table tasks add column end_date date"))
+        if "segmento" not in column_names:
+            conn.execute(text("alter table tasks add column segmento varchar(80)"))
         tables = conn.execute(
             text(
                 "select table_name from information_schema.tables "
@@ -272,6 +274,8 @@ def startup():
                 conn.execute(text("alter table tasks add column horas_estimadas double precision"))
             if "importante" not in task_col_names:
                 conn.execute(text("alter table tasks add column importante boolean not null default false"))
+            if "segmento" not in task_col_names:
+                conn.execute(text("alter table tasks add column segmento varchar(80)"))
 
         # Compras: ensure item ticket-check column exists for cross-device validation.
         compra_items_cols = conn.execute(

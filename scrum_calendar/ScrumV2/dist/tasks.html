@@ -926,18 +926,19 @@
                 <!--begin::App Content-->
         <div class="app-content">
           <div class="container-fluid">
-	            <section class="section tasks" id="tasks-root">
-	              <div class="tasks-head mb-3">
-	                <div class="tasks-title">
-	                  <h2 class="mb-1">Tareas</h2>
-	                  <p class="text-muted mb-0">Backlog y tablero Kanban.</p>
-	                </div>
-		                <div class="d-flex flex-wrap gap-2 align-items-end tasks-toolbar">
+            <section class="section tasks" id="tasks-root">
+              <div class="tasks-head mb-3">
+                <div class="tasks-title">
+                  <h2 class="mb-1">Tareas</h2>
+                  <p class="text-muted mb-0">Backlog y tablero Kanban.</p>
+                </div>
+                <div class="tasks-toolbar">
+                  <div class="tasks-toolbar-row tasks-toolbar-row-main">
 	                  <div>
 	                    <label class="form-label mb-1">Vista</label>
 	                    <div class="btn-group btn-group-sm" role="group" aria-label="Vistas de tareas">
-		                      <button class="btn btn-outline-primary" type="button" id="tasks-view-backlog" data-view="backlog">
-		                        Backlog
+                      <button class="btn btn-outline-primary" type="button" id="tasks-view-backlog" data-view="backlog">
+                        Backlog
 	                      </button>
 	                      <button class="btn btn-outline-primary" type="button" id="tasks-view-board" data-view="board">
 	                        Kanban
@@ -967,6 +968,15 @@
 	                      </button>
 	                    </div>
 	                  </div>
+	                  <div class="tasks-segments-toolbar-wrap">
+	                    <label class="form-label mb-1">Segmentos</label>
+	                    <div class="tasks-segments-toolbar">
+	                      <div class="tasks-segment-buttons" id="tasks-segment-buttons" aria-label="Filtro por segmento"></div>
+	                      <button class="btn btn-outline-secondary btn-sm" id="tasks-segment-manage-btn" type="button">
+	                        <i class="bi bi-plus-lg me-1"></i>Nuevo segmento
+	                      </button>
+	                    </div>
+	                  </div>
 		                  <div class="d-flex align-items-end">
 		                    <button class="btn btn-outline-secondary btn-sm" id="tasks-filters-btn" type="button">
 		                      <i class="bi bi-funnel me-1"></i>Filtros
@@ -976,15 +986,6 @@
 		                    <button class="btn btn-outline-secondary btn-sm" id="tasks-columns-btn" type="button">
 		                      <i class="bi bi-layout-three-columns me-1"></i>Columnas
 		                    </button>
-		                  </div>
-		                  <div>
-		                    <label class="form-label mb-1">Prioridad</label>
-		                    <div class="tasks-priority-kpis" id="tasks-priority-kpis" aria-label="Indicadores por prioridad">
-		                      <span class="tasks-priority-kpi is-urgente">Urgente <strong data-priority-kpi="urgente">0</strong></span>
-		                      <span class="tasks-priority-kpi is-alta">Alta <strong data-priority-kpi="alta">0</strong></span>
-		                      <span class="tasks-priority-kpi is-media">Media <strong data-priority-kpi="media">0</strong></span>
-		                      <span class="tasks-priority-kpi is-baja">Baja <strong data-priority-kpi="baja">0</strong></span>
-		                    </div>
 		                  </div>
 	                  <div class="d-flex align-items-end">
 	                    <button class="btn btn-primary btn-sm" id="task-create-btn" type="button">
@@ -996,18 +997,31 @@
 	                      <i class="bi bi-arrow-repeat me-1"></i>Vencidas a hoy
 	                    </button>
 	                  </div>
-	                </div>
+	                  </div>
+                  <div class="tasks-toolbar-row tasks-toolbar-row-kpis">
+	                  <div>
+	                    <label class="form-label mb-1">Resumen de tareas</label>
+	                    <div class="tasks-priority-kpis" id="tasks-priority-kpis" aria-label="Indicadores por prioridad">
+	                      <button class="tasks-priority-kpi is-total" type="button" data-priority-filter="total">Total tareas <strong data-priority-kpi="total">0</strong></button>
+	                      <button class="tasks-priority-kpi is-urgente" type="button" data-priority-filter="urgente">Urgente <strong data-priority-kpi="urgente">0</strong></button>
+	                      <button class="tasks-priority-kpi is-alta" type="button" data-priority-filter="alta">Alta <strong data-priority-kpi="alta">0</strong></button>
+	                      <button class="tasks-priority-kpi is-media" type="button" data-priority-filter="media">Media <strong data-priority-kpi="media">0</strong></button>
+	                      <button class="tasks-priority-kpi is-baja" type="button" data-priority-filter="baja">Baja <strong data-priority-kpi="baja">0</strong></button>
+	                    </div>
+	                  </div>
+                  </div>
+                </div>
 	              </div>
 
-		              <div class="d-flex align-items-center gap-2 mt-2">
-		                <button class="btn btn-primary btn-sm" id="task-create-btn-backlog" type="button">
-		                  <i class="bi bi-plus-lg me-1"></i>Nueva tarea
-		                </button>
-		              </div>
+	              <div class="d-flex align-items-center gap-2 mt-2">
+	                <button class="btn btn-primary btn-sm" id="task-create-btn-backlog" type="button">
+	                  <i class="bi bi-plus-lg me-1"></i>Nueva tarea
+	                </button>
+	              </div>
 	
 		              <div id="tasks-status" class="small text-muted mb-2"></div>
 		              <div id="tasks-filter-chips" class="tasks-filter-chips mb-2"></div>
-			              <div id="tasks-filter-panel" class="tasks-filter-panel hidden" aria-label="Filtros avanzados">
+			          <div id="tasks-filter-panel" class="tasks-filter-panel hidden" aria-label="Filtros avanzados">
 	                <div class="card">
 	                  <div class="card-body">
 	                    <div class="row g-3">
@@ -1024,7 +1038,7 @@
 	                          </div>
 	                          <div class="form-check">
 	                            <input class="form-check-input" type="checkbox" value="doing" id="tasks-st-doing" checked />
-		                            <label class="form-check-label" for="tasks-st-doing">In Progress</label>
+		                        <label class="form-check-label" for="tasks-st-doing">In Progress</label>
 	                          </div>
 	                          <div class="form-check">
 	                            <input class="form-check-input" type="checkbox" value="done" id="tasks-st-done" checked />
@@ -1110,16 +1124,16 @@
                 </div>
               </div>
 
-	              <div id="tasks-view-backlog-panel">
-	                <div class="card">
-                  <div class="card-header border-0">
-                    <h3 class="card-title mb-0">Backlog</h3>
-                  </div>
-                  <div class="card-body">
-                    <div id="tasks-backlog-list" class="tasks-backlog"></div>
-                  </div>
-                </div>
-	              </div>
+		              <div id="tasks-view-backlog-panel">
+		                <div class="card">
+		                  <div class="card-header border-0">
+		                    <h3 class="card-title mb-0">Backlog</h3>
+		                  </div>
+		                  <div class="card-body">
+		                    <div id="tasks-backlog-list" class="tasks-backlog"></div>
+		                  </div>
+		                </div>
+		              </div>
 
               <div id="tasks-view-board-panel" class="hidden">
                 <div class="card">

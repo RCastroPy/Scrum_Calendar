@@ -932,7 +932,8 @@
                   <h2 class="mb-1">Tareas</h2>
                   <p class="text-muted mb-0">Backlog y tablero Kanban.</p>
                 </div>
-                <div class="d-flex flex-wrap gap-2 align-items-end tasks-toolbar">
+                <div class="tasks-toolbar">
+                  <div class="tasks-toolbar-row tasks-toolbar-row-main">
 	                  <div>
 	                    <label class="form-label mb-1">Vista</label>
 	                    <div class="btn-group btn-group-sm" role="group" aria-label="Vistas de tareas">
@@ -967,6 +968,15 @@
 	                      </button>
 	                    </div>
 	                  </div>
+	                  <div class="tasks-segments-toolbar-wrap">
+	                    <label class="form-label mb-1">Segmentos</label>
+	                    <div class="tasks-segments-toolbar">
+	                      <div class="tasks-segment-buttons" id="tasks-segment-buttons" aria-label="Filtro por segmento"></div>
+	                      <button class="btn btn-outline-secondary btn-sm" id="tasks-segment-manage-btn" type="button">
+	                        <i class="bi bi-plus-lg me-1"></i>Nuevo segmento
+	                      </button>
+	                    </div>
+	                  </div>
 		                  <div class="d-flex align-items-end">
 		                    <button class="btn btn-outline-secondary btn-sm" id="tasks-filters-btn" type="button">
 		                      <i class="bi bi-funnel me-1"></i>Filtros
@@ -976,15 +986,6 @@
 		                    <button class="btn btn-outline-secondary btn-sm" id="tasks-columns-btn" type="button">
 		                      <i class="bi bi-layout-three-columns me-1"></i>Columnas
 		                    </button>
-		                  </div>
-		                  <div>
-		                    <label class="form-label mb-1">Prioridad</label>
-		                    <div class="tasks-priority-kpis" id="tasks-priority-kpis" aria-label="Indicadores por prioridad">
-		                      <span class="tasks-priority-kpi is-urgente">Urgente <strong data-priority-kpi="urgente">0</strong></span>
-		                      <span class="tasks-priority-kpi is-alta">Alta <strong data-priority-kpi="alta">0</strong></span>
-		                      <span class="tasks-priority-kpi is-media">Media <strong data-priority-kpi="media">0</strong></span>
-		                      <span class="tasks-priority-kpi is-baja">Baja <strong data-priority-kpi="baja">0</strong></span>
-		                    </div>
 		                  </div>
 	                  <div class="d-flex align-items-end">
 	                    <button class="btn btn-primary btn-sm" id="task-create-btn" type="button">
@@ -996,7 +997,20 @@
 	                      <i class="bi bi-arrow-repeat me-1"></i>Vencidas a hoy
 	                    </button>
 	                  </div>
-	                </div>
+	                  </div>
+                  <div class="tasks-toolbar-row tasks-toolbar-row-kpis">
+	                  <div>
+	                    <label class="form-label mb-1">Resumen de tareas</label>
+	                    <div class="tasks-priority-kpis" id="tasks-priority-kpis" aria-label="Indicadores por prioridad">
+	                      <button class="tasks-priority-kpi is-total" type="button" data-priority-filter="total">Total tareas <strong data-priority-kpi="total">0</strong></button>
+	                      <button class="tasks-priority-kpi is-urgente" type="button" data-priority-filter="urgente">Urgente <strong data-priority-kpi="urgente">0</strong></button>
+	                      <button class="tasks-priority-kpi is-alta" type="button" data-priority-filter="alta">Alta <strong data-priority-kpi="alta">0</strong></button>
+	                      <button class="tasks-priority-kpi is-media" type="button" data-priority-filter="media">Media <strong data-priority-kpi="media">0</strong></button>
+	                      <button class="tasks-priority-kpi is-baja" type="button" data-priority-filter="baja">Baja <strong data-priority-kpi="baja">0</strong></button>
+	                    </div>
+	                  </div>
+                  </div>
+                </div>
 	              </div>
 
 	              <div class="d-flex align-items-center gap-2 mt-2">

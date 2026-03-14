@@ -8440,6 +8440,8 @@
     const filterClearBtn = qs("#tasks-filter-clear");
     const filterCloseBtn = qs("#tasks-filter-close");
     const columnsBtn = qs("#tasks-columns-btn");
+    const segmentButtons = qs("#tasks-segment-buttons");
+    const segmentManageBtn = qs("#tasks-segment-manage-btn");
     const priorityKpis = qs("#tasks-priority-kpis");
     const columnsPanel = qs("#tasks-columns-panel");
     const columnsList = qs("#tasks-columns-list");
@@ -8452,6 +8454,8 @@
     const hasBacklogDataTable = Boolean(window.jQuery && window.jQuery.fn && window.jQuery.fn.DataTable);
     let backlogDataTable = null;
     let cleanupBacklogHorizontalBar = null;
+    let backlogDataTableSearchFilter = null;
+    state.tasksSegments = Array.isArray(state.tasksSegments) ? state.tasksSegments : [];
     state.tasksCommentCounts = state.tasksCommentCounts && typeof state.tasksCommentCounts === "object"
       ? state.tasksCommentCounts
       : {};
@@ -8470,6 +8474,9 @@
       alta: "Alta",
       urgente: "Urgente",
     };
+    const TASK_PRIORITY_KEYS = ["baja", "media", "alta", "urgente"];
+    const normalizeSegmentName = (value) => String(value || "").replace(/\s+/g, " ").trim().slice(0, 80);
+    const normalizeSegmentKey = (value) => normalizeText(normalizeSegmentName(value));
     const TASK_FAMILY_COLORS = [
       "#0d6efd",
       "#6f42c1",
@@ -8481,14 +8488,6 @@
       "#3f51b5",
       "#5c7cfa",
       "#795548",
-    ];
-
-    const TASK_TYPES = [
-      { id: "", nombre: "Sin tipo" },
-      { id: "feature", nombre: "Feature" },
-      { id: "bug", nombre: "Bug" },
-      { id: "spike", nombre: "Spike" },
-      { id: "chore", nombre: "Chore" },
     ];
 
     const TASK_COLUMNS_KEY = "scrum_calendar_tasks_columns_v4";
@@ -8560,6 +8559,7 @@
       const search = String(raw?.search || "").slice(0, 300);
       const statusFilterRaw = String(raw?.statusFilter || "").trim().toLowerCase();
       const statusFilter = STATUS_ORDER.includes(statusFilterRaw) ? statusFilterRaw : "";
+      const segmentFilter = normalizeSegmentName(raw?.segmentFilter || "");
       const datePreset = normalizeDatePreset(raw?.datePreset);
 
       const defaults = cloneDefaultTasksAdvancedFilters();
@@ -8597,6 +8597,7 @@
         view,
         search,
         statusFilter,
+        segmentFilter,
         datePreset,
         filters,
         backlogSort,
@@ -8617,6 +8618,7 @@
           view: state.tasksView,
           search: state.tasksSearch,
           statusFilter: state.tasksStatusFilter,
+          segmentFilter: state.tasksSegmentFilter,
           datePreset: state.tasksDatePreset,
           filters: state.tasksFilters,
           backlogSort: state.tasksBacklogSort,
@@ -8840,6 +8842,7 @@
       state.tasksView = savedTasksFiltersState.view;
       state.tasksSearch = savedTasksFiltersState.search;
       state.tasksStatusFilter = savedTasksFiltersState.statusFilter;
+      state.tasksSegmentFilter = savedTasksFiltersState.segmentFilter || "";
       state.tasksDatePreset = savedTasksFiltersState.datePreset || "";
       state.tasksFilters = {
         ...cloneDefaultTasksAdvancedFilters(),
@@ -8941,6 +8944,12 @@
         }
         cleanupBacklogHorizontalBar = null;
       }
+      if (backlogDataTableSearchFilter && window.jQuery?.fn?.dataTable?.ext?.search) {
+        const filters = window.jQuery.fn.dataTable.ext.search;
+        const idx = filters.indexOf(backlogDataTableSearchFilter);
+        if (idx >= 0) filters.splice(idx, 1);
+        backlogDataTableSearchFilter = null;
+      }
       if (!hasBacklogDataTable) return;
       if (backlogDataTable) {
         try {
@@ -8963,6 +8972,20 @@
     const initBacklogDataTable = (table, visibleColumns) => {
       if (!hasBacklogDataTable || !table) return;
       const $table = window.jQuery(table);
+      if (backlogDataTableSearchFilter && window.jQuery?.fn?.dataTable?.ext?.search) {
+        const filters = window.jQuery.fn.dataTable.ext.search;
+        const idx = filters.indexOf(backlogDataTableSearchFilter);
+        if (idx >= 0) filters.splice(idx, 1);
+      }
+      backlogDataTableSearchFilter = (settings, _searchData, dataIndex) => {
+        if (settings?.nTable !== table) return true;
+        const query = normalizeText(settings?.oPreviousSearch?.sSearch || "");
+        if (!query) return true;
+        const rowNode = settings?.aoData?.[dataIndex]?.nTr;
+        const haystack = normalizeText(rowNode?.textContent || "");
+        return haystack.includes(query);
+      };
+      window.jQuery.fn.dataTable.ext.search.push(backlogDataTableSearchFilter);
       backlogDataTable = $table.DataTable({
         destroy: true,
         stateSave: true,
@@ -9263,17 +9286,199 @@
       statusEl.dataset.type = type;
     };
 
+    const getTaskSegmentsCatalog = () => {
+      const segmentsMap = new Map();
+      const addSegment = (value) => {
+        const name = normalizeSegmentName(value);
+        const key = normalizeSegmentKey(name);
+        if (!name || !key || segmentsMap.has(key)) return;
+        segmentsMap.set(key, name);
+      };
+      (state.tasksSegments || []).forEach((segment) => addSegment(segment?.nombre || segment));
+      (state.tasksCache || []).forEach((task) => addSegment(task?.segmento || ""));
+      return Array.from(segmentsMap.entries())
+        .map(([key, nombre]) => ({ key, nombre }))
+        .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
+    };
+
+    const ensureTaskSegmentCatalogEntry = (value) => {
+      const name = normalizeSegmentName(value);
+      const key = normalizeSegmentKey(name);
+      if (!name || !key) return;
+      const exists = (state.tasksSegments || []).some(
+        (segment) => normalizeSegmentKey(segment?.nombre || segment) === key
+      );
+      if (exists) return;
+      state.tasksSegments = [...(state.tasksSegments || []), { nombre: name }];
+    };
+
+    const populateTaskSegmentSelect = (selectEl, currentValue = "") => {
+      if (!selectEl) return;
+      const current = normalizeSegmentName(currentValue);
+      if (current) ensureTaskSegmentCatalogEntry(current);
+      const segments = getTaskSegmentsCatalog();
+      selectEl.innerHTML = "";
+      const empty = document.createElement("option");
+      empty.value = "";
+      empty.textContent = "Sin segmento";
+      selectEl.appendChild(empty);
+      segments.forEach((segment) => {
+        const option = document.createElement("option");
+        option.value = segment.nombre;
+        option.textContent = segment.nombre;
+        selectEl.appendChild(option);
+      });
+      selectEl.value = current || "";
+    };
+
+    const renderTaskSegmentButtons = () => {
+      if (!segmentButtons) return;
+      const segments = getTaskSegmentsCatalog();
+      const activeKey = normalizeSegmentKey(state.tasksSegmentFilter || "");
+      const counts = new Map();
+      (state.tasksCache || []).forEach((task) => {
+        const key = normalizeSegmentKey(task?.segmento || "");
+        if (!key) return;
+        counts.set(key, (counts.get(key) || 0) + 1);
+      });
+      segmentButtons.innerHTML = "";
+      const buildButton = (label, count, value, isActive) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `tasks-segment-btn${isActive ? " is-active" : ""}`;
+        button.dataset.segmentFilter = value || "";
+        const text = document.createElement("span");
+        text.textContent = label;
+        const total = document.createElement("strong");
+        total.textContent = String(count);
+        button.appendChild(text);
+        button.appendChild(total);
+        return button;
+      };
+      segmentButtons.appendChild(
+        buildButton("Todos", Number(state.tasksCache?.length || 0), "", !activeKey)
+      );
+      segments.forEach((segment) => {
+        segmentButtons.appendChild(
+          buildButton(segment.nombre, counts.get(segment.key) || 0, segment.nombre, activeKey === segment.key)
+        );
+      });
+    };
+
+    const applyTaskSegmentFilter = (value = "") => {
+      state.tasksSegmentFilter = normalizeSegmentName(value);
+      saveTasksFiltersState();
+      renderTaskSegmentButtons();
+      renderAll();
+      renderFilterChips();
+    };
+
+    const ensureTaskSegmentsManagerForm = () => {
+      let form = qs("#tasks-segments-form");
+      if (form) return form;
+      let host = qs("#tasks-segments-form-host");
+      if (!host) {
+        host = document.createElement("div");
+        host.id = "tasks-segments-form-host";
+        host.style.display = "none";
+        document.body.appendChild(host);
+      }
+      form = document.createElement("form");
+      form.id = "tasks-segments-form";
+      form.className = "adminlte-form";
+      form.innerHTML = `
+        <div class="mb-3">
+          <label class="form-label" for="tasks-segment-name">Nuevo segmento</label>
+          <div class="input-group">
+            <input class="form-control" id="tasks-segment-name" name="nombre" type="text" maxlength="80" placeholder="Ej: Daily, Retro, Avisos" required />
+            <button class="btn btn-primary" type="submit">Guardar</button>
+          </div>
+        </div>
+        <div class="mb-2">
+          <div class="form-label mb-2">Segmentos actuales</div>
+          <div id="tasks-segment-modal-list" class="tasks-segment-modal-list"></div>
+        </div>
+        <p class="form-status mt-2 mb-0" id="tasks-segment-status"></p>
+      `;
+      host.appendChild(form);
+      return form;
+    };
+
+    const renderTaskSegmentsManager = () => {
+      const form = ensureTaskSegmentsManagerForm();
+      const list = form.querySelector("#tasks-segment-modal-list");
+      if (!list) return form;
+      list.innerHTML = "";
+      const segments = getTaskSegmentsCatalog();
+      if (!segments.length) {
+        const empty = document.createElement("p");
+        empty.className = "empty mb-0";
+        empty.textContent = "Aun no hay segmentos creados.";
+        list.appendChild(empty);
+        return form;
+      }
+      segments.forEach((segment) => {
+        const badge = document.createElement("span");
+        badge.className = "tasks-segment-badge";
+        badge.textContent = segment.nombre;
+        list.appendChild(badge);
+      });
+      return form;
+    };
+
+    const openTaskSegmentsManager = () => {
+      const form = renderTaskSegmentsManager();
+      const input = form.querySelector("#tasks-segment-name");
+      const status = form.querySelector("#tasks-segment-status");
+      if (status) {
+        status.textContent = "";
+        delete status.dataset.type;
+      }
+      if (input) input.value = "";
+      openAdminModal(form, "Segmentos de tareas");
+      input?.focus();
+    };
+
+    const syncPriorityFilterCheckboxes = () => {
+      const active = new Set((state.tasksFilters?.priorities || []).map((value) => String(value || "").toLowerCase()));
+      root.querySelectorAll("#tasks-filter-priorities input[type='checkbox']").forEach((cb) => {
+        cb.checked = active.has(String(cb.value || "").toLowerCase());
+      });
+    };
+
+    const getActivePriorityKpiKey = () => {
+      const selected = Array.from(
+        new Set((state.tasksFilters?.priorities || []).map((value) => String(value || "").trim().toLowerCase()))
+      ).filter((value) => TASK_PRIORITY_KEYS.includes(value));
+      if (selected.length === TASK_PRIORITY_KEYS.length) return "total";
+      if (selected.length === 1) return selected[0];
+      return "";
+    };
+
+    const syncPriorityKpiState = () => {
+      if (!priorityKpis) return;
+      const activeKey = getActivePriorityKpiKey();
+      priorityKpis.querySelectorAll(".tasks-priority-kpi[data-priority-filter]").forEach((button) => {
+        const key = String(button.dataset.priorityFilter || "").trim().toLowerCase();
+        const isActive = Boolean(activeKey) && key === activeKey;
+        button.classList.toggle("is-active", isActive);
+        button.setAttribute("aria-pressed", isActive ? "true" : "false");
+      });
+    };
+
     const updatePrioritySummaryButton = (items = []) => {
       if (!priorityKpis) return;
-      const counts = { urgente: 0, alta: 0, media: 0, baja: 0 };
+      const counts = { total: 0, urgente: 0, alta: 0, media: 0, baja: 0 };
       (Array.isArray(items) ? items : []).forEach((task) => {
+        counts.total += 1;
         const key = String(task?.prioridad || "").trim().toLowerCase();
         if (Object.prototype.hasOwnProperty.call(counts, key)) counts[key] += 1;
       });
-      ["urgente", "alta", "media", "baja"].forEach((key) => {
+      ["total", "urgente", "alta", "media", "baja"].forEach((key) => {
         const el = priorityKpis.querySelector(`[data-priority-kpi="${key}"]`);
         if (el) el.textContent = String(counts[key] || 0);
       });
+      syncPriorityKpiState();
     };
 
     const setActiveView = (view) => {
@@ -9396,6 +9601,10 @@
                   <option value="alta">Alta</option>
                   <option value="urgente">Urgente</option>
                 </select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="task-segmento">Segmento</label>
+                <select class="form-select" id="task-segmento" name="segmento"></select>
               </div>
               <div class="mb-3">
                 <label class="form-label" for="task-assignee">Responsable</label>
@@ -9893,6 +10102,7 @@
 	        form.descripcion.value = task.descripcion || "";
 	        form.estado.value = task.estado || "backlog";
         form.prioridad.value = task.prioridad || "media";
+        populateTaskSegmentSelect(form.segmento, task.segmento || "");
         form.assignee_persona_id.value = task.assignee_persona_id ? String(task.assignee_persona_id) : "";
         form.fecha_vencimiento.value = task.fecha_vencimiento || "";
         form.start_date.value = task.start_date || "";
@@ -9914,6 +10124,7 @@
         resetFormMode(form, "Guardar");
         form.estado.value = status || "backlog";
         if (status) form.estado.value = status;
+        populateTaskSegmentSelect(form.segmento, "");
         form.start_date.value = "";
         form.end_date.value = "";
         if (deleteBtn) deleteBtn.classList.add("hidden");
@@ -9931,6 +10142,35 @@
 
       if (formStatus) formStatus.textContent = "";
       openAdminModal(form, task ? "Editar tarea" : parentId ? "Nueva subtarea" : "Nueva tarea");
+
+      if (!form.dataset.boundSubmitOnEnter) {
+        form.dataset.boundSubmitOnEnter = "true";
+        form.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) {
+            return;
+          }
+          const target = event.target;
+          const tag = String(target?.tagName || "").toLowerCase();
+          if (!target || tag === "textarea" || tag === "button" || tag === "select") return;
+          if (
+            target.id === "task-subtask-title" ||
+            target.id === "task-new-subtask-title" ||
+            target.id === "task-comment-text" ||
+            target.closest("#task-new-subtask-panel") ||
+            target.closest(".task-existing-only")
+          ) {
+            return;
+          }
+          event.preventDefault();
+          const submitBtn = form.querySelector("button[type='submit']");
+          if (submitBtn?.disabled) return;
+          if (typeof form.requestSubmit === "function") {
+            form.requestSubmit(submitBtn || undefined);
+          } else {
+            submitBtn?.click();
+          }
+        });
+      }
 
       if (form.estado && !form.estado.dataset.boundDateRules) {
         form.estado.dataset.boundDateRules = "true";
@@ -9986,6 +10226,7 @@
 	              descripcion: null,
 	              estado: parent.estado || "backlog",
 	              prioridad: parent.prioridad || "media",
+                segmento: parent.segmento || null,
 	              celula_id: parent.celula_id || resolveCelulaId() || null,
 	              parent_id: taskId,
 	              assignee_persona_id: parent.assignee_persona_id || null,
@@ -10162,6 +10403,7 @@
             descripcion: form.descripcion.value || null,
             estado: (form.estado.value || "backlog").trim().toLowerCase(),
             prioridad: (form.prioridad.value || "media").trim().toLowerCase(),
+            segmento: normalizeSegmentName(form.segmento?.value || "") || null,
             celula_id: Number(form.dataset.celulaId || 0) || null,
             parent_id: form.dataset.parentId ? Number(form.dataset.parentId) : null,
             assignee_persona_id: form.assignee_persona_id.value ? Number(form.assignee_persona_id.value) : null,
@@ -10184,9 +10426,11 @@
 	                if (editId) {
 	                  const updated = await putJson(`/tasks/${editId}`, payload);
 	                  upsertTaskInCache(updated);
+                    ensureTaskSegmentCatalogEntry(updated?.segmento || payload.segmento || "");
 	                } else {
 	                  const created = await postJson("/tasks", payload);
 	                  upsertTaskInCache(created);
+                    ensureTaskSegmentCatalogEntry(created?.segmento || payload.segmento || "");
 	                  const createdId = Number(created?.id || 0);
 	                  if (createdId && draftSubtasks.length) {
 	                    for (const subTitle of draftSubtasks) {
@@ -10195,6 +10439,7 @@
 	                        descripcion: null,
 	                        estado: payload.estado || "backlog",
 	                        prioridad: payload.prioridad || "media",
+                          segmento: payload.segmento || null,
 	                        celula_id: payload.celula_id,
 	                        parent_id: createdId,
 	                        assignee_persona_id: payload.assignee_persona_id || null,
@@ -10237,10 +10482,12 @@
       const dueTo = state.tasksFilters?.dueTo ? String(state.tasksFilters.dueTo) : "";
       const noDueDate = Boolean(state.tasksFilters?.noDueDate);
       const hideSubtasks = Boolean(state.tasksFilters?.hideSubtasks);
+      const segmentKey = normalizeSegmentKey(state.tasksSegmentFilter || "");
       return items.filter((task) => {
         if (hideSubtasks && task.parent_id) return false;
         if (statusAllowed && !statusAllowed.has(String(task.estado || "").toLowerCase())) return false;
         if (prioritySet.size && !prioritySet.has(String(task.prioridad || "").toLowerCase())) return false;
+        if (segmentKey && normalizeSegmentKey(task?.segmento || "") !== segmentKey) return false;
         if (assigneeSet.size) {
           const key = task.assignee_persona_id ? String(task.assignee_persona_id) : "__none__";
           if (!assigneeSet.has(key)) return false;
@@ -10573,14 +10820,19 @@
         pill.className = "tasks-notion-pill";
         const select = document.createElement("select");
         select.className = "";
-        select.dataset.field = "tipo";
-        TASK_TYPES.forEach((t) => {
+        select.dataset.field = "segmento";
+        const segments = getTaskSegmentsCatalog();
+        const options = [{ nombre: "Sin segmento", value: "" }, ...segments.map((segment) => ({
+          nombre: segment.nombre,
+          value: segment.nombre,
+        }))];
+        options.forEach((segment) => {
           const opt = document.createElement("option");
-          opt.value = t.id;
-          opt.textContent = t.nombre;
+          opt.value = segment.value;
+          opt.textContent = segment.nombre;
           select.appendChild(opt);
         });
-        select.value = task.tipo ? String(task.tipo) : "";
+        select.value = task.segmento ? String(task.segmento) : "";
         pill.appendChild(select);
         const cell = document.createElement("div");
         cell.className = "tasks-notion-cell";
@@ -10793,7 +11045,7 @@
         if (key === "titulo") return normalizeText(task.titulo || "");
         if (key === "estado") return statusRank[String(task.estado || "backlog").toLowerCase()] ?? 0;
         if (key === "prioridad") return priorityRank[String(task.prioridad || "media").toLowerCase()] ?? 0;
-        if (key === "tipo") return normalizeText(task.tipo || "");
+        if (key === "tipo") return normalizeText(task.segmento || "");
         if (key === "etiquetas") return normalizeText(task.etiquetas || "");
         if (key === "assignee_persona_id") {
           const personId = task.assignee_persona_id ? String(task.assignee_persona_id) : "";
@@ -10916,6 +11168,15 @@
             : `Subtareas (${children.length})`;
           main.appendChild(subtasksMeta);
         }
+        if (task.segmento) {
+          const segmentWrap = document.createElement("div");
+          segmentWrap.className = "tasks-title-segment";
+          const segmentBadge = document.createElement("span");
+          segmentBadge.className = "tasks-segment-badge";
+          segmentBadge.textContent = String(task.segmento);
+          segmentWrap.appendChild(segmentBadge);
+          main.appendChild(segmentWrap);
+        }
         titleWrap.appendChild(main);
 
         queueTaskCommentCount(task.id);
@@ -11035,7 +11296,7 @@
           }
           if (key === "tipo") {
             td.appendChild(buildTypeSelect(task));
-            setCellOrder(td, normalizeText(task.tipo || ""));
+            setCellOrder(td, normalizeText(task.segmento || ""));
             return td;
           }
           if (key === "etiquetas") {
@@ -11173,6 +11434,7 @@
               descripcion: null,
               estado: statusKey,
               prioridad: "media",
+              segmento: state.tasksSegmentFilter || null,
               celula_id: celulaId,
               sprint_id: resolveSelectedSprintId() || null,
               parent_id: null,
@@ -11180,6 +11442,7 @@
               fecha_vencimiento: null,
             });
             upsertTaskInCache(created);
+            ensureTaskSegmentCatalogEntry(created?.segmento || state.tasksSegmentFilter || "");
             if (input) input.value = "";
             refreshTasksUi("all");
           } catch (err) {
@@ -11287,6 +11550,15 @@
           `;
 
           card.appendChild(top);
+          if (task.segmento) {
+            const segment = document.createElement("div");
+            segment.className = "task-card-segment";
+            const badge = document.createElement("span");
+            badge.className = "tasks-segment-badge";
+            badge.textContent = String(task.segmento);
+            segment.appendChild(badge);
+            card.appendChild(segment);
+          }
           if (parentLabel) {
             const parentHint = document.createElement("div");
             parentHint.className = "task-card-parent";
@@ -11603,6 +11875,34 @@
           }
         }
       }
+    };
+
+    const syncBacklogRowAfterSegmentUpdate = (rowEl, updatedTask) => {
+      if (!rowEl || !updatedTask) return;
+      const segmentSelect = rowEl.querySelector("select[data-field='segmento'], select[data-field='tipo']");
+      if (segmentSelect) {
+        segmentSelect.value = String(updatedTask.segmento || "");
+      }
+      const main = rowEl.querySelector(".tasks-notion-name-main");
+      if (!main) return;
+      const currentWrap = main.querySelector(".tasks-title-segment");
+      const segmentValue = String(updatedTask.segmento || "").trim();
+      if (!segmentValue) {
+        currentWrap?.remove();
+        return;
+      }
+      if (currentWrap) {
+        const badge = currentWrap.querySelector(".tasks-segment-badge");
+        if (badge) badge.textContent = segmentValue;
+        return;
+      }
+      const wrap = document.createElement("div");
+      wrap.className = "tasks-title-segment";
+      const badge = document.createElement("span");
+      badge.className = "tasks-segment-badge";
+      badge.textContent = segmentValue;
+      wrap.appendChild(badge);
+      main.appendChild(wrap);
     };
 
     const syncBacklogHeaderSortState = () => {
@@ -12017,6 +12317,7 @@
 
     const renderAll = () => {
       const filtered = applyFilters(state.tasksCache || []);
+      renderTaskSegmentButtons();
       updatePrioritySummaryButton(filtered);
       renderBacklog(filtered, state.tasksCache || []);
       renderBoard(filtered, state.tasksCache || []);
@@ -12246,8 +12547,12 @@
 
       try {
         setTasksStatus("Cargando tareas...", "info");
-        const items = await fetchJson("/tasks");
+        const [items, segments] = await Promise.all([
+          fetchJson("/tasks"),
+          fetchJson("/tasks/segments").catch(() => []),
+        ]);
         state.tasksCache = Array.isArray(items) ? items : [];
+        state.tasksSegments = Array.isArray(segments) ? segments : [];
         const validTaskIds = new Set((state.tasksCache || []).map((t) => String(t.id)));
         Object.keys(state.tasksCommentCounts || {}).forEach((key) => {
           if (!validTaskIds.has(String(key))) {
@@ -12338,6 +12643,55 @@
             },
             "Actualizando..."
           );
+        });
+      }
+
+      if (segmentButtons && !segmentButtons.dataset.bound) {
+        segmentButtons.dataset.bound = "true";
+        segmentButtons.addEventListener("click", (event) => {
+          const button = event.target.closest("button[data-segment-filter]");
+          if (!button) return;
+          applyTaskSegmentFilter(button.dataset.segmentFilter || "");
+        });
+      }
+
+      if (segmentManageBtn && !segmentManageBtn.dataset.bound) {
+        segmentManageBtn.dataset.bound = "true";
+        segmentManageBtn.addEventListener("click", () => openTaskSegmentsManager());
+      }
+
+      const taskSegmentsForm = ensureTaskSegmentsManagerForm();
+      if (taskSegmentsForm && !taskSegmentsForm.dataset.bound) {
+        taskSegmentsForm.dataset.bound = "true";
+        taskSegmentsForm.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const input = taskSegmentsForm.nombre || taskSegmentsForm.querySelector("#tasks-segment-name");
+          const status = taskSegmentsForm.querySelector("#tasks-segment-status");
+          const submitBtn = taskSegmentsForm.querySelector("button[type='submit']");
+          const nombre = normalizeSegmentName(input?.value || "");
+          if (!nombre) return;
+          try {
+            if (status) {
+              status.textContent = "";
+              delete status.dataset.type;
+            }
+            await withButtonBusy(
+              submitBtn,
+              async () => {
+                const created = await postJson("/tasks/segments", { nombre });
+                ensureTaskSegmentCatalogEntry(created?.nombre || nombre);
+              },
+              "Guardando..."
+            );
+            if (input) input.value = "";
+            renderTaskSegmentsManager();
+            renderTaskSegmentButtons();
+          } catch (err) {
+            if (status) {
+              status.textContent = err.message || "No se pudo crear el segmento.";
+              status.dataset.type = "error";
+            }
+          }
         });
       }
 
@@ -12551,6 +12905,7 @@
         filterClearBtn.dataset.bound = "true";
         filterClearBtn.addEventListener("click", () => {
           state.tasksStatusFilter = "";
+          state.tasksSegmentFilter = "";
           if (statusSelect) statusSelect.value = "";
           state.tasksDatePreset = "";
           state.tasksFilters = cloneDefaultTasksAdvancedFilters();
@@ -12612,6 +12967,12 @@
             label: `Estado: ${STATUS_LABEL[state.tasksStatusFilter] || state.tasksStatusFilter}`,
           });
         }
+        if (state.tasksSegmentFilter) {
+          chips.push({
+            key: "segmento",
+            label: `Segmento: ${state.tasksSegmentFilter}`,
+          });
+        }
         const s = state.tasksFilters?.statuses || [];
         const p = state.tasksFilters?.priorities || [];
         const a = state.tasksFilters?.assignees || [];
@@ -12650,6 +13011,30 @@
 
       root.__tasksRenderFilterChips = renderFilterChips;
 
+      if (priorityKpis && !priorityKpis.dataset.bound) {
+        priorityKpis.dataset.bound = "true";
+        priorityKpis.addEventListener("click", (event) => {
+          const button = event.target.closest(".tasks-priority-kpi[data-priority-filter]");
+          if (!button) return;
+          const key = String(button.dataset.priorityFilter || "").trim().toLowerCase();
+          if (!key) return;
+          const activeKey = getActivePriorityKpiKey();
+          const nextPriorities =
+            key === "total" || activeKey === key
+              ? [...TASK_PRIORITY_KEYS]
+              : TASK_PRIORITY_KEYS.filter((priority) => priority === key);
+          state.tasksFilters = {
+            ...state.tasksFilters,
+            priorities: nextPriorities,
+          };
+          syncPriorityFilterCheckboxes();
+          saveTasksFiltersState();
+          renderAll();
+          renderFilterChips();
+          syncPriorityKpiState();
+        });
+      }
+
       if (filterPanel && !filterPanel.dataset.bound) {
         filterPanel.dataset.bound = "true";
         filterPanel.addEventListener("change", (event) => {
@@ -12670,6 +13055,9 @@
           if (key === "estado") {
             state.tasksStatusFilter = "";
             if (statusSelect) statusSelect.value = "";
+          } else if (key === "segmento") {
+            state.tasksSegmentFilter = "";
+            renderTaskSegmentButtons();
           } else if (key === "statuses") {
             root.querySelectorAll("#tasks-filter-statuses input[type='checkbox']").forEach((cb) => {
               cb.checked = cb.value !== "archived";
@@ -12935,13 +13323,24 @@
               );
               return;
             }
-            if (field === "tipo") {
-              await updateTaskLocal(
+            if (field === "tipo" || field === "segmento") {
+              const nextSegment = normalizeSegmentName(String(el.value || ""));
+              const updated = await updateTaskLocal(
                 taskId,
-                { tipo: String(el.value || "").trim().toLowerCase() || null },
+                { segmento: nextSegment || null },
                 "Actualizado.",
                 { rerender: "none" }
               );
+              ensureTaskSegmentCatalogEntry(updated?.segmento || nextSegment || "");
+              syncBacklogRowAfterSegmentUpdate(row, updated);
+              renderTaskSegmentButtons();
+              const filtered = applyFilters(state.tasksCache || []);
+              updatePrioritySummaryButton(filtered);
+              renderReports(filtered);
+              const sortState = getTasksBacklogSort();
+              if (state.tasksSegmentFilter || sortState.key === "tipo") {
+                reorderBacklogRowsInPlace({ prune: true });
+              }
               return;
             }
             if (field === "etiquetas") {
@@ -13167,6 +13566,7 @@
     };
     setCheckboxes("#tasks-filter-statuses", state.tasksFilters?.statuses || []);
     setCheckboxes("#tasks-filter-priorities", state.tasksFilters?.priorities || []);
+    syncPriorityKpiState();
     if (filterAssignee) {
       const opts = [
         { id: "__none__", nombre: "Sin responsable" },
@@ -13186,6 +13586,7 @@
     if (filterDueFrom) filterDueFrom.value = state.tasksFilters?.dueFrom || "";
     if (filterDueTo) filterDueTo.value = state.tasksFilters?.dueTo || "";
     if (filterHideSubtasks) filterHideSubtasks.checked = Boolean(state.tasksFilters?.hideSubtasks);
+    state.tasksSegmentFilter = normalizeSegmentName(state.tasksSegmentFilter || "");
     setActiveView(state.tasksView || "backlog");
     loadAndRender();
     if (root.__tasksRenderFilterChips) root.__tasksRenderFilterChips();

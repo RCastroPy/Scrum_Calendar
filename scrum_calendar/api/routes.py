@@ -94,6 +94,8 @@ from api.schemas import (
     TaskCreate,
     TaskOut,
     TaskUpdate,
+    TaskSegmentCreate,
+    TaskSegmentOut,
     TaskCommentCreate,
     TaskCommentUpdate,
     TaskCommentOut,
@@ -123,6 +125,7 @@ from data.models import (
     EventoTipo,
     Feriado,
     Task,
+    TaskSegment,
     TaskComment,
     CompraCatalogProducto,
     CompraCatalogSupermercado,
@@ -4897,6 +4900,11 @@ def crear_task(
             resolved_celula_id = parent.celula_id
         if not _same_optional_int(resolved_celula_id, parent.celula_id):
             raise HTTPException(status_code=400, detail="La subtarea debe pertenecer a la misma celula del padre")
+    segmento = (payload.segmento or "").strip() or None
+    if segmento and len(segmento) > 80:
+        raise HTTPException(status_code=400, detail="Segmento demasiado largo")
+    if segmento:
+        segmento = _upsert_catalog_name(db, TaskSegment, user.id, segmento)
     tipo = (payload.tipo or "").strip() or None
     if tipo and len(tipo) > 30:
         raise HTTPException(status_code=400, detail="Tipo demasiado largo")
@@ -4924,6 +4932,7 @@ def crear_task(
         start_date=start_date,
         end_date=end_date,
         fecha_vencimiento=payload.fecha_vencimiento,
+        segmento=segmento,
         tipo=tipo,
         etiquetas=etiquetas,
         puntos=payload.puntos,
@@ -4937,6 +4946,39 @@ def crear_task(
     return task
 
 
+@router.get("/tasks/segments", response_model=List[TaskSegmentOut])
+def listar_task_segments(
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    user = require_user(db, scrum_session)
+    return (
+        db.query(TaskSegment)
+        .filter(TaskSegment.usuario_id == user.id)
+        .order_by(func.lower(TaskSegment.nombre).asc(), TaskSegment.id.asc())
+        .all()
+    )
+
+
+@router.post("/tasks/segments", response_model=TaskSegmentOut, status_code=status.HTTP_201_CREATED)
+def crear_task_segment(
+    payload: TaskSegmentCreate,
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    user = require_user(db, scrum_session)
+    nombre = _upsert_catalog_name(db, TaskSegment, user.id, payload.nombre)
+    db.commit()
+    created = (
+        db.query(TaskSegment)
+        .filter(TaskSegment.usuario_id == user.id, TaskSegment.nombre_key == normalize_text(nombre))
+        .first()
+    )
+    if not created:
+        raise HTTPException(status_code=500, detail="No se pudo crear el segmento")
+    return created
+
+
 @router.put("/tasks/{task_id}", response_model=TaskOut)
 def actualizar_task(
     task_id: int,
@@ -4944,7 +4986,7 @@ def actualizar_task(
     db: Session = Depends(get_db),
     scrum_session: Optional[str] = Cookie(default=None),
 ):
-    require_user(db, scrum_session)
+    user = require_user(db, scrum_session)
     task = db.get(Task, task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task no encontrada")
@@ -4972,6 +5014,13 @@ def actualizar_task(
         if prioridad not in TASK_PRIORITIES:
             raise HTTPException(status_code=400, detail="Prioridad invalida")
         task.prioridad = prioridad
+    if payload.segmento is not None:
+        segmento = (payload.segmento or "").strip() or None
+        if segmento and len(segmento) > 80:
+            raise HTTPException(status_code=400, detail="Segmento demasiado largo")
+        if segmento:
+            segmento = _upsert_catalog_name(db, TaskSegment, user.id, segmento)
+        task.segmento = segmento
     if payload.tipo is not None:
         tipo = (payload.tipo or "").strip() or None
         if tipo and len(tipo) > 30:

@@ -447,6 +447,7 @@ class TaskCreate(BaseModel):
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     fecha_vencimiento: Optional[date] = None
+    segmento: Optional[str] = None
     orden: Optional[float] = None
     tipo: Optional[str] = None
     etiquetas: Optional[str] = None
@@ -467,6 +468,7 @@ class TaskUpdate(BaseModel):
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     fecha_vencimiento: Optional[date] = None
+    segmento: Optional[str] = None
     orden: Optional[float] = None
     tipo: Optional[str] = None
     etiquetas: Optional[str] = None
@@ -491,6 +493,7 @@ class TaskOut(BaseModel):
     start_date: Optional[date]
     end_date: Optional[date]
     fecha_vencimiento: Optional[date]
+    segmento: Optional[str] = None
     tipo: Optional[str] = None
     etiquetas: Optional[str] = None
     puntos: Optional[float] = None
@@ -518,6 +521,19 @@ class TaskCommentOut(BaseModel):
     texto: str
     creado_en: datetime
     usuario: Optional[UsuarioLite] = None
+
+
+class TaskSegmentCreate(BaseModel):
+    nombre: str
+
+
+class TaskSegmentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    nombre: str
+    creado_en: datetime
+    actualizado_en: datetime
 
 
 class CompraCatalogNombreIn(BaseModel):
