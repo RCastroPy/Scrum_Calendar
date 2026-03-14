@@ -13518,12 +13518,21 @@
             }
             if (field === "prioridad") {
               syncInlinePrioridadPill(el);
-              await updateTaskLocal(
+              const updated = await updateTaskLocal(
                 taskId,
                 { prioridad: String(el.value || "").trim().toLowerCase() },
                 "Actualizado.",
                 { rerender: "none" }
               );
+              const filtered = applyFilters(state.tasksCache || []);
+              updatePrioritySummaryButton(filtered);
+              renderReports(filtered);
+              const sortState = getTasksBacklogSort();
+              if (sortState.key === "fecha_vencimiento" || sortState.key === "prioridad") {
+                reorderBacklogRowsInPlace({ prune: true });
+              } else {
+                syncBacklogRowAfterStatusUpdate(row, updated);
+              }
               return;
             }
             if (field === "tipo" || field === "segmento") {
