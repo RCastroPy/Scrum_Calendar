@@ -9461,10 +9461,10 @@
       if (filterDueTo) filterDueTo.value = "";
       if (filterHideSubtasks) filterHideSubtasks.checked = false;
       if (filterAssignee) Array.from(filterAssignee.options).forEach((o) => (o.selected = false));
-      root.querySelectorAll("#tasks-filter-statuses input[type='checkbox']").forEach((cb) => {
+      document.querySelectorAll("#tasks-filter-statuses input[type='checkbox']").forEach((cb) => {
         cb.checked = cb.value !== "archived";
       });
-      root.querySelectorAll("#tasks-filter-priorities input[type='checkbox']").forEach((cb) => {
+      document.querySelectorAll("#tasks-filter-priorities input[type='checkbox']").forEach((cb) => {
         cb.checked = true;
       });
       syncDatePresetButtons();
@@ -9572,7 +9572,7 @@
 
     const syncPriorityFilterCheckboxes = () => {
       const active = new Set((state.tasksFilters?.priorities || []).map((value) => String(value || "").toLowerCase()));
-      root.querySelectorAll("#tasks-filter-priorities input[type='checkbox']").forEach((cb) => {
+      document.querySelectorAll("#tasks-filter-priorities input[type='checkbox']").forEach((cb) => {
         cb.checked = active.has(String(cb.value || "").toLowerCase());
       });
     };
@@ -13131,7 +13131,7 @@
       }
 
       const readCheckboxGroup = (containerId) =>
-        Array.from(root.querySelectorAll(`${containerId} input[type='checkbox']`))
+        Array.from(document.querySelectorAll(`${containerId} input[type='checkbox']`))
           .filter((cb) => cb.checked)
           .map((cb) => cb.value);
 
@@ -13262,11 +13262,11 @@
             state.tasksSegmentFilter = "";
             renderTaskSegmentButtons();
           } else if (key === "statuses") {
-            root.querySelectorAll("#tasks-filter-statuses input[type='checkbox']").forEach((cb) => {
+            document.querySelectorAll("#tasks-filter-statuses input[type='checkbox']").forEach((cb) => {
               cb.checked = cb.value !== "archived";
             });
           } else if (key === "priorities") {
-            root.querySelectorAll("#tasks-filter-priorities input[type='checkbox']").forEach((cb) => (cb.checked = true));
+            document.querySelectorAll("#tasks-filter-priorities input[type='checkbox']").forEach((cb) => (cb.checked = true));
           } else if (key === "assignees") {
             if (filterAssignee) Array.from(filterAssignee.options).forEach((o) => (o.selected = false));
           } else if (key === "due") {
@@ -13763,7 +13763,7 @@
     // advanced filters UI bootstrap
     const setCheckboxes = (containerSelector, values) => {
       const set = new Set((values || []).map((v) => String(v)));
-      root.querySelectorAll(`${containerSelector} input[type='checkbox']`).forEach((cb) => {
+      document.querySelectorAll(`${containerSelector} input[type='checkbox']`).forEach((cb) => {
         cb.checked = set.has(String(cb.value));
       });
     };
