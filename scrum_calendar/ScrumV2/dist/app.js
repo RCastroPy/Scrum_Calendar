@@ -9422,6 +9422,49 @@
       renderFilterChips();
     };
 
+    const resetTasksFiltersToDefaults = () => {
+      state.tasksSearch = "";
+      state.tasksStatusFilter = "";
+      state.tasksSegmentFilter = "";
+      state.tasksDatePreset = "";
+      state.tasksFilters = cloneDefaultTasksAdvancedFilters();
+      if (searchInput) searchInput.value = "";
+      if (statusSelect) statusSelect.value = "";
+      if (filterDueFrom) filterDueFrom.value = "";
+      if (filterDueTo) filterDueTo.value = "";
+      if (filterHideSubtasks) filterHideSubtasks.checked = false;
+      if (filterAssignee) Array.from(filterAssignee.options).forEach((o) => (o.selected = false));
+      root.querySelectorAll("#tasks-filter-statuses input[type='checkbox']").forEach((cb) => {
+        cb.checked = cb.value !== "archived";
+      });
+      root.querySelectorAll("#tasks-filter-priorities input[type='checkbox']").forEach((cb) => {
+        cb.checked = true;
+      });
+      syncDatePresetButtons();
+      saveTasksFiltersState();
+    };
+
+    const hasActivePersistedTaskFilters = () => {
+      if ((state.tasksSearch || "").trim()) return true;
+      if ((state.tasksStatusFilter || "").trim()) return true;
+      if ((state.tasksSegmentFilter || "").trim()) return true;
+      if ((state.tasksDatePreset || "").trim()) return true;
+      const filters = state.tasksFilters || {};
+      if (Boolean(filters.noDueDate) || Boolean(filters.hideSubtasks)) return true;
+      if ((filters.dueFrom || "").trim() || (filters.dueTo || "").trim()) return true;
+      const statuses = Array.isArray(filters.statuses) ? filters.statuses : [];
+      const priorities = Array.isArray(filters.priorities) ? filters.priorities : [];
+      const assignees = Array.isArray(filters.assignees) ? filters.assignees : [];
+      if (assignees.length) return true;
+      if (statuses.length !== DEFAULT_TASKS_ADVANCED_FILTERS.statuses.length) return true;
+      if (priorities.length !== DEFAULT_TASKS_ADVANCED_FILTERS.priorities.length) return true;
+      const statusSet = new Set(statuses.map((value) => String(value || "").trim().toLowerCase()));
+      const prioritySet = new Set(priorities.map((value) => String(value || "").trim().toLowerCase()));
+      if (DEFAULT_TASKS_ADVANCED_FILTERS.statuses.some((value) => !statusSet.has(value))) return true;
+      if (DEFAULT_TASKS_ADVANCED_FILTERS.priorities.some((value) => !prioritySet.has(value))) return true;
+      return false;
+    };
+
     const ensureTaskSegmentsManagerForm = () => {
       let form = qs("#tasks-segments-form");
       if (form) return form;
@@ -12615,6 +12658,10 @@
         state.tasksCache = Array.isArray(items) ? items : [];
         state.tasksSegments = Array.isArray(segments) ? segments : [];
         sanitizeTaskSegmentFilter();
+        if (state.tasksCache.length && !applyFilters(state.tasksCache).length && hasActivePersistedTaskFilters()) {
+          resetTasksFiltersToDefaults();
+          setTasksStatus("Se limpiaron filtros guardados para recuperar las tareas.", "ok");
+        }
         const validTaskIds = new Set((state.tasksCache || []).map((t) => String(t.id)));
         Object.keys(state.tasksCommentCounts || {}).forEach((key) => {
           if (!validTaskIds.has(String(key))) {
@@ -13040,24 +13087,7 @@
       if (filterClearBtn && !filterClearBtn.dataset.bound) {
         filterClearBtn.dataset.bound = "true";
         filterClearBtn.addEventListener("click", () => {
-          state.tasksStatusFilter = "";
-          state.tasksSegmentFilter = "";
-          if (statusSelect) statusSelect.value = "";
-          state.tasksDatePreset = "";
-          state.tasksFilters = cloneDefaultTasksAdvancedFilters();
-          if (filterDueFrom) filterDueFrom.value = "";
-          if (filterDueTo) filterDueTo.value = "";
-          syncDatePresetButtons();
-          if (filterHideSubtasks) filterHideSubtasks.checked = false;
-          if (filterAssignee) Array.from(filterAssignee.options).forEach((o) => (o.selected = false));
-          // status/prio checkboxes
-          root.querySelectorAll("#tasks-filter-statuses input[type='checkbox']").forEach((cb) => {
-            cb.checked = cb.value !== "archived";
-          });
-          root.querySelectorAll("#tasks-filter-priorities input[type='checkbox']").forEach((cb) => {
-            cb.checked = true;
-          });
-          saveTasksFiltersState();
+          resetTasksFiltersToDefaults();
           renderAll();
           renderFilterChips();
         });
