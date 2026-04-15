@@ -1,8 +1,22 @@
 (() => {
-  const API_HOSTS = Array.from(
-    new Set([window.location.hostname, "localhost", "127.0.0.1"].filter(Boolean))
-  );
-  let API_BASE = `http://${API_HOSTS[0]}:8000`;
+  const resolveApiBases = () => {
+    const protocol = window.location.protocol || "http:";
+    const hostname = window.location.hostname || "localhost";
+    const port = window.location.port || "8000";
+    const currentBase = `${protocol}//${hostname}:${port}`;
+    if (hostname === "localhost" || hostname === "127.0.0.1") {
+      return Array.from(
+        new Set([
+          currentBase,
+          `${protocol}//localhost:${port}`,
+          `${protocol}//127.0.0.1:${port}`,
+        ])
+      );
+    }
+    return [currentBase];
+  };
+  const API_BASES = resolveApiBases();
+  let API_BASE = API_BASES[0];
   const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 
   const xhrRequest = (url, options = {}) =>
@@ -31,11 +45,10 @@
 
   const fetchWithFallback = async (path, options) => {
     let lastError;
-    for (const host of API_HOSTS) {
-      const base = `http://${host}:8000`;
+    for (const base of API_BASES) {
       try {
         const mergedOptions = { credentials: "include", ...options };
-        const useFetch = !isSafari || (window.location.port === "8000" && host === window.location.hostname);
+        const useFetch = !isSafari || base === API_BASES[0];
         const res = useFetch
           ? await fetch(`${base}${path}`, mergedOptions)
           : await xhrRequest(`${base}${path}`, mergedOptions);
