@@ -3296,6 +3296,8 @@
   function initCelulaSelector(base) {
     const select = qs("#cell-filter");
     if (!select) return;
+    select.disabled = false;
+    select.style.pointerEvents = "auto";
     const applyCells = (cells) => {
       const list = Array.isArray(cells) ? cells : [];
       fillSelect(select, list, { includeEmpty: true, sortByLabel: true });
@@ -3337,8 +3339,10 @@
 
     if (!select.dataset.bound) {
       select.dataset.bound = "true";
-      select.addEventListener("change", async () => {
-        state.selectedCelulaId = select.value;
+      const handleCellSelection = async () => {
+        const nextCelulaId = String(select.value || "");
+        if (String(state.selectedCelulaId || "") === nextCelulaId) return;
+        state.selectedCelulaId = nextCelulaId;
         if (state.selectedCelulaId) {
           localStorage.setItem("scrum_calendar_celula_id", state.selectedCelulaId);
         } else {
@@ -3357,7 +3361,9 @@
         state.dailyCapacityCache = {};
         toggleMenuVisibility();
         await reloadAll();
-      });
+      };
+      select.addEventListener("change", handleCellSelection);
+      select.addEventListener("input", handleCellSelection);
     }
 
     fetchJson("/celulas")
