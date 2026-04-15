@@ -16079,6 +16079,7 @@
     const celulaForm = qs("#form-celula");
     const personaForm = qs("#form-persona");
     const sprintForm = qs("#form-sprint");
+    const quarterForm = qs("#form-quarter");
     const feriadoForm = qs("#form-feriado");
     const eventoForm = qs("#form-evento");
     const tipoForm = qs("#form-evento-tipo");
