@@ -10874,7 +10874,10 @@
       const resolveWidthPx = (key) => {
         if (key === "titulo") {
           const viewportWidth = Number(window.innerWidth || 0);
-          const isTabletViewport = viewportWidth >= 768 && viewportWidth <= 1366;
+          const isTabletViewport =
+            viewportWidth >= 768 &&
+            viewportWidth <= 1366 &&
+            Boolean(window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches);
           const adaptiveWidth = isTabletViewport ? 450 : Math.round(viewportWidth * 0.18);
           return getColumnWidth(key) || Math.max(isTabletViewport ? 450 : 190, adaptiveWidth || 0, widthPxDefaults[key] || 0);
         }

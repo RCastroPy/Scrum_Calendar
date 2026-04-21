@@ -5298,14 +5298,7 @@ body.page-tasks .tasks-notion-scroll {
 #tasks-backlog-list .dataTables_scrollBody table {
   table-layout: auto !important;
 }
-#tasks-backlog-list col[data-col-key="titulo"],
-#tasks-backlog-list th[data-col-key="titulo"],
-#tasks-backlog-list td[data-col-key="titulo"] {
-  width: 18vw !important;
-  min-width: 18vw !important;
-  max-width: 18vw !important;
-}
-@media (min-width: 768px) and (max-width: 1366px) {
+@media (min-width: 768px) and (max-width: 1366px) and (hover: none) and (pointer: coarse) {
   #tasks-backlog-list col[data-col-key="titulo"],
   #tasks-backlog-list th[data-col-key="titulo"],
   #tasks-backlog-list td[data-col-key="titulo"] {
