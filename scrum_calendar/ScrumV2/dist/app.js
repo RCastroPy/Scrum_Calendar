@@ -8685,7 +8685,7 @@
         cfg && cfg.widths && typeof cfg.widths === "object"
           ? Object.fromEntries(
               Object.entries(cfg.widths)
-                .filter(([key]) => DEFAULT_COLUMNS.includes(key))
+                .filter(([key]) => DEFAULT_COLUMNS.includes(key) && key === "titulo")
                 .map(([key, value]) => [key, Number(value)])
                 .filter(([, value]) => Number.isFinite(value) && value > 0)
                 .map(([key, value]) => [key, Math.round(value)])
@@ -8713,6 +8713,12 @@
     const setColumnWidth = (key, px) => {
       const cfg = loadColumnsConfig();
       const widths = { ...(cfg.widths || {}) };
+      if (key !== "titulo") {
+        delete widths[key];
+        state.tasksColumnsConfig = { ...cfg, widths };
+        saveColumnsConfig();
+        return;
+      }
       const n = Number(px);
       if (!Number.isFinite(n) || n <= 0) return;
       widths[key] = Math.round(n);
@@ -8721,6 +8727,7 @@
     };
 
     const getColumnWidth = (key) => {
+      if (key !== "titulo") return 0;
       const cfg = loadColumnsConfig();
       const widths = cfg.widths || {};
       const n = Number(widths[key] || 0);
@@ -9077,7 +9084,7 @@
       });
       const applyBacklogTableMinWidth = () => {
         const layoutMode = String(table.dataset.layoutMode || "");
-        if (layoutMode === "adaptive-tablet") {
+        if (layoutMode === "adaptive-tablet" || layoutMode === "content-auto") {
           const $wrapper = $table.closest(".dataTables_wrapper");
           $table.css("width", "max-content");
           $table.css("min-width", "100%");
@@ -10865,15 +10872,12 @@
         importante: 120,
       };
       const resolveWidthPx = (key) => {
-        if (isAdaptiveTablet) {
-          if (key === "titulo") {
-            const viewportWidth = Number(window.innerWidth || 0);
-            const adaptiveWidth = Math.round(viewportWidth * 0.15);
-            return Math.max(140, adaptiveWidth || 0);
-          }
-          return 0;
+        if (key === "titulo") {
+          const viewportWidth = Number(window.innerWidth || 0);
+          const adaptiveWidth = Math.round(viewportWidth * 0.15);
+          return getColumnWidth(key) || Math.max(160, adaptiveWidth || 0, widthPxDefaults[key] || 0);
         }
-        return getColumnWidth(key) || widthPxDefaults[key] || 140;
+        return 0;
       };
       const sortState = getTasksBacklogSort();
       const parseDateSortKey = (value) => {
@@ -10975,25 +10979,10 @@
         }
         colgroup.appendChild(col);
       });
-      // Fix table width to the sum of column widths so resizing doesn't force other columns to shrink.
-      // Enforce a minimum overflow room so horizontal scroll is always available in backlog.
-      if (isAdaptiveTablet) {
-        table.style.width = "max-content";
-        table.style.minWidth = "100%";
-        table.dataset.minWidth = "";
-        table.dataset.layoutMode = "adaptive-tablet";
-      } else {
-        const tableWidth = visibleColumns.reduce((acc, key) => acc + resolveWidthPx(key), 0);
-        const viewportWidth = Number(backlogList?.getBoundingClientRect?.().width || 0);
-        const enforcedMinWidth = Math.max(
-          tableWidth,
-          (Number.isFinite(viewportWidth) && viewportWidth > 0 ? Math.round(viewportWidth) : 0) + 320
-        );
-        table.style.width = `${enforcedMinWidth}px`;
-        table.style.minWidth = `${enforcedMinWidth}px`;
-        table.dataset.minWidth = String(enforcedMinWidth);
-        table.dataset.layoutMode = "fixed";
-      }
+      table.style.width = "max-content";
+      table.style.minWidth = "100%";
+      table.dataset.minWidth = "";
+      table.dataset.layoutMode = "content-auto";
 
       const buildStatusSelect = (task) => {
         const pill = document.createElement("span");

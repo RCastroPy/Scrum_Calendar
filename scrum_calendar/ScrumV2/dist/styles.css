@@ -5287,26 +5287,23 @@ body.page-tasks .tasks-notion-scroll {
 #tasks-backlog-list .dataTables_scrollHeadInner table,
 #tasks-backlog-list .dataTables_scrollBody table {
   width: max-content !important;
-  min-width: max-content !important;
+  min-width: 100% !important;
 }
 #tasks-backlog-list table.tasks-notion-table,
 #tasks-backlog-list .dataTables_wrapper table {
-  min-width: max-content !important;
+  min-width: 100% !important;
 }
-
-@media (max-width: 1024px) {
-  #tasks-backlog-list table.tasks-notion-table,
-  #tasks-backlog-list .dataTables_scrollHeadInner table,
-  #tasks-backlog-list .dataTables_scrollBody table {
-    table-layout: auto !important;
-  }
-  #tasks-backlog-list col[data-col-key="titulo"],
-  #tasks-backlog-list th[data-col-key="titulo"],
-  #tasks-backlog-list td[data-col-key="titulo"] {
-    width: 15vw !important;
-    min-width: 15vw !important;
-    max-width: 15vw !important;
-  }
+#tasks-backlog-list table.tasks-notion-table,
+#tasks-backlog-list .dataTables_scrollHeadInner table,
+#tasks-backlog-list .dataTables_scrollBody table {
+  table-layout: auto !important;
+}
+#tasks-backlog-list col[data-col-key="titulo"],
+#tasks-backlog-list th[data-col-key="titulo"],
+#tasks-backlog-list td[data-col-key="titulo"] {
+  width: 15vw !important;
+  min-width: 15vw !important;
+  max-width: 15vw !important;
 }
 
 /* Backlog: create button lives under the table (prevents drifting with horizontal scroll) */
@@ -5697,14 +5694,14 @@ body.theme-dark .tasks-notion-wrap .dataTables_scrollBody::-webkit-scrollbar-thu
 
 .tasks-notion-table {
   width: max-content;
-  min-width: max-content;
+  min-width: 100%;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 13px;
-  table-layout: fixed;
+  table-layout: auto;
 }
 #tasks-backlog-table {
-  min-width: max-content !important;
+  min-width: 100% !important;
 }
 .tasks-notion-table th,
 .tasks-notion-table td {
