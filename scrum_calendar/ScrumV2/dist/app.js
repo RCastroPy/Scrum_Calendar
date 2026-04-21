@@ -9076,6 +9076,21 @@
         },
       });
       const applyBacklogTableMinWidth = () => {
+        const layoutMode = String(table.dataset.layoutMode || "");
+        if (layoutMode === "adaptive-tablet") {
+          const $wrapper = $table.closest(".dataTables_wrapper");
+          $table.css("width", "max-content");
+          $table.css("min-width", "100%");
+          $wrapper.find(".dataTables_scrollHeadInner").css("width", "max-content");
+          $wrapper.find(".dataTables_scrollHeadInner").css("min-width", "100%");
+          $wrapper.find(".dataTables_scrollHeadInner table").css("width", "max-content");
+          $wrapper.find(".dataTables_scrollHeadInner table").css("min-width", "100%");
+          $wrapper.find(".dataTables_scrollBody table").css("width", "max-content");
+          $wrapper.find(".dataTables_scrollBody table").css("min-width", "100%");
+          $wrapper.find(".dataTable").css("width", "max-content");
+          $wrapper.find(".dataTable").css("min-width", "100%");
+          return;
+        }
         const raw = Number(table.dataset.minWidth || 0);
         if (!Number.isFinite(raw) || raw <= 0) return;
         const width = `${Math.round(raw)}px`;
@@ -9726,7 +9741,7 @@
                   <div class="mt-2">
                     <textarea class="form-control" id="task-comment-text" rows="3" placeholder="Escribe un comentario..."></textarea>
                     <div class="d-flex gap-2 mt-2">
-                      <button class="btn btn-primary btn-sm" type="button" id="task-comment-submit">Comentar</button>
+                      <button class="btn btn-success btn-sm" type="button" id="task-comment-submit">Comentar</button>
                     </div>
                   </div>
                 </div>
@@ -9777,7 +9792,7 @@
 	          <div class="d-flex gap-2 align-items-center">
 	            <button class="btn btn-primary" type="submit">Guardar</button>
 	            <button class="btn btn-outline-secondary" type="button" id="task-cancel-btn">Cancelar</button>
-	            <button class="btn btn-outline-danger ms-auto hidden" type="button" id="task-delete-btn">
+	            <button class="btn btn-danger ms-auto hidden" type="button" id="task-delete-btn">
 	              Eliminar
 	            </button>
 	          </div>
@@ -10108,7 +10123,6 @@
         }
       };
       const personasFiltradas = personasActivas
-        .filter((p) => !resolvedCelulaId || personaBelongsToCelula(p, resolvedCelulaId))
         .map((p) => ({ id: p.id, nombre: `${p.nombre} ${p.apellido}`.trim() }))
         .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
       fillSelect(form.assignee_persona_id, personasFiltradas, {
@@ -10293,7 +10307,7 @@
       if (formStatus) formStatus.textContent = "";
       openAdminModal(form, task ? "Editar tarea" : parentId ? "Nueva subtarea" : "Nueva tarea");
 
-      if (!form.dataset.boundSubmitOnEnter) {
+	      if (!form.dataset.boundSubmitOnEnter) {
         form.dataset.boundSubmitOnEnter = "true";
         form.addEventListener("keydown", (event) => {
           if (event.key !== "Enter" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) {
@@ -10309,6 +10323,24 @@
             target.closest("#task-new-subtask-panel") ||
             target.closest(".task-existing-only")
           ) {
+            return;
+          }
+          event.preventDefault();
+          const submitBtn = form.querySelector("button[type='submit']");
+          if (submitBtn?.disabled) return;
+          if (typeof form.requestSubmit === "function") {
+            form.requestSubmit(submitBtn || undefined);
+          } else {
+            submitBtn?.click();
+          }
+        });
+      }
+
+      const titleInput = form.querySelector("#task-titulo");
+      if (titleInput && !titleInput.dataset.boundSubmitOnEnter) {
+        titleInput.dataset.boundSubmitOnEnter = "true";
+        titleInput.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) {
             return;
           }
           event.preventDefault();
@@ -10775,11 +10807,6 @@
         .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
 
       const personasFiltradas = personasActivas
-        .filter(
-          (p) =>
-            !hasTaskCelulas ||
-            (p.celulas || []).some((celula) => taskCelulaIds.has(String(celula.id)))
-        )
         .map((p) => ({ id: p.id, nombre: `${p.nombre} ${p.apellido}`.trim() }))
         .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
 
@@ -10813,6 +10840,14 @@
       const tbody = table.querySelector("tbody");
 
       const visibleColumns = getVisibleColumns();
+      const isAdaptiveTabletViewport = () => {
+        try {
+          return Number(window.innerWidth || 0) > 0 && Number(window.innerWidth || 0) <= 1024;
+        } catch {
+          return false;
+        }
+      };
+      const isAdaptiveTablet = isAdaptiveTabletViewport();
       const widthPxDefaults = {
         titulo: 360,
         estado: 150,
@@ -10829,7 +10864,17 @@
         horas_estimadas: 120,
         importante: 120,
       };
-      const resolveWidthPx = (key) => getColumnWidth(key) || widthPxDefaults[key] || 140;
+      const resolveWidthPx = (key) => {
+        if (isAdaptiveTablet) {
+          if (key === "titulo") {
+            const viewportWidth = Number(window.innerWidth || 0);
+            const adaptiveWidth = Math.round(viewportWidth * 0.15);
+            return Math.max(140, adaptiveWidth || 0);
+          }
+          return 0;
+        }
+        return getColumnWidth(key) || widthPxDefaults[key] || 140;
+      };
       const sortState = getTasksBacklogSort();
       const parseDateSortKey = (value) => {
         const raw = String(value || "").trim();
@@ -10889,8 +10934,13 @@
         th.dataset.colKey = key;
         th.draggable = true;
         const px = resolveWidthPx(key);
-        th.style.width = `${px}px`;
-        th.style.minWidth = `${Math.max(60, px)}px`;
+        if (px > 0) {
+          th.style.width = `${px}px`;
+          th.style.minWidth = `${Math.max(60, px)}px`;
+        } else {
+          th.style.width = "";
+          th.style.minWidth = "";
+        }
         const sortIndicator = document.createElement("span");
         sortIndicator.className = "tasks-th-sort-indicator";
         sortIndicator.setAttribute("aria-hidden", "true");
@@ -10916,20 +10966,34 @@
         const col = document.createElement("col");
         col.dataset.colKey = key;
         const px = resolveWidthPx(key);
-        col.style.width = `${px}px`;
+        if (px > 0) {
+          col.style.width = `${px}px`;
+          col.style.minWidth = `${px}px`;
+        } else {
+          col.style.width = "";
+          col.style.minWidth = "";
+        }
         colgroup.appendChild(col);
       });
       // Fix table width to the sum of column widths so resizing doesn't force other columns to shrink.
       // Enforce a minimum overflow room so horizontal scroll is always available in backlog.
-      const tableWidth = visibleColumns.reduce((acc, key) => acc + resolveWidthPx(key), 0);
-      const viewportWidth = Number(backlogList?.getBoundingClientRect?.().width || 0);
-      const enforcedMinWidth = Math.max(
-        tableWidth,
-        (Number.isFinite(viewportWidth) && viewportWidth > 0 ? Math.round(viewportWidth) : 0) + 320
-      );
-      table.style.width = `${enforcedMinWidth}px`;
-      table.style.minWidth = `${enforcedMinWidth}px`;
-      table.dataset.minWidth = String(enforcedMinWidth);
+      if (isAdaptiveTablet) {
+        table.style.width = "max-content";
+        table.style.minWidth = "100%";
+        table.dataset.minWidth = "";
+        table.dataset.layoutMode = "adaptive-tablet";
+      } else {
+        const tableWidth = visibleColumns.reduce((acc, key) => acc + resolveWidthPx(key), 0);
+        const viewportWidth = Number(backlogList?.getBoundingClientRect?.().width || 0);
+        const enforcedMinWidth = Math.max(
+          tableWidth,
+          (Number.isFinite(viewportWidth) && viewportWidth > 0 ? Math.round(viewportWidth) : 0) + 320
+        );
+        table.style.width = `${enforcedMinWidth}px`;
+        table.style.minWidth = `${enforcedMinWidth}px`;
+        table.dataset.minWidth = String(enforcedMinWidth);
+        table.dataset.layoutMode = "fixed";
+      }
 
       const buildStatusSelect = (task) => {
         const pill = document.createElement("span");
@@ -11193,7 +11257,7 @@
             <button class="btn btn-outline-primary btn-sm" type="button" title="Subtarea" data-action="subtask">
               <i class="bi bi-node-plus"></i>
             </button>
-            <button class="btn btn-outline-danger btn-sm" type="button" title="Eliminar" data-action="delete">
+            <button class="btn btn-danger btn-sm" type="button" title="Eliminar" data-action="delete">
               <i class="bi bi-trash"></i>
             </button>
           </div>
@@ -11349,7 +11413,7 @@
           key: "comments",
           action: "comments",
           title: "Comentarios",
-          className: "btn btn-outline-secondary btn-sm tasks-comments-trigger",
+          className: "btn btn-success btn-sm tasks-comments-trigger",
           iconClass: "bi bi-chat-left-text",
           commentCount,
           hidden: commentCount <= 0,
@@ -11374,7 +11438,7 @@
           key: "delete",
           action: "delete",
           title: "Eliminar",
-          className: "btn btn-outline-danger btn-sm",
+          className: "btn btn-danger btn-sm",
           iconClass: "bi bi-trash",
         });
 
@@ -11704,7 +11768,7 @@
             <button class="btn btn-outline-primary btn-sm px-2" type="button" title="Subtarea" aria-label="Subtarea" data-action="subtask">
               <i class="bi bi-diagram-3" aria-hidden="true"></i>
             </button>
-            <button class="btn btn-outline-danger btn-sm px-2" type="button" title="Eliminar" aria-label="Eliminar" data-action="delete">
+            <button class="btn btn-danger btn-sm px-2" type="button" title="Eliminar" aria-label="Eliminar" data-action="delete">
               <i class="bi bi-trash" aria-hidden="true"></i>
             </button>
           `;
