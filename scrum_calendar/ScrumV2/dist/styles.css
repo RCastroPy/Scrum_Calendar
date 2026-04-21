@@ -5301,9 +5301,18 @@ body.page-tasks .tasks-notion-scroll {
 #tasks-backlog-list col[data-col-key="titulo"],
 #tasks-backlog-list th[data-col-key="titulo"],
 #tasks-backlog-list td[data-col-key="titulo"] {
-  width: 15vw !important;
-  min-width: 15vw !important;
-  max-width: 15vw !important;
+  width: 18vw !important;
+  min-width: 18vw !important;
+  max-width: 18vw !important;
+}
+@media (min-width: 768px) and (max-width: 1366px) {
+  #tasks-backlog-list col[data-col-key="titulo"],
+  #tasks-backlog-list th[data-col-key="titulo"],
+  #tasks-backlog-list td[data-col-key="titulo"] {
+    width: 450px !important;
+    min-width: 450px !important;
+    max-width: 450px !important;
+  }
 }
 
 /* Backlog: create button lives under the table (prevents drifting with horizontal scroll) */
