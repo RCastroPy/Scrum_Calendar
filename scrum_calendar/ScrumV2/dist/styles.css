@@ -5306,6 +5306,44 @@ body.page-tasks .tasks-notion-scroll {
     min-width: 450px !important;
     max-width: 450px !important;
   }
+  #tasks-backlog-list td[data-col-key="titulo"] {
+    overflow: hidden !important;
+  }
+  #tasks-backlog-list td[data-col-key="titulo"] .tasks-notion-name {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    row-gap: 6px;
+    overflow: hidden;
+  }
+  #tasks-backlog-list td[data-col-key="titulo"] .tasks-notion-name-main {
+    width: calc(100% - 28px);
+    max-width: calc(100% - 28px);
+    min-width: 0;
+    overflow: hidden;
+  }
+  #tasks-backlog-list td[data-col-key="titulo"] .tasks-notion-name button,
+  #tasks-backlog-list td[data-col-key="titulo"] .tasks-desc-preview,
+  #tasks-backlog-list td[data-col-key="titulo"] .tasks-subtasks-meta,
+  #tasks-backlog-list td[data-col-key="titulo"] .tasks-title-segment {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  #tasks-backlog-list td[data-col-key="titulo"] .tasks-row-actions {
+    flex: 0 0 100%;
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+  #tasks-backlog-list td[data-col-key="titulo"] .tasks-row-actions-more {
+    left: 0;
+    right: auto;
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
 }
 
 /* Backlog: create button lives under the table (prevents drifting with horizontal scroll) */

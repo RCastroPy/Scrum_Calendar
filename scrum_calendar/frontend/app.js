@@ -1,22 +1,8 @@
 (() => {
-  const resolveApiBases = () => {
-    const protocol = window.location.protocol || "http:";
-    const hostname = window.location.hostname || "localhost";
-    const port = window.location.port || "8000";
-    const currentBase = `${protocol}//${hostname}:${port}`;
-    if (hostname === "localhost" || hostname === "127.0.0.1") {
-      return Array.from(
-        new Set([
-          currentBase,
-          `${protocol}//localhost:${port}`,
-          `${protocol}//127.0.0.1:${port}`,
-        ])
-      );
-    }
-    return [currentBase];
-  };
-  const API_BASES = resolveApiBases();
-  let API_BASE = API_BASES[0];
+  const API_HOSTS = Array.from(
+    new Set([window.location.hostname, "localhost", "127.0.0.1"].filter(Boolean))
+  );
+  let API_BASE = `http://${API_HOSTS[0]}:8000`;
   const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 
   const xhrRequest = (url, options = {}) =>
@@ -45,10 +31,11 @@
 
   const fetchWithFallback = async (path, options) => {
     let lastError;
-    for (const base of API_BASES) {
+    for (const host of API_HOSTS) {
+      const base = `http://${host}:8000`;
       try {
         const mergedOptions = { credentials: "include", ...options };
-        const useFetch = !isSafari || base === API_BASES[0];
+        const useFetch = !isSafari || (window.location.port === "8000" && host === window.location.hostname);
         const res = useFetch
           ? await fetch(`${base}${path}`, mergedOptions)
           : await xhrRequest(`${base}${path}`, mergedOptions);
@@ -163,6 +150,7 @@
     releaseColumnsPanelOpen: false,
     serverNow: null,
     serverToday: null,
+    serverTodayKey: "",
     serverTimezone: "America/Asuncion",
   };
 
@@ -312,6 +300,36 @@
       return new Date(state.serverNow.getTime());
     }
     return getDateTimeInTimezone(state.serverTimezone || "America/Asuncion");
+  };
+
+  const getTodayKey = () => {
+    const serverTodayKey = String(state.serverTodayKey || "").trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(serverTodayKey)) {
+      return serverTodayKey;
+    }
+    return formatISO(getToday());
+  };
+
+  const normalizeTaskDatesForClient = (task, payload = {}) => {
+    if (!task || typeof task !== "object") return task;
+    const hasEstado = Object.prototype.hasOwnProperty.call(payload || {}, "estado");
+    if (!hasEstado) return task;
+    const nextEstado = String(payload.estado || task.estado || "").trim().toLowerCase();
+    const todayKey = getTodayKey();
+    if (nextEstado === "backlog" || nextEstado === "todo") {
+      return { ...task, start_date: null, end_date: null };
+    }
+    if (nextEstado === "doing") {
+      return { ...task, start_date: todayKey, end_date: null };
+    }
+    if (nextEstado === "done") {
+      return {
+        ...task,
+        start_date: String(task.start_date || "").trim() || todayKey,
+        end_date: todayKey,
+      };
+    }
+    return task;
   };
 
   const toggle = qs("#menu-toggle");
@@ -1478,8 +1496,8 @@
   }
 
   function addDays(dateString, days) {
-    const date = new Date(dateString);
-    if (Number.isNaN(date.getTime())) return dateString;
+    const date = parseDateOnly(dateString);
+    if (!date || Number.isNaN(date.getTime())) return dateString;
     date.setDate(date.getDate() + days);
     return formatISO(date);
   }
@@ -1586,6 +1604,7 @@
       usuariosPromise,
     ]);
     if (timeInfo?.today) {
+      state.serverTodayKey = String(timeInfo.today || "").trim();
       const parsed = parseDateOnly(timeInfo.today);
       if (parsed) {
         state.serverToday = parsed;
@@ -3309,6 +3328,8 @@
   function initCelulaSelector(base) {
     const select = qs("#cell-filter");
     if (!select) return;
+    select.disabled = false;
+    select.style.pointerEvents = "auto";
     const applyCells = (cells) => {
       const list = Array.isArray(cells) ? cells : [];
       fillSelect(select, list, { includeEmpty: true, sortByLabel: true });
@@ -3350,8 +3371,10 @@
 
     if (!select.dataset.bound) {
       select.dataset.bound = "true";
-      select.addEventListener("change", async () => {
-        state.selectedCelulaId = select.value;
+      const handleCellSelection = async () => {
+        const nextCelulaId = String(select.value || "");
+        if (String(state.selectedCelulaId || "") === nextCelulaId) return;
+        state.selectedCelulaId = nextCelulaId;
         if (state.selectedCelulaId) {
           localStorage.setItem("scrum_calendar_celula_id", state.selectedCelulaId);
         } else {
@@ -3370,7 +3393,9 @@
         state.dailyCapacityCache = {};
         toggleMenuVisibility();
         await reloadAll();
-      });
+      };
+      select.addEventListener("change", handleCellSelection);
+      select.addEventListener("input", handleCellSelection);
     }
 
     fetchJson("/celulas")
@@ -3632,6 +3657,19 @@
           fecha_inicio: sprintForm.fecha_inicio.value,
           fecha_fin: sprintForm.fecha_fin.value,
         };
+        const normalizedSprintName = normalizeText(payload.nombre);
+        const duplicateSprint = (base.sprints || []).find((sprint) => {
+          if (Number(sprint.celula_id) !== Number(payload.celula_id)) return false;
+          if (normalizeText(sprint.nombre || "") !== normalizedSprintName) return false;
+          if (sprintForm.dataset.mode === "edit") {
+            return Number(sprint.id) !== Number(sprintForm.dataset.editId || 0);
+          }
+          return true;
+        });
+        if (duplicateSprint) {
+          setStatus("#status-sprint", "Ya existe un sprint con ese nombre en la celula seleccionada.", "error");
+          return;
+        }
         if (!payload.fecha_inicio || !payload.fecha_fin) {
           setStatus("#status-sprint", "Selecciona el rango de fechas.", "error");
           return;
@@ -5181,7 +5219,7 @@
       !disableDataTables && Boolean(window.jQuery && window.jQuery.fn && window.jQuery.fn.DataTable);
     const dataTableNonSortableTargets = [];
     columns.forEach((col, idx) => {
-      if (col?.sortable === false) dataTableNonSortableTargets.push(idx);
+      if (col?.sortable === false || col?.key === "_index") dataTableNonSortableTargets.push(idx);
     });
     tailColumns.forEach((col, idx) => {
       if (col?.sortable === false) {
@@ -5303,6 +5341,10 @@
       if (col.key in row) return row[col.key];
       return "";
     };
+    const getColumnSortValue = (row, col, index) => {
+      if (col.getSortValue) return col.getSortValue(row, index);
+      return getColumnValue(row, col, index);
+    };
     const filterColumns = [...columns, ...tailColumns];
     const filteredRows = useDataTables
       ? rows
@@ -5321,8 +5363,8 @@
       const sortCol = filterColumns.find((col) => col.key === sortState.key);
       if (sortCol && sortCol.key !== "_select" && sortCol.sortable !== false) {
         sortedRows.sort((a, b) => {
-          const aVal = normalizeValue(getColumnValue(a, sortCol, 0));
-          const bVal = normalizeValue(getColumnValue(b, sortCol, 0));
+          const aVal = normalizeValue(getColumnSortValue(a, sortCol, 0));
+          const bVal = normalizeValue(getColumnSortValue(b, sortCol, 0));
           const aNum = Number(aVal);
           const bNum = Number(bVal);
           let result = 0;
@@ -5568,6 +5610,10 @@
             .filter(Boolean)
             .forEach((klass) => td.classList.add(klass));
         }
+        const sortValue = getColumnSortValue(row, col, startIndex + index);
+        if (sortValue != null && sortValue !== "" && col.key !== "_select") {
+          td.setAttribute("data-order", String(sortValue));
+        }
         tr.appendChild(td);
       });
       if (actions.length) {
@@ -5599,6 +5645,10 @@
           const td = document.createElement("td");
           const rendered = col.render ? col.render(row) : row[col.key];
           renderCellContent(td, rendered);
+          const sortValue = getColumnSortValue(row, col, startIndex + index);
+          if (sortValue != null && sortValue !== "") {
+            td.setAttribute("data-order", String(sortValue));
+          }
           tr.appendChild(td);
         });
       }
@@ -5614,9 +5664,9 @@
     if (useDataTables) {
       const dt = initDataTable(table, tableKey, {
         nonSortableTargets: dataTableNonSortableTargets,
+        defaultOrder: tableKey === "admin-personas" ? [[6, "asc"]] : [],
       });
       const shouldRenumberVisualIndex =
-        (tableKey === "release-table" || tableKey === "daily-items-table") &&
         Array.isArray(columns) &&
         columns.length > 0 &&
         (columns[0]?.key === "_index" || columns[0]?.key === "item_order");
@@ -5676,6 +5726,9 @@
           });
         }
         dt.draw(false);
+        applyVisualIndexCounter();
+      } else if (dt && tableKey === "admin-personas") {
+        dt.order([[6, "asc"]]).draw(false);
         applyVisualIndexCounter();
       }
       const targetPage = state.tableDataPage?.[tableKey];
@@ -5745,6 +5798,7 @@
     const nonSortableTargets = Array.isArray(options.nonSortableTargets)
       ? options.nonSortableTargets.filter((idx) => Number.isFinite(Number(idx)))
       : [];
+    const defaultOrder = Array.isArray(options.defaultOrder) ? options.defaultOrder : [];
     if (
       tableKey === "daily-items-table" &&
       !nonSortableTargets.some((idx) => Number(idx) === 0)
@@ -5759,7 +5813,7 @@
       info: true,
       autoWidth: false,
       responsive: false,
-      order: [],
+      order: defaultOrder,
       pageLength: 10,
       lengthMenu: [
         [10, 20, 25, 50, 100, -1],
@@ -8679,7 +8733,7 @@
         cfg && cfg.widths && typeof cfg.widths === "object"
           ? Object.fromEntries(
               Object.entries(cfg.widths)
-                .filter(([key]) => DEFAULT_COLUMNS.includes(key))
+                .filter(([key]) => DEFAULT_COLUMNS.includes(key) && key === "titulo")
                 .map(([key, value]) => [key, Number(value)])
                 .filter(([, value]) => Number.isFinite(value) && value > 0)
                 .map(([key, value]) => [key, Math.round(value)])
@@ -8707,6 +8761,12 @@
     const setColumnWidth = (key, px) => {
       const cfg = loadColumnsConfig();
       const widths = { ...(cfg.widths || {}) };
+      if (key !== "titulo") {
+        delete widths[key];
+        state.tasksColumnsConfig = { ...cfg, widths };
+        saveColumnsConfig();
+        return;
+      }
       const n = Number(px);
       if (!Number.isFinite(n) || n <= 0) return;
       widths[key] = Math.round(n);
@@ -8715,6 +8775,7 @@
     };
 
     const getColumnWidth = (key) => {
+      if (key !== "titulo") return 0;
       const cfg = loadColumnsConfig();
       const widths = cfg.widths || {};
       const n = Number(widths[key] || 0);
@@ -9070,6 +9131,21 @@
         },
       });
       const applyBacklogTableMinWidth = () => {
+        const layoutMode = String(table.dataset.layoutMode || "");
+        if (layoutMode === "adaptive-tablet" || layoutMode === "content-auto") {
+          const $wrapper = $table.closest(".dataTables_wrapper");
+          $table.css("width", "max-content");
+          $table.css("min-width", "100%");
+          $wrapper.find(".dataTables_scrollHeadInner").css("width", "max-content");
+          $wrapper.find(".dataTables_scrollHeadInner").css("min-width", "100%");
+          $wrapper.find(".dataTables_scrollHeadInner table").css("width", "max-content");
+          $wrapper.find(".dataTables_scrollHeadInner table").css("min-width", "100%");
+          $wrapper.find(".dataTables_scrollBody table").css("width", "max-content");
+          $wrapper.find(".dataTables_scrollBody table").css("min-width", "100%");
+          $wrapper.find(".dataTable").css("width", "max-content");
+          $wrapper.find(".dataTable").css("min-width", "100%");
+          return;
+        }
         const raw = Number(table.dataset.minWidth || 0);
         if (!Number.isFinite(raw) || raw <= 0) return;
         const width = `${Math.round(raw)}px`;
@@ -9720,7 +9796,7 @@
                   <div class="mt-2">
                     <textarea class="form-control" id="task-comment-text" rows="3" placeholder="Escribe un comentario..."></textarea>
                     <div class="d-flex gap-2 mt-2">
-                      <button class="btn btn-primary btn-sm" type="button" id="task-comment-submit">Comentar</button>
+                      <button class="btn btn-success btn-sm" type="button" id="task-comment-submit">Comentar</button>
                     </div>
                   </div>
                 </div>
@@ -9771,7 +9847,7 @@
 	          <div class="d-flex gap-2 align-items-center">
 	            <button class="btn btn-primary" type="submit">Guardar</button>
 	            <button class="btn btn-outline-secondary" type="button" id="task-cancel-btn">Cancelar</button>
-	            <button class="btn btn-outline-danger ms-auto hidden" type="button" id="task-delete-btn">
+	            <button class="btn btn-danger ms-auto hidden" type="button" id="task-delete-btn">
 	              Eliminar
 	            </button>
 	          </div>
@@ -10082,11 +10158,12 @@
 	      const newSubtaskTitle = form.querySelector("#task-new-subtask-title");
 	      const newSubtaskCreate = form.querySelector("#task-new-subtask-create");
 	      const newSubtasksList = form.querySelector("#task-new-subtasks-list");
-	      const commentsList = form.querySelector("#task-comments-list");
-	      const commentText = form.querySelector("#task-comment-text");
-	      const commentSubmit = form.querySelector("#task-comment-submit");
+      const commentsList = form.querySelector("#task-comments-list");
+      const commentText = form.querySelector("#task-comment-text");
+      const commentSubmit = form.querySelector("#task-comment-submit");
 
       const resolvedCelulaId = Number(task?.celula_id || celulaId || resolveCelulaId() || 0);
+      const resolvedParentId = Number(task?.parent_id || parentId || 0);
       form.dataset.celulaId = resolvedCelulaId ? String(resolvedCelulaId) : "";
       const applyModalStatusDateRules = (nextStatusRaw) => {
         const nextStatus = String(nextStatusRaw || "").trim().toLowerCase();
@@ -10097,12 +10174,11 @@
           return;
         }
         if (nextStatus === "doing") {
-          if (!form.start_date.value) form.start_date.value = formatISO(getToday());
+          if (!form.start_date.value) form.start_date.value = getTodayKey();
           form.end_date.value = "";
         }
       };
       const personasFiltradas = personasActivas
-        .filter((p) => !resolvedCelulaId || personaBelongsToCelula(p, resolvedCelulaId))
         .map((p) => ({ id: p.id, nombre: `${p.nombre} ${p.apellido}`.trim() }))
         .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
       fillSelect(form.assignee_persona_id, personasFiltradas, {
@@ -10111,11 +10187,11 @@
         sortByLabel: true,
       });
 
-      form.dataset.parentId = parentId ? String(parentId) : "";
+      form.dataset.parentId = resolvedParentId ? String(resolvedParentId) : "";
 	      if (parentHint) {
-        if (parentId) {
-          const parent = (state.tasksCache || []).find((t) => String(t.id) === String(parentId));
-          parentHint.textContent = parent ? `Subtarea de: ${parent.titulo}` : `Subtarea de: #${parentId}`;
+        if (resolvedParentId) {
+          const parent = (state.tasksCache || []).find((t) => String(t.id) === String(resolvedParentId));
+          parentHint.textContent = parent ? `Subtarea de: ${parent.titulo}` : `Subtarea de: #${resolvedParentId}`;
         } else {
           parentHint.textContent = "";
         }
@@ -10273,7 +10349,7 @@
         form.end_date.value = "";
         if (deleteBtn) deleteBtn.classList.add("hidden");
         existingOnlyBlocks.forEach((node) => node.classList.add("hidden"));
-        const canUseDraftSubtasks = !parentId;
+        const canUseDraftSubtasks = !resolvedParentId;
 	        if (newSubtasksWrap) newSubtasksWrap.classList.toggle("hidden", !canUseDraftSubtasks);
 	        if (newSubtaskPanel) newSubtaskPanel.classList.add("hidden");
 	        if (newSubtaskToggle) {
@@ -10285,9 +10361,9 @@
 	      }
 
       if (formStatus) formStatus.textContent = "";
-      openAdminModal(form, task ? "Editar tarea" : parentId ? "Nueva subtarea" : "Nueva tarea");
+      openAdminModal(form, task ? "Editar tarea" : resolvedParentId ? "Nueva subtarea" : "Nueva tarea");
 
-      if (!form.dataset.boundSubmitOnEnter) {
+	      if (!form.dataset.boundSubmitOnEnter) {
         form.dataset.boundSubmitOnEnter = "true";
         form.addEventListener("keydown", (event) => {
           if (event.key !== "Enter" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) {
@@ -10303,6 +10379,24 @@
             target.closest("#task-new-subtask-panel") ||
             target.closest(".task-existing-only")
           ) {
+            return;
+          }
+          event.preventDefault();
+          const submitBtn = form.querySelector("button[type='submit']");
+          if (submitBtn?.disabled) return;
+          if (typeof form.requestSubmit === "function") {
+            form.requestSubmit(submitBtn || undefined);
+          } else {
+            submitBtn?.click();
+          }
+        });
+      }
+
+      const titleInput = form.querySelector("#task-titulo");
+      if (titleInput && !titleInput.dataset.boundSubmitOnEnter) {
+        titleInput.dataset.boundSubmitOnEnter = "true";
+        titleInput.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) {
             return;
           }
           event.preventDefault();
@@ -10656,14 +10750,26 @@
     const buildBacklogContext = (filtered, all) => {
       const byId = new Map((all || []).map((t) => [String(t.id), t]));
       const keep = new Map();
-      const statusFilter = (state.tasksStatusFilter || "").trim().toLowerCase();
-      const statusSet = new Set(
-        (state.tasksFilters?.statuses || []).map((value) => String(value || "").trim().toLowerCase()).filter(Boolean)
-      );
-      const statusAllowed = statusFilter ? new Set([statusFilter]) : statusSet.size ? statusSet : null;
-      const canKeepParentByStatus = (task) => {
-        if (!statusAllowed) return true;
-        return statusAllowed.has(String(task?.estado || "").trim().toLowerCase());
+      const hideSubtasks = Boolean(state.tasksFilters?.hideSubtasks);
+      const descendantsByParent = new Map();
+      (all || []).forEach((task) => {
+        const parentId = task?.parent_id ? String(task.parent_id) : "";
+        if (!parentId) return;
+        if (!descendantsByParent.has(parentId)) descendantsByParent.set(parentId, []);
+        descendantsByParent.get(parentId).push(task);
+      });
+      const queueDescendants = (taskId, ancestors = new Set()) => {
+        const key = String(taskId || "");
+        if (!key || ancestors.has(key)) return;
+        const nextAncestors = new Set(ancestors);
+        nextAncestors.add(key);
+        const children = descendantsByParent.get(key) || [];
+        children.forEach((child) => {
+          const childKey = String(child?.id || "");
+          if (!childKey || keep.has(childKey)) return;
+          keep.set(childKey, child);
+          queueDescendants(childKey, nextAncestors);
+        });
       };
       (filtered || []).forEach((t) => {
         keep.set(String(t.id), t);
@@ -10674,9 +10780,11 @@
           const parent = byId.get(parentId);
           if (!parent) break;
           if (keep.has(parentId)) break;
-          if (!canKeepParentByStatus(parent)) break;
           keep.set(parentId, parent);
           parentId = parent.parent_id ? String(parent.parent_id) : "";
+        }
+        if (!hideSubtasks) {
+          queueDescendants(String(t.id));
         }
       });
       return Array.from(keep.values());
@@ -10769,11 +10877,6 @@
         .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
 
       const personasFiltradas = personasActivas
-        .filter(
-          (p) =>
-            !hasTaskCelulas ||
-            (p.celulas || []).some((celula) => taskCelulaIds.has(String(celula.id)))
-        )
         .map((p) => ({ id: p.id, nombre: `${p.nombre} ${p.apellido}`.trim() }))
         .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
 
@@ -10823,7 +10926,18 @@
         horas_estimadas: 120,
         importante: 120,
       };
-      const resolveWidthPx = (key) => getColumnWidth(key) || widthPxDefaults[key] || 140;
+      const resolveWidthPx = (key) => {
+        if (key === "titulo") {
+          const viewportWidth = Number(window.innerWidth || 0);
+          const isTabletViewport =
+            viewportWidth >= 768 &&
+            viewportWidth <= 1366 &&
+            Boolean(window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches);
+          const adaptiveWidth = isTabletViewport ? 450 : Math.round(viewportWidth * 0.18);
+          return getColumnWidth(key) || Math.max(isTabletViewport ? 450 : 190, adaptiveWidth || 0, widthPxDefaults[key] || 0);
+        }
+        return 0;
+      };
       const sortState = getTasksBacklogSort();
       const parseDateSortKey = (value) => {
         const raw = String(value || "").trim();
@@ -10883,8 +10997,13 @@
         th.dataset.colKey = key;
         th.draggable = true;
         const px = resolveWidthPx(key);
-        th.style.width = `${px}px`;
-        th.style.minWidth = `${Math.max(60, px)}px`;
+        if (px > 0) {
+          th.style.width = `${px}px`;
+          th.style.minWidth = `${Math.max(60, px)}px`;
+        } else {
+          th.style.width = "";
+          th.style.minWidth = "";
+        }
         const sortIndicator = document.createElement("span");
         sortIndicator.className = "tasks-th-sort-indicator";
         sortIndicator.setAttribute("aria-hidden", "true");
@@ -10910,20 +11029,21 @@
         const col = document.createElement("col");
         col.dataset.colKey = key;
         const px = resolveWidthPx(key);
-        col.style.width = `${px}px`;
+        if (px > 0) {
+          col.style.width = `${px}px`;
+          col.style.minWidth = `${px}px`;
+        } else {
+          col.style.width = "";
+          col.style.minWidth = "";
+        }
         colgroup.appendChild(col);
       });
       // Fix table width to the sum of column widths so resizing doesn't force other columns to shrink.
       // Enforce a minimum overflow room so horizontal scroll is always available in backlog.
-      const tableWidth = visibleColumns.reduce((acc, key) => acc + resolveWidthPx(key), 0);
-      const viewportWidth = Number(backlogList?.getBoundingClientRect?.().width || 0);
-      const enforcedMinWidth = Math.max(
-        tableWidth,
-        (Number.isFinite(viewportWidth) && viewportWidth > 0 ? Math.round(viewportWidth) : 0) + 320
-      );
-      table.style.width = `${enforcedMinWidth}px`;
-      table.style.minWidth = `${enforcedMinWidth}px`;
-      table.dataset.minWidth = String(enforcedMinWidth);
+      table.style.width = "max-content";
+      table.style.minWidth = "100%";
+      table.dataset.minWidth = "";
+      table.dataset.layoutMode = "content-auto";
 
       const buildStatusSelect = (task) => {
         const pill = document.createElement("span");
@@ -11147,7 +11267,7 @@
           cell.textContent = "-";
           return cell;
         }
-        const todayKey = formatISO(getToday());
+        const todayKey = getTodayKey();
         const overdue = todayKey > end;
         let className = "is-green";
         let overdueSiren = false;
@@ -11187,7 +11307,7 @@
             <button class="btn btn-outline-primary btn-sm" type="button" title="Subtarea" data-action="subtask">
               <i class="bi bi-node-plus"></i>
             </button>
-            <button class="btn btn-outline-danger btn-sm" type="button" title="Eliminar" data-action="delete">
+            <button class="btn btn-danger btn-sm" type="button" title="Eliminar" data-action="delete">
               <i class="bi bi-trash"></i>
             </button>
           </div>
@@ -11343,7 +11463,7 @@
           key: "comments",
           action: "comments",
           title: "Comentarios",
-          className: "btn btn-outline-secondary btn-sm tasks-comments-trigger",
+          className: "btn btn-success btn-sm tasks-comments-trigger",
           iconClass: "bi bi-chat-left-text",
           commentCount,
           hidden: commentCount <= 0,
@@ -11368,7 +11488,7 @@
           key: "delete",
           action: "delete",
           title: "Eliminar",
-          className: "btn btn-outline-danger btn-sm",
+          className: "btn btn-danger btn-sm",
           iconClass: "bi bi-trash",
         });
 
@@ -11698,7 +11818,7 @@
             <button class="btn btn-outline-primary btn-sm px-2" type="button" title="Subtarea" aria-label="Subtarea" data-action="subtask">
               <i class="bi bi-diagram-3" aria-hidden="true"></i>
             </button>
-            <button class="btn btn-outline-danger btn-sm px-2" type="button" title="Eliminar" aria-label="Eliminar" data-action="delete">
+            <button class="btn btn-danger btn-sm px-2" type="button" title="Eliminar" aria-label="Eliminar" data-action="delete">
               <i class="bi bi-trash" aria-hidden="true"></i>
             </button>
           `;
@@ -11849,7 +11969,7 @@
       }
 
       if (reportAging) {
-        const today = formatISO(getToday());
+        const today = getTodayKey();
         const feriadosSet = new Set((base.feriados || []).map((f) => f.fecha).filter(Boolean));
         let healthy = 0;
         let risk = 0;
@@ -11898,7 +12018,7 @@
           const st = String(t.estado || "").toLowerCase();
           return st !== "done" && st !== "archived";
         }).length;
-        const today = formatISO(getToday());
+        const today = getTodayKey();
         const overdue = tasks.filter((t) => {
           const st = String(t.estado || "").toLowerCase();
           if (st === "done" || st === "archived") return false;
@@ -12000,7 +12120,7 @@
           if (!Number.isFinite(total) || total <= 0) {
             daysCell.textContent = "-";
           } else {
-            const todayKey = formatISO(getToday());
+            const todayKey = getTodayKey();
             const overdue = todayKey > due;
             let className = "is-green";
             let overdueSiren = false;
@@ -12243,6 +12363,10 @@
       }
 
       const orderedSet = new Set(orderedIds);
+      const hasMissingRows = orderedIds.some((id) => !rowById.has(id));
+      if (hasMissingRows) {
+        return false;
+      }
       let removedAny = false;
       if (prune) {
         rows.forEach((row) => {
@@ -12398,7 +12522,8 @@
 
     const updateTaskLocal = async (taskId, payload, okMessage, options = {}) => {
       try {
-        const updated = await putJson(`/tasks/${taskId}`, payload);
+        const updatedRaw = await putJson(`/tasks/${taskId}`, payload);
+        const updated = normalizeTaskDatesForClient(updatedRaw, payload);
         upsertTaskInCache(updated);
         if (okMessage) {
           setTasksStatus(okMessage, "ok");
@@ -12424,7 +12549,7 @@
     };
 
     const updateOverdueInProgressToToday = async () => {
-      const today = formatISO(getToday());
+      const today = getTodayKey();
       const candidates = (state.tasksCache || []).filter((task) => {
         const status = String(task.estado || "")
           .trim()
@@ -13526,7 +13651,7 @@
                 "Actualizado.",
                 { rerender: "none" }
               );
-              syncBacklogRowAfterStatusUpdate(row, updated);
+              renderBacklogPreservingViewport();
               return;
             }
             if (field === "prioridad") {
@@ -13537,15 +13662,7 @@
                 "Actualizado.",
                 { rerender: "none" }
               );
-              const filtered = applyFilters(state.tasksCache || []);
-              updatePrioritySummaryButton(filtered);
-              renderReports(filtered);
-              const sortState = getTasksBacklogSort();
-              if (sortState.key === "fecha_vencimiento" || sortState.key === "prioridad") {
-                reorderBacklogRowsInPlace({ prune: true });
-              } else {
-                syncBacklogRowAfterStatusUpdate(row, updated);
-              }
+              renderBacklogPreservingViewport();
               return;
             }
             if (field === "tipo" || field === "segmento") {
@@ -13557,15 +13674,8 @@
                 { rerender: "none" }
               );
               ensureTaskSegmentCatalogEntry(updated?.segmento || nextSegment || "");
-              syncBacklogRowAfterSegmentUpdate(row, updated);
               renderTaskSegmentButtons();
-              const filtered = applyFilters(state.tasksCache || []);
-              updatePrioritySummaryButton(filtered);
-              renderReports(filtered);
-              const sortState = getTasksBacklogSort();
-              if (state.tasksSegmentFilter || sortState.key === "tipo") {
-                reorderBacklogRowsInPlace({ prune: true });
-              }
+              renderBacklogPreservingViewport();
               return;
             }
             if (field === "etiquetas") {
@@ -13615,8 +13725,7 @@
               const updated = await updateTaskLocal(taskId, { fecha_vencimiento: v || null }, "Actualizado.", {
                 rerender: "none",
               });
-              syncBacklogRowAfterStatusUpdate(row, updated);
-              reorderBacklogRowsInPlace({ prune: true });
+              renderBacklogPreservingViewport();
               return;
             }
             if (field === "puntos" || field === "horas_estimadas") {
@@ -14038,7 +14147,7 @@
       input.className = "table-input form-control form-control-sm";
       const value = row[field] || "";
       const showToday = field === "end_date" && !value;
-      const displayValue = showToday ? formatISO(getToday()) : value;
+      const displayValue = showToday ? getTodayKey() : value;
       input.value = displayValue;
       if (!value) {
         input.dataset.emptyDate = "true";
@@ -16604,6 +16713,12 @@
         {
           key: "fecha_cumple",
           label: "Cumple",
+          getSortValue: (row) => {
+            if (!row.fecha_cumple) return "";
+            const [, mes, dia] = String(row.fecha_cumple).split("-");
+            if (!mes || !dia) return "";
+            return `${mes}${dia}`;
+          },
           render: (row) => {
             if (!row.fecha_cumple) return "";
             const [, mes, dia] = row.fecha_cumple.split("-");
