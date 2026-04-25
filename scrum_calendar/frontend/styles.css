@@ -5328,7 +5328,10 @@ body.page-tasks .tasks-notion-scroll {
   #tasks-backlog-list td[data-col-key="titulo"] .tasks-desc-preview,
   #tasks-backlog-list td[data-col-key="titulo"] .tasks-subtasks-meta,
   #tasks-backlog-list td[data-col-key="titulo"] .tasks-title-segment {
+    display: block;
+    width: 100%;
     max-width: 100%;
+    white-space: normal;
     overflow-wrap: anywhere;
     word-break: break-word;
   }

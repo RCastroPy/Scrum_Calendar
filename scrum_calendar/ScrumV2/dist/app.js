@@ -8511,6 +8511,8 @@
     const filterClearBtn = qs("#tasks-filter-clear");
     const filterCloseBtn = qs("#tasks-filter-close");
     const columnsBtn = qs("#tasks-columns-btn");
+    const tabletAdjustWrap = qs("#tasks-tablet-adjust-wrap");
+    const tabletAdjustBtn = qs("#tasks-tablet-adjust-btn");
     const segmentButtons = qs("#tasks-segment-buttons");
     const segmentManageBtn = qs("#tasks-segment-manage-btn");
     const priorityKpis = qs("#tasks-priority-kpis");
@@ -8799,6 +8801,18 @@
         if (!normalized.includes(k)) normalized.push(k);
       });
       return normalized;
+    };
+    const isTasksTabletViewport = () => {
+      const viewportWidth = Number(window.innerWidth || 0);
+      return (
+        viewportWidth >= 768 &&
+        viewportWidth <= 1366 &&
+        Boolean(window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches)
+      );
+    };
+    const syncTabletAdjustButtonVisibility = () => {
+      if (!tabletAdjustWrap) return;
+      tabletAdjustWrap.classList.toggle("d-none", !isTasksTabletViewport());
     };
     const statusBadgeClass = (estado) => {
       switch (estado) {
@@ -10933,8 +10947,11 @@
             viewportWidth >= 768 &&
             viewportWidth <= 1366 &&
             Boolean(window.matchMedia?.("(hover: none) and (pointer: coarse)")?.matches);
-          const adaptiveWidth = isTabletViewport ? 450 : Math.round(viewportWidth * 0.18);
-          return getColumnWidth(key) || Math.max(isTabletViewport ? 450 : 190, adaptiveWidth || 0, widthPxDefaults[key] || 0);
+          if (isTabletViewport) {
+            return 450;
+          }
+          const adaptiveWidth = Math.round(viewportWidth * 0.18);
+          return getColumnWidth(key) || Math.max(190, adaptiveWidth || 0, widthPxDefaults[key] || 0);
         }
         return 0;
       };
@@ -13130,6 +13147,18 @@
           toggleColumnsPanel();
         });
       }
+      if (tabletAdjustBtn && !tabletAdjustBtn.dataset.bound) {
+        tabletAdjustBtn.dataset.bound = "true";
+        tabletAdjustBtn.addEventListener("click", () => {
+          const cfg = loadColumnsConfig();
+          const widths = { ...(cfg.widths || {}) };
+          delete widths.titulo;
+          state.tasksColumnsConfig = { ...cfg, widths };
+          saveColumnsConfig();
+          renderBacklogPreservingViewport();
+          setTasksStatus("Columna de tarea ajustada para tablet.", "ok");
+        });
+      }
       if (columnsCloseBtn && !columnsCloseBtn.dataset.bound) {
         columnsCloseBtn.dataset.bound = "true";
         columnsCloseBtn.addEventListener("click", () => toggleColumnsPanel(false));
@@ -13148,6 +13177,11 @@
         columnsPanel.dataset.boundInside = "true";
         columnsPanel.addEventListener("pointerdown", (event) => event.stopPropagation());
         columnsPanel.addEventListener("click", (event) => event.stopPropagation());
+      }
+      syncTabletAdjustButtonVisibility();
+      if (!root.dataset.boundTabletResize) {
+        root.dataset.boundTabletResize = "true";
+        window.addEventListener("resize", syncTabletAdjustButtonVisibility);
       }
       if (columnsList && !columnsList.dataset.bound) {
         columnsList.dataset.bound = "true";
