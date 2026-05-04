@@ -17112,6 +17112,7 @@
     customizeNavbar();
     ensureTaskMenu();
     ensureComprasMenu();
+    syncSidebarActiveState();
     try {
       if (isPublicRetroView()) {
         await initRetroPublic();
@@ -17140,6 +17141,7 @@
       renderAdmin(base);
       initCelulaSelector(base);
       initDataEntrySections();
+      syncSidebarActiveState();
       initDaily();
       initTasks();
       initReleaseTable();
@@ -18077,6 +18079,61 @@
       const tasksLink = Array.from(nav.querySelectorAll("a.nav-link"))
         .find((link) => (link.textContent || "").trim() === "Tareas");
       if (tasksLink) tasksLink.classList.remove("active");
+    }
+  }
+
+  function syncSidebarActiveState() {
+    const nav = qs("#navigation");
+    if (!nav) return;
+
+    const cleanPath = (value) => String(value || "").split("?")[0].split("#")[0];
+    const currentFile = cleanPath(window.location.pathname).split("/").pop() || "index.html";
+    const page = String(document.body?.dataset?.page || "").trim().toLowerCase();
+    const pageTargets = {
+      dashboard: ["index.html"],
+      daily: ["daily.html"],
+      tasks: ["tasks.html"],
+      compras: ["compras.html"],
+      "one-to-one": ["one-to-one.html"],
+      retrospective: ["retrospective.html"],
+      "poker-planning": ["poker-planning.html"],
+      "data-entry": ["data-entry.html"],
+      admin: ["admin.html"],
+      capacity: ["capacity.html"],
+      connect: ["connect.html"],
+      ux: ["ux.html"],
+      releases: ["releases-table.html", "releases-gantt.html"],
+      "releases-table": ["releases-table.html"],
+      "releases-gantt": ["releases-gantt.html"],
+    };
+    const targets = new Set([currentFile, ...(pageTargets[page] || [])]);
+
+    const links = Array.from(nav.querySelectorAll("a.nav-link"));
+    links.forEach((link) => link.classList.remove("active"));
+    nav.querySelectorAll(".nav-item.menu-open, .nav-item.open").forEach((item) => {
+      item.classList.remove("menu-open", "open");
+    });
+
+    const matchingLinks = links.filter((link) => {
+      const rawHref = String(link.getAttribute("href") || "").trim();
+      if (!rawHref || rawHref === "#" || rawHref.startsWith("javascript:")) return false;
+      const hrefFile = cleanPath(rawHref).split("/").pop();
+      return targets.has(hrefFile);
+    });
+    const activeLink =
+      matchingLinks.find((link) => cleanPath(link.getAttribute("href")).split("/").pop() === currentFile) ||
+      matchingLinks[0];
+
+    if (!activeLink) return;
+    activeLink.classList.add("active");
+
+    const treeview = activeLink.closest(".nav-treeview");
+    if (treeview) {
+      const parentItem = treeview.closest(".nav-item");
+      if (parentItem) {
+        parentItem.classList.add("menu-open", "open");
+        parentItem.querySelector(":scope > .nav-link")?.classList.add("active");
+      }
     }
   }
 

@@ -90,6 +90,9 @@ class Persona(Base):
     capacidad_diaria_horas = Column(Float, nullable=False, default=0.0)
     fecha_cumple = Column(Date, nullable=True)
     jira_usuario = Column(String(120), nullable=True)
+    nombre_pareja = Column(String(160), nullable=True)
+    hijos = Column(Text, nullable=True)
+    perros = Column(Text, nullable=True)
     activo = Column(Boolean, nullable=False, default=True)
 
     celulas = relationship("Celula", secondary=persona_celulas, back_populates="personas")

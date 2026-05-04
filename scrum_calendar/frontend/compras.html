@@ -123,13 +123,57 @@
       }
 
       .compras-footer-sticky {
-        position: sticky;
-        bottom: 0;
-        z-index: 1030;
-        padding-top: 0.5rem;
-        padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
-        background: color-mix(in srgb, var(--bs-body-bg) 93%, transparent);
-        backdrop-filter: blur(8px);
+        position: static;
+        padding-top: 0;
+        padding-bottom: 0;
+        background: transparent;
+        backdrop-filter: none;
+      }
+
+      .supermercado-selected-row {
+        display: none;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        flex-wrap: nowrap;
+        margin-top: 0.25rem;
+      }
+
+      .supermercado-selected-row.is-visible {
+        display: flex;
+      }
+
+      .supermercado-selected-info {
+        min-width: 0;
+        flex: 1 1 auto;
+      }
+
+      .supermercado-selected-info .badge {
+        display: inline-block;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        vertical-align: middle;
+      }
+
+      .supermercado-selected-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        flex: 0 0 auto;
+      }
+
+      .supermercado-icon-btn {
+        width: 2.35rem;
+        height: 2.35rem;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .supermercado-picker.d-none {
+        display: none !important;
       }
 
       #finalizar-compra {
@@ -350,53 +394,38 @@
       }
 
       @media (max-width: 768px) {
-        #view-nueva .card-body,
-        #view-productos .card-body {
+        #card-agregar-producto .card-body {
           font-size: 1.06rem;
         }
 
-        #view-nueva h3,
-        #view-productos h2 {
+        #card-agregar-producto h3 {
           font-size: 1.18rem !important;
         }
 
-        #view-nueva .form-label,
-        #view-productos .form-label {
+        #card-agregar-producto .form-label {
           font-size: 1rem;
           font-weight: 700;
         }
 
-        #view-nueva .form-control,
-        #view-nueva .btn,
-        #view-productos .form-control,
-        #view-productos .btn {
+        #card-agregar-producto .form-control,
+        #card-agregar-producto .btn {
           font-size: 1.08rem;
         }
 
-        #view-nueva .form-control,
-        #view-productos .form-control {
+        #card-agregar-producto .form-control {
           min-height: 3rem;
         }
 
-        #view-nueva .btn,
-        #view-productos .btn {
+        #card-agregar-producto .btn {
           min-height: 2.95rem;
         }
 
-        #view-nueva .badge,
-        #view-nueva small,
-        #view-productos small {
-          font-size: 0.98rem;
+        #card-agregar-producto small,
+        #card-agregar-producto #total-item-preview {
+          font-size: 1.02rem;
         }
 
-        #view-nueva .compras-item-title,
-        #view-nueva #last-item-loaded,
-        #view-nueva #total-item-preview {
-          font-size: 1.08rem;
-        }
-
-        #view-nueva .autocomplete-item,
-        #view-productos .autocomplete-item {
+        #card-agregar-producto .autocomplete-item {
           font-size: 1.04rem;
           padding: 0.8rem 0.9rem;
         }
@@ -666,14 +695,33 @@
                 <div class="card-body">
                   <div class="d-flex justify-content-between align-items-center mb-2">
                     <h3 class="h6 mb-0">Supermercado</h3>
-                    <div class="d-flex align-items-center gap-2">
+                  </div>
+                  <div class="supermercado-selected-row" id="supermercado-selected-row">
+                    <div class="supermercado-selected-info">
                       <span class="badge text-bg-light" id="supermercado-seleccionado">Sin seleccionar</span>
-                      <button class="btn btn-outline-secondary btn-sm" id="go-supermercados" type="button">
-                        <i class="bi bi-pencil-square me-1"></i>Editar supermercados
+                    </div>
+                    <div class="supermercado-selected-actions">
+                      <button
+                        class="btn btn-outline-primary btn-sm supermercado-icon-btn"
+                        id="toggle-supermercado-picker"
+                        type="button"
+                        aria-label="Cambiar o agregar supermercado"
+                        title="Cambiar o agregar supermercado"
+                      >
+                        <i class="bi bi-arrow-repeat"></i>
+                      </button>
+                      <button
+                        class="btn btn-outline-secondary btn-sm supermercado-icon-btn"
+                        id="go-supermercados"
+                        type="button"
+                        aria-label="Editar supermercados"
+                        title="Editar supermercados"
+                      >
+                        <i class="bi bi-pencil-square"></i>
                       </button>
                     </div>
                   </div>
-                  <div class="input-group">
+                  <div class="input-group supermercado-picker" id="supermercado-picker">
                     <div class="autocomplete-wrap flex-fill">
                       <input
                         type="text"
@@ -691,7 +739,7 @@
                 </div>
               </div>
 
-              <div class="card mb-3">
+              <div class="card mb-3" id="card-agregar-producto">
                 <div class="card-body">
                   <div class="d-flex justify-content-between align-items-center mb-3">
                     <h3 class="h6 mb-0">Agregar producto</h3>

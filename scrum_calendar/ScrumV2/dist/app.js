@@ -77,6 +77,14 @@
   const themeState = { value: resolveTheme() };
   applyTheme(themeState.value);
 
+  const escapeHtml = (value) =>
+    String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+
 	  const state = {
 	    base: null,
 	    user: null,
@@ -104,6 +112,7 @@
     dailyPointsUserFilter: "",
     dailyPointsUserRows: [],
     dailyPointsUserSprintColumns: [],
+    dailyPointsUserMetric: "points",
     dailyPointsShowLabels: false,
     dailySprintManual: false,
     dailyRealtimeSignature: "",
@@ -150,6 +159,7 @@
     releaseColumnsPanelOpen: false,
     serverNow: null,
     serverToday: null,
+    serverTodayKey: "",
     serverTimezone: "America/Asuncion",
   };
 
@@ -299,6 +309,36 @@
       return new Date(state.serverNow.getTime());
     }
     return getDateTimeInTimezone(state.serverTimezone || "America/Asuncion");
+  };
+
+  const getTodayKey = () => {
+    const serverTodayKey = String(state.serverTodayKey || "").trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(serverTodayKey)) {
+      return serverTodayKey;
+    }
+    return formatISO(getToday());
+  };
+
+  const normalizeTaskDatesForClient = (task, payload = {}) => {
+    if (!task || typeof task !== "object") return task;
+    const hasEstado = Object.prototype.hasOwnProperty.call(payload || {}, "estado");
+    if (!hasEstado) return task;
+    const nextEstado = String(payload.estado || task.estado || "").trim().toLowerCase();
+    const todayKey = getTodayKey();
+    if (nextEstado === "backlog" || nextEstado === "todo") {
+      return { ...task, start_date: null, end_date: null };
+    }
+    if (nextEstado === "doing") {
+      return { ...task, start_date: todayKey, end_date: null };
+    }
+    if (nextEstado === "done") {
+      return {
+        ...task,
+        start_date: String(task.start_date || "").trim() || todayKey,
+        end_date: todayKey,
+      };
+    }
+    return task;
   };
 
   const toggle = qs("#menu-toggle");
@@ -1465,8 +1505,8 @@
   }
 
   function addDays(dateString, days) {
-    const date = new Date(dateString);
-    if (Number.isNaN(date.getTime())) return dateString;
+    const date = parseDateOnly(dateString);
+    if (!date || Number.isNaN(date.getTime())) return dateString;
     date.setDate(date.getDate() + days);
     return formatISO(date);
   }
@@ -1573,6 +1613,7 @@
       usuariosPromise,
     ]);
     if (timeInfo?.today) {
+      state.serverTodayKey = String(timeInfo.today || "").trim();
       const parsed = parseDateOnly(timeInfo.today);
       if (parsed) {
         state.serverToday = parsed;
@@ -3296,6 +3337,8 @@
   function initCelulaSelector(base) {
     const select = qs("#cell-filter");
     if (!select) return;
+    select.disabled = false;
+    select.style.pointerEvents = "auto";
     const applyCells = (cells) => {
       const list = Array.isArray(cells) ? cells : [];
       fillSelect(select, list, { includeEmpty: true, sortByLabel: true });
@@ -3337,8 +3380,10 @@
 
     if (!select.dataset.bound) {
       select.dataset.bound = "true";
-      select.addEventListener("change", async () => {
-        state.selectedCelulaId = select.value;
+      const handleCellSelection = async () => {
+        const nextCelulaId = String(select.value || "");
+        if (String(state.selectedCelulaId || "") === nextCelulaId) return;
+        state.selectedCelulaId = nextCelulaId;
         if (state.selectedCelulaId) {
           localStorage.setItem("scrum_calendar_celula_id", state.selectedCelulaId);
         } else {
@@ -3357,7 +3402,9 @@
         state.dailyCapacityCache = {};
         toggleMenuVisibility();
         await reloadAll();
-      });
+      };
+      select.addEventListener("change", handleCellSelection);
+      select.addEventListener("input", handleCellSelection);
     }
 
     fetchJson("/celulas")
@@ -3619,6 +3666,19 @@
           fecha_inicio: sprintForm.fecha_inicio.value,
           fecha_fin: sprintForm.fecha_fin.value,
         };
+        const normalizedSprintName = normalizeText(payload.nombre);
+        const duplicateSprint = (base.sprints || []).find((sprint) => {
+          if (Number(sprint.celula_id) !== Number(payload.celula_id)) return false;
+          if (normalizeText(sprint.nombre || "") !== normalizedSprintName) return false;
+          if (sprintForm.dataset.mode === "edit") {
+            return Number(sprint.id) !== Number(sprintForm.dataset.editId || 0);
+          }
+          return true;
+        });
+        if (duplicateSprint) {
+          setStatus("#status-sprint", "Ya existe un sprint con ese nombre en la celula seleccionada.", "error");
+          return;
+        }
         if (!payload.fecha_inicio || !payload.fecha_fin) {
           setStatus("#status-sprint", "Selecciona el rango de fechas.", "error");
           return;
@@ -5168,7 +5228,7 @@
       !disableDataTables && Boolean(window.jQuery && window.jQuery.fn && window.jQuery.fn.DataTable);
     const dataTableNonSortableTargets = [];
     columns.forEach((col, idx) => {
-      if (col?.sortable === false) dataTableNonSortableTargets.push(idx);
+      if (col?.sortable === false || col?.key === "_index") dataTableNonSortableTargets.push(idx);
     });
     tailColumns.forEach((col, idx) => {
       if (col?.sortable === false) {
@@ -5290,6 +5350,10 @@
       if (col.key in row) return row[col.key];
       return "";
     };
+    const getColumnSortValue = (row, col, index) => {
+      if (col.getSortValue) return col.getSortValue(row, index);
+      return getColumnValue(row, col, index);
+    };
     const filterColumns = [...columns, ...tailColumns];
     const filteredRows = useDataTables
       ? rows
@@ -5308,8 +5372,8 @@
       const sortCol = filterColumns.find((col) => col.key === sortState.key);
       if (sortCol && sortCol.key !== "_select" && sortCol.sortable !== false) {
         sortedRows.sort((a, b) => {
-          const aVal = normalizeValue(getColumnValue(a, sortCol, 0));
-          const bVal = normalizeValue(getColumnValue(b, sortCol, 0));
+          const aVal = normalizeValue(getColumnSortValue(a, sortCol, 0));
+          const bVal = normalizeValue(getColumnSortValue(b, sortCol, 0));
           const aNum = Number(aVal);
           const bNum = Number(bVal);
           let result = 0;
@@ -5555,6 +5619,10 @@
             .filter(Boolean)
             .forEach((klass) => td.classList.add(klass));
         }
+        const sortValue = getColumnSortValue(row, col, startIndex + index);
+        if (sortValue != null && sortValue !== "" && col.key !== "_select") {
+          td.setAttribute("data-order", String(sortValue));
+        }
         tr.appendChild(td);
       });
       if (actions.length) {
@@ -5586,6 +5654,10 @@
           const td = document.createElement("td");
           const rendered = col.render ? col.render(row) : row[col.key];
           renderCellContent(td, rendered);
+          const sortValue = getColumnSortValue(row, col, startIndex + index);
+          if (sortValue != null && sortValue !== "") {
+            td.setAttribute("data-order", String(sortValue));
+          }
           tr.appendChild(td);
         });
       }
@@ -5601,9 +5673,9 @@
     if (useDataTables) {
       const dt = initDataTable(table, tableKey, {
         nonSortableTargets: dataTableNonSortableTargets,
+        defaultOrder: tableKey === "admin-personas" ? [[6, "asc"]] : [],
       });
       const shouldRenumberVisualIndex =
-        (tableKey === "release-table" || tableKey === "daily-items-table") &&
         Array.isArray(columns) &&
         columns.length > 0 &&
         (columns[0]?.key === "_index" || columns[0]?.key === "item_order");
@@ -5663,6 +5735,9 @@
           });
         }
         dt.draw(false);
+        applyVisualIndexCounter();
+      } else if (dt && tableKey === "admin-personas") {
+        dt.order([[6, "asc"]]).draw(false);
         applyVisualIndexCounter();
       }
       const targetPage = state.tableDataPage?.[tableKey];
@@ -5732,6 +5807,7 @@
     const nonSortableTargets = Array.isArray(options.nonSortableTargets)
       ? options.nonSortableTargets.filter((idx) => Number.isFinite(Number(idx)))
       : [];
+    const defaultOrder = Array.isArray(options.defaultOrder) ? options.defaultOrder : [];
     if (
       tableKey === "daily-items-table" &&
       !nonSortableTargets.some((idx) => Number(idx) === 0)
@@ -5746,7 +5822,7 @@
       info: true,
       autoWidth: false,
       responsive: false,
-      order: [],
+      order: defaultOrder,
       pageLength: 10,
       lengthMenu: [
         [10, 20, 25, 50, 100, -1],
@@ -6325,16 +6401,34 @@
     const storypointsKpi = qs("#daily-kpi-storypoints");
     const pointsUserSelect = qs("#daily-points-user-select");
     const pointsLabelsToggle = qs("#daily-points-labels-toggle");
+    const pointsMetricToggle = qs("#daily-points-metric-toggle");
     const pointsUserSummary = qs("#daily-storypoints-user-summary");
     const pointsUserChart = qs("#daily-points-user-line-chart");
     const pointsUserLegend = qs("#daily-points-user-legend");
     const pointsUserTable = qs("#daily-points-user-table");
+    const ganttContext = qs("#daily-gantt-context");
+    const ganttSummary = qs("#daily-gantt-summary");
+    const ganttBoard = qs("#daily-gantt-board");
+    const ganttScroll = qs("#daily-gantt-scroll");
+    const ganttZoom = qs("#daily-gantt-zoom");
+    const ganttZoomLabel = qs("#daily-gantt-zoom-label");
+    const ganttZoomOut = qs("#daily-gantt-zoom-out");
+    const ganttZoomIn = qs("#daily-gantt-zoom-in");
     const syncLabelsToggle = () => {
       if (!pointsLabelsToggle) return;
       const active = Boolean(state.dailyPointsShowLabels);
       pointsLabelsToggle.classList.toggle("is-active", active);
       pointsLabelsToggle.setAttribute("aria-pressed", active ? "true" : "false");
       pointsLabelsToggle.textContent = `Etiquetas: ${active ? "On" : "Off"}`;
+    };
+    const syncMetricToggle = () => {
+      if (!pointsMetricToggle) return;
+      const isTasksMetric = state.dailyPointsUserMetric === "tasks";
+      pointsMetricToggle.classList.toggle("is-active", isTasksMetric);
+      pointsMetricToggle.setAttribute("aria-pressed", isTasksMetric ? "true" : "false");
+      pointsMetricToggle.textContent = isTasksMetric
+        ? "Ver Story Points"
+        : "Ver cantidad de tareas";
     };
 
     const sprints = getDailySprints(base);
@@ -6422,11 +6516,14 @@
     };
     const firstSprintWithData = sprints.find((sprint) => hasDataForSprint(sprint)) || null;
     const activeSprint = getActiveSprint(sprints) || sprints[0];
-    const selectedSprintByState = state.selectedSprintId
+    const showAllDailySprints = state.selectedSprintId === "__all__";
+    const selectedSprintByState = !showAllDailySprints && state.selectedSprintId
       ? sprints.find((sprint) => String(sprint.id) === state.selectedSprintId)
       : null;
     let selectedSprint;
-    if (state.dailySprintManual) {
+    if (showAllDailySprints) {
+      selectedSprint = null;
+    } else if (state.dailySprintManual) {
       selectedSprint = selectedSprintByState || activeSprint || firstSprintWithData || sprints[0];
     } else {
       selectedSprint =
@@ -6435,15 +6532,21 @@
         selectedSprint = firstSprintWithData;
       }
     }
-    state.selectedSprintId = selectedSprint ? String(selectedSprint.id) : "";
+    state.selectedSprintId = showAllDailySprints ? "__all__" : selectedSprint ? String(selectedSprint.id) : "";
 
-    const orderedSprints = selectedSprint
+    const orderedSprintsBase = selectedSprint
       ? [selectedSprint, ...sprints.filter((sprint) => String(sprint.id) !== String(selectedSprint.id))]
       : sprints;
+    const orderedSprints = [
+      { id: "__all__", nombre: "Ver todos los sprints" },
+      ...orderedSprintsBase,
+    ];
 
     if (sprintSelect) {
       fillSelect(sprintSelect, orderedSprints);
-      if (selectedSprint) {
+      if (showAllDailySprints) {
+        sprintSelect.value = "__all__";
+      } else if (selectedSprint) {
         sprintSelect.value = String(selectedSprint.id);
       }
     }
@@ -6454,7 +6557,10 @@
         btn.type = "button";
         btn.className = "status-filter-option";
         btn.textContent = sprint.nombre;
-        if (selectedSprint && String(sprint.id) === String(selectedSprint.id)) {
+        if (
+          (showAllDailySprints && String(sprint.id) === "__all__") ||
+          (selectedSprint && String(sprint.id) === String(selectedSprint.id))
+        ) {
           btn.classList.add("is-selected");
         }
         btn.addEventListener("click", () => {
@@ -6477,21 +6583,23 @@
       sprintFilter.classList.toggle("open", state.dailySprintOpen);
     }
     if (sprintSelected) {
-      sprintSelected.textContent = selectedSprint?.nombre || "-";
+      sprintSelected.textContent = showAllDailySprints ? "Todos los sprints" : selectedSprint?.nombre || "-";
     }
 
     const sprintRange =
       selectedSprint?.fecha_inicio && selectedSprint?.fecha_fin
         ? `${formatDate(selectedSprint.fecha_inicio)} - ${formatDate(selectedSprint.fecha_fin)}`
         : "";
-    const sprintLabelText = selectedSprint
+    const sprintLabelText = showAllDailySprints
+      ? "Todos los sprints"
+      : selectedSprint
       ? sprintRange
         ? `${selectedSprint.nombre} · ${sprintRange}`
         : selectedSprint.nombre
       : "-";
     if (sprintLabel) sprintLabel.textContent = sprintLabelText;
-    if (teamSprintLabel) teamSprintLabel.textContent = selectedSprint?.nombre || "-";
-    if (itemsSprintLabel) itemsSprintLabel.textContent = selectedSprint?.nombre || "-";
+    if (teamSprintLabel) teamSprintLabel.textContent = showAllDailySprints ? "Todos los sprints" : selectedSprint?.nombre || "-";
+    if (itemsSprintLabel) itemsSprintLabel.textContent = showAllDailySprints ? "Todos los sprints" : selectedSprint?.nombre || "-";
 
     const feriadosFiltrados = state.selectedCelulaId
       ? (base.feriados || []).filter(
@@ -6811,6 +6919,58 @@
         maximumFractionDigits: 2,
       }).format(numeric);
     };
+    const isTasksMetric = state.dailyPointsUserMetric === "tasks";
+    const metricLabel = isTasksMetric ? "Cantidad de tareas" : "Story Points";
+    const metricUnit = isTasksMetric ? "tareas" : "pts";
+    const formatMetricValue = (value) =>
+      isTasksMetric
+        ? new Intl.NumberFormat("es-PY", {
+            maximumFractionDigits: 0,
+          }).format(Number(value) || 0)
+        : formatStoryPointsValue(value);
+    const getDailyUserMetricValue = (item) => {
+      if (isTasksMetric) return 1;
+      const points = Number(item?.story_points);
+      return Number.isFinite(points) && points > 0 ? points : 0;
+    };
+    const getStoryPointsHeatClass = (value, min, max) => {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric) || numeric <= 0) return "";
+      if (max <= min) return "daily-storypoints-heat-high";
+      const ratio = (numeric - min) / (max - min);
+      if (ratio >= 0.8) return "daily-storypoints-heat-high";
+      if (ratio >= 0.6) return "daily-storypoints-heat-lime";
+      if (ratio >= 0.4) return "daily-storypoints-heat-mid";
+      if (ratio >= 0.2) return "daily-storypoints-heat-orange";
+      return "daily-storypoints-heat-low";
+    };
+    const applyStoryPointsUserHeatmap = (rows, sprintCols) => {
+      const heatKeys = [
+        ...sprintCols.map((sprint) => ({
+          key: `sprint_${sprint.id}`,
+          getValue: (row) => Number(row.sprints?.[sprint.id] || 0),
+        })),
+        {
+          key: "totalStoryPoints",
+          getValue: (row) => Number(row.totalStoryPoints) || 0,
+        },
+      ];
+      heatKeys.forEach(({ key, getValue }) => {
+        const values = rows
+          .map((row) => getValue(row))
+          .filter((value) => Number.isFinite(value) && value > 0);
+        if (!values.length) return;
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        rows.forEach((row) => {
+          const klass = getStoryPointsHeatClass(getValue(row), min, max);
+          if (!klass) return;
+          if (!row._cellClasses) row._cellClasses = {};
+          row._cellClasses[key] = klass;
+        });
+      });
+      return rows;
+    };
     const linePalette = [
       "#0d6efd",
       "#20c997",
@@ -6843,7 +7003,14 @@
       });
     };
 
-    const renderStoryPointsTrendChart = (container, sprintColumns, rows, showPointLabels) => {
+    const renderStoryPointsTrendChart = (
+      container,
+      sprintColumns,
+      rows,
+      showPointLabels,
+      axisLabel = "Story Points",
+      valueFormatter = formatStoryPointsValue
+    ) => {
       if (!container) return;
       const svg = container.querySelector("svg");
       if (!svg) return;
@@ -6949,7 +7116,7 @@
           circle.setAttribute("stroke-width", "0.8");
           circle.setAttribute(
             "title",
-            `${row.usuario} · ${point.value} pts · ${sprintColumns[pointIdx]?.label || ""}`
+            `${row.usuario} · ${valueFormatter(point.value)} · ${sprintColumns[pointIdx]?.label || ""}`
           );
           svg.appendChild(circle);
           if (showPointLabels) {
@@ -6960,7 +7127,7 @@
             pointLabel.setAttribute("font-size", "16");
             pointLabel.setAttribute("font-weight", "700");
             pointLabel.setAttribute("fill", color);
-            pointLabel.textContent = String(Number(point.value || 0).toFixed(0));
+            pointLabel.textContent = valueFormatter(point.value);
             svg.appendChild(pointLabel);
           }
         });
@@ -6972,7 +7139,7 @@
       yAxisLabel.setAttribute("transform", `rotate(-90 16 ${margin.top + plotHeight / 2})`);
       yAxisLabel.setAttribute("font-size", "11");
       yAxisLabel.setAttribute("fill", "#94a3b8");
-      yAxisLabel.textContent = "Story Points";
+      yAxisLabel.textContent = axisLabel;
       svg.appendChild(yAxisLabel);
 
       const xAxisLabel = createSvgNode("text");
@@ -6985,7 +7152,7 @@
       svg.appendChild(xAxisLabel);
     };
 
-    const sprintTimeline = [...sprints].sort((a, b) => {
+    const compareSprintTimeline = (a, b) => {
       const rankA = getSprintRank(a?.nombre || "");
       const rankB = getSprintRank(b?.nombre || "");
       if (rankA !== null && rankB !== null && rankA !== rankB) return rankA - rankB;
@@ -6995,8 +7162,53 @@
       const startB = parseDateOnly(b?.fecha_inicio || b?.fecha_fin || "");
       if (startA && startB && startA.getTime() !== startB.getTime()) return startA - startB;
       return Number(a?.id || 0) - Number(b?.id || 0);
+    };
+    const sprintTimeline = [...sprints].sort(compareSprintTimeline);
+    const pointsItemsBySprint = new Map();
+    dailyItemsSource.forEach((item) => {
+      if (state.selectedCelulaId && String(item.celula_id) !== state.selectedCelulaId) return;
+      if (item.persona_id && shouldFilterByPersona && !activePersonaIds.has(item.persona_id)) return;
+      const metricValue = getDailyUserMetricValue(item);
+      if (!Number.isFinite(metricValue) || metricValue <= 0) return;
+      const sprintId = String(item.sprint_id || "");
+      pointsItemsBySprint.set(sprintId, (pointsItemsBySprint.get(sprintId) || 0) + metricValue);
     });
-    const recentSprints = sprintTimeline.slice(-6);
+    const sprintsWithPoints = sprintTimeline.filter((sprint) =>
+      pointsItemsBySprint.has(String(sprint.id))
+    );
+    let storyAnchorSprint = selectedSprint;
+    if (!storyAnchorSprint || !pointsItemsBySprint.has(String(storyAnchorSprint.id))) {
+      const selectedIndex = selectedSprint
+        ? sprintTimeline.findIndex((sprint) => String(sprint.id) === String(selectedSprint.id))
+        : -1;
+      const previousWithPoints =
+        selectedIndex >= 0
+          ? [...sprintTimeline.slice(0, selectedIndex + 1)]
+              .reverse()
+              .find((sprint) => pointsItemsBySprint.has(String(sprint.id)))
+          : null;
+      storyAnchorSprint =
+        previousWithPoints ||
+        sprintsWithPoints[sprintsWithPoints.length - 1] ||
+        selectedSprint ||
+        sprintTimeline[sprintTimeline.length - 1] ||
+        null;
+    }
+    const anchorIndex = storyAnchorSprint
+      ? sprintTimeline.findIndex((sprint) => String(sprint.id) === String(storyAnchorSprint.id))
+      : -1;
+    const windowEnd = anchorIndex >= 0 ? anchorIndex + 1 : sprintTimeline.length;
+    const windowStart = Math.max(0, windowEnd - 6);
+    let recentSprints = sprintTimeline.slice(windowStart, windowEnd);
+    if (recentSprints.length < 6 && windowEnd < sprintTimeline.length) {
+      recentSprints = [
+        ...recentSprints,
+        ...sprintTimeline.slice(windowEnd, windowEnd + (6 - recentSprints.length)),
+      ];
+    }
+    if (!recentSprints.some((sprint) => pointsItemsBySprint.has(String(sprint.id)))) {
+      recentSprints = sprintsWithPoints.slice(-6);
+    }
     const sprintColumns = recentSprints.map((sprint) => ({
       id: String(sprint.id),
       label: String(sprint.nombre || `Sprint ${sprint.id}`),
@@ -7010,6 +7222,8 @@
       if (item.persona_id && shouldFilterByPersona && !activePersonaIds.has(item.persona_id)) {
         return false;
       }
+      const metricValue = getDailyUserMetricValue(item);
+      if (!Number.isFinite(metricValue) || metricValue <= 0) return false;
       return recentSprintIds.has(String(item.sprint_id || ""));
     });
 
@@ -7027,6 +7241,7 @@
           personaId: personaId ? String(personaId) : "",
           usuario: personaName,
           totalItems: 0,
+          totalMetric: 0,
           totalStoryPoints: 0,
           sprints: {},
         });
@@ -7035,15 +7250,18 @@
       const sprintId = String(item.sprint_id || "");
       const points = Number(item.story_points);
       const normalizedPoints = Number.isFinite(points) ? points : 0;
+      const metricValue = getDailyUserMetricValue(item);
       row.totalItems += 1;
       row.totalStoryPoints += normalizedPoints;
-      row.sprints[sprintId] = Number((Number(row.sprints[sprintId] || 0) + normalizedPoints).toFixed(2));
+      row.totalMetric += metricValue;
+      row.sprints[sprintId] = Number((Number(row.sprints[sprintId] || 0) + metricValue).toFixed(2));
     });
 
     const userPointsRows = Array.from(userPointsMap.values())
       .map((row) => ({
         ...row,
         totalStoryPoints: Number(row.totalStoryPoints.toFixed(2)),
+        totalMetric: Number(row.totalMetric.toFixed(2)),
       }))
       .sort((a, b) =>
         String(a.usuario || "").localeCompare(String(b.usuario || ""), "es", {
@@ -7071,6 +7289,7 @@
       pointsUserSelect.value = state.dailyPointsUserFilter || "";
     }
     syncLabelsToggle();
+    syncMetricToggle();
 
     const visibleUserPointsRows = state.dailyPointsUserFilter
       ? userPointsRows.filter(
@@ -7083,8 +7302,8 @@
       if (!visibleUserPointsRows.length || !sprintColumns.length) {
         pointsUserSummary.textContent = "Sin datos";
       } else {
-        const totalPoints = visibleUserPointsRows.reduce(
-          (sum, row) => sum + (Number(row.totalStoryPoints) || 0),
+        const totalMetric = visibleUserPointsRows.reduce(
+          (sum, row) => sum + (Number(row.totalMetric) || 0),
           0
         );
         const totalItems = visibleUserPointsRows.reduce(
@@ -7097,11 +7316,11 @@
         if (state.dailyPointsUserFilter && visibleUserPointsRows.length === 1) {
           pointsUserSummary.textContent = `${sprintRange} · ${
             visibleUserPointsRows[0].usuario
-          } · ${formatStoryPointsValue(totalPoints)} pts · ${totalItems} items`;
+          } · ${formatMetricValue(totalMetric)} ${metricUnit} · ${totalItems} items`;
         } else {
-          pointsUserSummary.textContent = `${sprintRange} · Usuarios: ${
+          pointsUserSummary.textContent = `${metricLabel} · ${sprintRange} · Usuarios: ${
             visibleUserPointsRows.length
-          } · ${formatStoryPointsValue(totalPoints)} pts · ${totalItems} items`;
+          } · ${formatMetricValue(totalMetric)} ${metricUnit} · ${totalItems} items`;
         }
       }
     }
@@ -7113,30 +7332,273 @@
         pointsUserChart,
         sprintColumns,
         visibleUserPointsRows,
-        Boolean(state.dailyPointsShowLabels)
+        Boolean(state.dailyPointsShowLabels),
+        metricLabel,
+        formatMetricValue
       );
     }
     renderStoryPointsLegend(pointsUserLegend, visibleUserPointsRows);
 
     if (pointsUserTable) {
+      const tableRows = applyStoryPointsUserHeatmap(
+        visibleUserPointsRows
+          .filter((row) => Number(row.totalMetric) > 0)
+          .map((row) => ({ ...row, _cellClasses: { ...(row._cellClasses || {}) } })),
+        sprintColumns
+      );
       const tableColumns = [
         { key: "_index", label: "#", sortable: false },
         { key: "usuario", label: "Usuario" },
         ...sprintColumns.map((sprint) => ({
           key: `sprint_${sprint.id}`,
           label: sprint.label,
-          render: (row) => formatStoryPointsValue(row.sprints?.[sprint.id] || 0),
+          render: (row) => formatMetricValue(row.sprints?.[sprint.id] || 0),
           getValue: (row) => Number(row.sprints?.[sprint.id] || 0),
         })),
-        {
-          key: "totalStoryPoints",
-          label: "Total Story Points",
-          render: (row) => formatStoryPointsValue(row.totalStoryPoints),
-          getValue: (row) => Number(row.totalStoryPoints) || 0,
-        },
-        { key: "totalItems", label: "Total items" },
       ];
-      renderAdminTable(pointsUserTable, visibleUserPointsRows, tableColumns, []);
+      renderAdminTable(pointsUserTable, tableRows, tableColumns, []);
+      const table = pointsUserTable.querySelector("table");
+      if (table) {
+        table.querySelector("tfoot")?.remove();
+        const tfoot = document.createElement("tfoot");
+        const tr = document.createElement("tr");
+        tr.className = "totals-row daily-points-user-total-row";
+        tableColumns.forEach((col, idx) => {
+          const td = document.createElement("td");
+          if (idx === 0) {
+            td.textContent = "Total";
+            td.className = "fw-bold";
+          } else if (String(col.key || "").startsWith("sprint_")) {
+            const sprintId = String(col.key).replace("sprint_", "");
+            const total = tableRows.reduce(
+              (sum, row) => sum + (Number(row.sprints?.[sprintId]) || 0),
+              0
+            );
+            td.textContent = formatMetricValue(total);
+            td.className = "fw-bold";
+          } else if (col.key === "totalStoryPoints") {
+            const total = tableRows.reduce(
+              (sum, row) => sum + (Number(row.totalStoryPoints) || 0),
+              0
+            );
+            td.textContent = formatStoryPointsValue(total);
+            td.className = "fw-bold";
+          } else if (col.key === "totalItems") {
+            const total = tableRows.reduce(
+              (sum, row) => sum + (Number(row.totalItems) || 0),
+              0
+            );
+            td.textContent = String(total);
+            td.className = "fw-bold";
+          }
+          tr.appendChild(td);
+        });
+        tfoot.appendChild(tr);
+        table.appendChild(tfoot);
+      }
+    }
+
+    const getGanttDateRange = (row) => {
+      const start = parseDateOnly(row.start_date || "");
+      const end = parseDateOnly(row.end_date || row.due_date || row.start_date || "");
+      if (!start && !end) return null;
+      const resolvedStart = start || end;
+      const resolvedEnd = end || start;
+      if (!resolvedStart || !resolvedEnd) return null;
+      return {
+        start: resolvedStart <= resolvedEnd ? resolvedStart : resolvedEnd,
+        end: resolvedEnd >= resolvedStart ? resolvedEnd : resolvedStart,
+        openEnded: Boolean(row.start_date && !row.end_date && !row.due_date),
+        pendingEndDate: Boolean(row.start_date && row.due_date && !row.end_date),
+      };
+    };
+    const buildDateSpan = (start, end) => {
+      const dates = [];
+      if (!start || !end) return dates;
+      const cursor = new Date(start);
+      cursor.setHours(0, 0, 0, 0);
+      const last = new Date(end);
+      last.setHours(0, 0, 0, 0);
+      while (cursor <= last) {
+        dates.push(new Date(cursor));
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return dates;
+    };
+    const getWeekLabel = (date) => {
+      const oneJan = new Date(date.getFullYear(), 0, 1);
+      const dayMs = 24 * 60 * 60 * 1000;
+      return `S${Math.ceil((((date - oneJan) / dayMs) + oneJan.getDay() + 1) / 7)}`;
+    };
+    const getGanttColorClass = (row) => {
+      const statusText = normalizeText(row.status || "");
+      if (isDoneStatus(row.status)) return "is-done";
+      if (statusText.includes("progress")) return "is-progress";
+      if (row.start_date && row.end_date && row.due_date) return "is-complete-dates";
+      return "is-pending";
+    };
+    const renderDailyGantt = () => {
+      if (!ganttBoard) return;
+      const zoomValue = Math.max(40, Math.min(160, Number(state.dailyGanttZoom || ganttZoom?.value || 100) || 100));
+      state.dailyGanttZoom = zoomValue;
+      if (ganttZoom) ganttZoom.value = String(zoomValue);
+      if (ganttZoomLabel) ganttZoomLabel.textContent = `${zoomValue}%`;
+      const dayWidth = Math.round(36 * (zoomValue / 100));
+      const buildDatedRows = (sourceItems) =>
+        sourceItems
+        .map((item) => ({ item, range: getGanttDateRange(item) }))
+        .filter((entry) => entry.range);
+      let ganttSprint = selectedSprint;
+      let ganttItems = items;
+      let datedRows = buildDatedRows(ganttItems);
+      if (!datedRows.length) {
+        const datedSprintIds = new Set();
+        dailyItemsSource.forEach((item) => {
+          if (state.selectedCelulaId && String(item.celula_id) !== state.selectedCelulaId) return;
+          if (item.persona_id && shouldFilterByPersona && !activePersonaIds.has(item.persona_id)) return;
+          if (!getGanttDateRange(item)) return;
+          datedSprintIds.add(String(item.sprint_id || ""));
+        });
+        const fallbackSprint = [...sprintTimeline]
+          .reverse()
+          .find((sprint) => datedSprintIds.has(String(sprint.id)));
+        if (fallbackSprint) {
+          ganttSprint = fallbackSprint;
+          ganttItems = dailyItemsSource.filter((item) => {
+            if (state.selectedCelulaId && String(item.celula_id) !== state.selectedCelulaId) return false;
+            if (item.persona_id && shouldFilterByPersona && !activePersonaIds.has(item.persona_id)) return false;
+            return String(item.sprint_id || "") === String(fallbackSprint.id);
+          });
+          datedRows = buildDatedRows(ganttItems);
+        }
+      }
+      if (ganttContext) {
+        ganttContext.textContent = state.dailySelectedPersonaId || state.dailySelectedAssignee
+          ? "Vista por persona"
+          : "Vista total";
+      }
+      if (!datedRows.length) {
+        if (ganttSummary) {
+          ganttSummary.textContent = ganttSprint
+            ? `${ganttSprint.nombre} · Sin items con fechas para visualizar en Gantt.`
+            : "Sin items con fechas para visualizar en Gantt.";
+        }
+        ganttBoard.innerHTML = '<p class="empty">Sin items para visualizar en Gantt.</p>';
+        return;
+      }
+      const sprintStart = parseDateOnly(ganttSprint?.fecha_inicio || "");
+      const sprintEnd = parseDateOnly(ganttSprint?.fecha_fin || "");
+      const minStart = datedRows.reduce(
+        (min, entry) => (!min || entry.range.start < min ? entry.range.start : min),
+        sprintStart || datedRows[0].range.start
+      );
+      const maxEnd = datedRows.reduce(
+        (max, entry) => (!max || entry.range.end > max ? entry.range.end : max),
+        sprintEnd || datedRows[0].range.end
+      );
+      const dates = buildDateSpan(minStart, maxEnd);
+      const dateKeys = dates.map((date) => formatISO(date));
+      const monthGroups = [];
+      const weekGroups = [];
+      dates.forEach((date) => {
+        const monthKey = `${date.getFullYear()}-${date.getMonth()}`;
+        const monthLabel = date.toLocaleDateString("es-PY", { month: "short", year: "numeric" });
+        const lastMonth = monthGroups[monthGroups.length - 1];
+        if (lastMonth?.key === monthKey) lastMonth.span += 1;
+        else monthGroups.push({ key: monthKey, label: monthLabel, span: 1 });
+        const weekKey = `${date.getFullYear()}-${getWeekLabel(date)}`;
+        const lastWeek = weekGroups[weekGroups.length - 1];
+        if (lastWeek?.key === weekKey) lastWeek.span += 1;
+        else weekGroups.push({ key: weekKey, label: getWeekLabel(date), span: 1 });
+      });
+      const holidayKeys = new Set(feriadosSet);
+      const dayInitials = ["D", "L", "M", "M", "J", "V", "S"];
+      const gridColumns = `minmax(260px, 320px) repeat(${dates.length}, ${dayWidth}px)`;
+      const html = `
+        <div class="daily-gantt-grid" style="grid-template-columns:${gridColumns}">
+          <div class="daily-gantt-head daily-gantt-task-head">Tarea</div>
+          ${monthGroups
+            .map((group) => `<div class="daily-gantt-head" style="grid-column:span ${group.span}">${escapeHtml(group.label)}</div>`)
+            .join("")}
+          <div class="daily-gantt-subhead"></div>
+          ${weekGroups
+            .map((group) => `<div class="daily-gantt-subhead" style="grid-column:span ${group.span}">${escapeHtml(group.label)}</div>`)
+            .join("")}
+          <div class="daily-gantt-subhead"></div>
+          ${dates
+            .map((date) => {
+              const key = formatISO(date);
+              const classes = ["daily-gantt-day-head"];
+              if (holidayKeys.has(key)) classes.push("is-holiday");
+              return `<div class="${classes.join(" ")}">${dayInitials[date.getDay()]}<br>${date.getDate()}</div>`;
+            })
+            .join("")}
+          ${datedRows
+            .map(({ item, range }) => {
+              const startKey = formatISO(range.start);
+              const endKey = formatISO(range.end);
+              const startIndex = Math.max(0, dateKeys.indexOf(startKey));
+              const rawEndIndex = dateKeys.indexOf(endKey);
+              const endIndex = rawEndIndex >= 0 ? rawEndIndex : startIndex;
+              const span = Math.max(1, endIndex - startIndex + 1);
+              const left = startIndex * dayWidth;
+              const width = span * dayWidth;
+              const title = `${item.issue_key || ""} - ${item.summary || ""}`.trim();
+              const assignee = resolvePersonaNameFromItem(item, personaLookup, personaNameById) || "Sin asignar";
+              return `
+                <div class="daily-gantt-task">
+                  <strong>${escapeHtml(title || "Sin titulo")}</strong>
+                  <span>${escapeHtml(assignee)} · ${escapeHtml(getStatusLabel(item.status) || "Sin estado")} · ${escapeHtml(item.start_date || "-")} -> ${escapeHtml(item.end_date || item.due_date || "-")}</span>
+                </div>
+                <div class="daily-gantt-track" style="grid-column:2 / span ${dates.length}; --day-width:${dayWidth}px">
+                  ${dates
+                    .map((date) => {
+                      const key = formatISO(date);
+                      const classes = ["daily-gantt-cell"];
+                      if (holidayKeys.has(key)) classes.push("is-holiday");
+                      return `<span class="${classes.join(" ")}"></span>`;
+                    })
+                    .join("")}
+                  <span class="daily-gantt-bar ${getGanttColorClass(item)}${range.openEnded ? " is-open-ended" : ""}${range.pendingEndDate ? " is-pending-end-date" : ""}" style="left:${left}px;width:${width}px">
+                    ${escapeHtml(item.issue_key || "")}
+                  </span>
+                </div>
+              `;
+            })
+            .join("")}
+        </div>
+      `;
+      if (ganttSummary) {
+        const fallbackLabel =
+          selectedSprint && ganttSprint && String(selectedSprint.id) !== String(ganttSprint.id)
+            ? ` · mostrando ultimo sprint con fechas porque ${selectedSprint.nombre} no tiene fechas`
+            : "";
+        ganttSummary.textContent = `${ganttSprint?.nombre || "Sprints"} · ${formatISO(minStart)} -> ${formatISO(maxEnd)} · ${datedRows.length} item(s) con fechas${fallbackLabel}`;
+      }
+      ganttBoard.innerHTML = html;
+      if (ganttScroll) ganttScroll.scrollLeft = 0;
+    };
+    renderDailyGantt();
+    if (ganttZoom && !ganttZoom.dataset.bound) {
+      ganttZoom.dataset.bound = "true";
+      ganttZoom.addEventListener("input", () => {
+        state.dailyGanttZoom = Number(ganttZoom.value || 100);
+        renderDaily(state.base);
+      });
+    }
+    if (ganttZoomOut && !ganttZoomOut.dataset.bound) {
+      ganttZoomOut.dataset.bound = "true";
+      ganttZoomOut.addEventListener("click", () => {
+        state.dailyGanttZoom = Math.max(40, Number(state.dailyGanttZoom || 100) - 10);
+        renderDaily(state.base);
+      });
+    }
+    if (ganttZoomIn && !ganttZoomIn.dataset.bound) {
+      ganttZoomIn.dataset.bound = "true";
+      ganttZoomIn.addEventListener("click", () => {
+        state.dailyGanttZoom = Math.min(160, Number(state.dailyGanttZoom || 100) + 10);
+        renderDaily(state.base);
+      });
     }
 
     const previousSprint = getPreviousSprint(sprints, selectedSprint);
@@ -7986,6 +8448,34 @@
       container.innerHTML = "";
       container.appendChild(table);
     };
+    const appendDailyItemsStoryPointsFooter = (container, rows, columns, hasActions = false) => {
+      const table = container?.querySelector("table");
+      if (!table) return;
+      table.querySelector("tfoot")?.remove();
+      const storyIndex = columns.findIndex((col) => col.key === "story_points");
+      if (storyIndex < 0) return;
+      const total = rows.reduce((sum, row) => {
+        const value = Number(row.story_points);
+        return Number.isFinite(value) ? sum + value : sum;
+      }, 0);
+      const tfoot = document.createElement("tfoot");
+      const tr = document.createElement("tr");
+      tr.className = "totals-row daily-items-total-row";
+      const totalCols = columns.length + (hasActions ? 1 : 0);
+      for (let idx = 0; idx < totalCols; idx += 1) {
+        const td = document.createElement("td");
+        if (idx === 0) {
+          td.textContent = "Total Story Points";
+          td.className = "fw-bold";
+        } else if (idx === storyIndex) {
+          td.textContent = formatStoryPointsValue(total);
+          td.className = "fw-bold";
+        }
+        tr.appendChild(td);
+      }
+      tfoot.appendChild(tr);
+      table.appendChild(tfoot);
+    };
 
     renderAdminTable(
       itemsTable,
@@ -8038,8 +8528,10 @@
       ],
       []
     );
+    appendDailyItemsStoryPointsFooter(itemsTable, items, itemsColumns, true);
     if (itemsTable && !itemsTable.querySelector("table")) {
       renderBasicItemsTable(itemsTable, items, itemsColumns);
+      appendDailyItemsStoryPointsFooter(itemsTable, items, itemsColumns, false);
     }
 
     if (form) {
@@ -8081,6 +8573,7 @@
     const status = qs("#daily-status");
     const pointsUserSelect = qs("#daily-points-user-select");
     const pointsLabelsToggle = qs("#daily-points-labels-toggle");
+    const pointsMetricToggle = qs("#daily-points-metric-toggle");
     const pointsUserExportBtn = qs("#daily-points-user-export");
 
     if (sprintSelect && !sprintSelect.dataset.bound) {
@@ -8126,16 +8619,32 @@
       const raw = String(value || "").trim();
       if (!raw) return "";
       const match = raw.match(/^([A-Za-z0-9]+[-_])/);
-      return match ? match[1] : "";
+      return match ? match[1].toUpperCase() : "";
+    };
+    const normalizeDailyIssueKeyInput = (input) => {
+      if (!input) return "";
+      const start = input.selectionStart;
+      const end = input.selectionEnd;
+      const nextValue = String(input.value || "").toUpperCase();
+      if (input.value !== nextValue) {
+        input.value = nextValue;
+        if (typeof input.setSelectionRange === "function" && start != null && end != null) {
+          input.setSelectionRange(start, end);
+        }
+      }
+      return nextValue.trim();
     };
 
-    const resetDailyForm = ({ keepStatus = false, preserveValues = null } = {}) => {
+    const resetDailyForm = ({ keepStatus = false, preserveValues = null, focusIssueKey = false } = {}) => {
       if (!form) return;
       form.reset();
       resetFormMode(form, "Agregar item");
       form.dataset.editSource = "";
       delete form.dataset.editId;
       if (preserveValues) {
+        if (Object.prototype.hasOwnProperty.call(preserveValues, "issue_type")) {
+          form.issue_type.value = preserveValues.issue_type || "";
+        }
         if (Object.prototype.hasOwnProperty.call(preserveValues, "sprint_id")) {
           form.sprint_id.value = preserveValues.sprint_id || "";
         }
@@ -8148,6 +8657,17 @@
       }
       if (status && !keepStatus) status.textContent = "";
       renderDaily(state.base);
+      if (focusIssueKey) {
+        window.setTimeout(() => {
+          const input = form.issue_key;
+          if (!input) return;
+          input.focus();
+          const position = String(input.value || "").length;
+          if (typeof input.setSelectionRange === "function") {
+            input.setSelectionRange(position, position);
+          }
+        }, 0);
+      }
     };
 
     const upsertDailySprintItemInState = (item) => {
@@ -8216,6 +8736,14 @@
         renderDaily(state.base);
       });
     }
+    if (pointsMetricToggle && !pointsMetricToggle.dataset.bound) {
+      pointsMetricToggle.dataset.bound = "true";
+      pointsMetricToggle.addEventListener("click", () => {
+        state.dailyPointsUserMetric =
+          state.dailyPointsUserMetric === "tasks" ? "points" : "tasks";
+        renderDaily(state.base);
+      });
+    }
 
     if (pointsUserExportBtn && !pointsUserExportBtn.dataset.bound) {
       pointsUserExportBtn.dataset.bound = "true";
@@ -8236,8 +8764,6 @@
         const headers = [
           "Usuario",
           ...sprintColumns.map((sprint) => sprint.label),
-          "Total Story Points",
-          "Total items",
         ];
         const escapeCsv = (value) =>
           `"${String(value ?? "")
@@ -8250,8 +8776,6 @@
             [
               row.usuario,
               ...sprintColumns.map((sprint) => row?.sprints?.[sprint.id] ?? 0),
-              row.totalStoryPoints,
-              row.totalItems,
             ]
               .map(escapeCsv)
               .join(",")
@@ -8276,9 +8800,10 @@
 
     if (form && !form.dataset.bound) {
       form.dataset.bound = "true";
+      form.issue_key?.addEventListener("input", () => normalizeDailyIssueKeyInput(form.issue_key));
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
-        const issueKey = form.issue_key.value.trim();
+        const issueKey = normalizeDailyIssueKeyInput(form.issue_key);
         const issueType = form.issue_type.value.trim();
         const summary = form.summary.value.trim();
         const statusValue = form.status.value.trim();
@@ -8314,6 +8839,7 @@
           story_points: Number.isNaN(storyPoints) ? null : storyPoints,
         };
         const preservedFormValues = {
+          issue_type: issueType,
           sprint_id: String(sprintId),
           persona_id: String(personaId),
           issue_key: extractDailyIssuePrefix(issueKey),
@@ -8380,6 +8906,7 @@
           resetDailyForm({
             keepStatus: true,
             preserveValues: editId ? null : preservedFormValues,
+            focusIssueKey: !editId,
           });
           void syncDailyRealtime({ forceRender: false, skipWhenEditing: true });
         } catch (err) {
@@ -8666,7 +9193,7 @@
         cfg && cfg.widths && typeof cfg.widths === "object"
           ? Object.fromEntries(
               Object.entries(cfg.widths)
-                .filter(([key]) => DEFAULT_COLUMNS.includes(key))
+                .filter(([key]) => DEFAULT_COLUMNS.includes(key) && key === "titulo")
                 .map(([key, value]) => [key, Number(value)])
                 .filter(([, value]) => Number.isFinite(value) && value > 0)
                 .map(([key, value]) => [key, Math.round(value)])
@@ -8694,18 +9221,13 @@
     const setColumnWidth = (key, px) => {
       const cfg = loadColumnsConfig();
       const widths = { ...(cfg.widths || {}) };
-      const n = Number(px);
-      if (!Number.isFinite(n) || n <= 0) return;
-      widths[key] = Math.round(n);
+      delete widths[key];
       state.tasksColumnsConfig = { ...cfg, widths };
       saveColumnsConfig();
     };
 
     const getColumnWidth = (key) => {
-      const cfg = loadColumnsConfig();
-      const widths = cfg.widths || {};
-      const n = Number(widths[key] || 0);
-      return Number.isFinite(n) && n > 0 ? n : 0;
+      return 0;
     };
 
     const getVisibleColumns = () => {
@@ -8772,6 +9294,10 @@
 
     const resolveCelulaId = () => (state.selectedCelulaId ? Number(state.selectedCelulaId) : 0);
     const resolveSelectedSprintId = () => 0;
+    const isTabletBacklogAutoFit = () => {
+      if (!window.matchMedia) return false;
+      return window.matchMedia("(hover: none) and (pointer: coarse) and (max-width: 1366px)").matches;
+    };
 
     const compareTaskNatural = (a, b) => {
       const ao = Number(a.orden || 0);
@@ -8784,6 +9310,65 @@
     };
 
     const sortTasks = (items) => [...items].sort(compareTaskNatural);
+    const compareTaskHierarchyOrder = (a, b) => {
+      const ao = Number(a?.orden || 0);
+      const bo = Number(b?.orden || 0);
+      if (ao !== bo) return ao - bo;
+      const ac = new Date(a?.creado_en || a?.actualizado_en || 0).getTime();
+      const bc = new Date(b?.creado_en || b?.actualizado_en || 0).getTime();
+      if (ac !== bc) return ac - bc;
+      return (a?.id || 0) - (b?.id || 0);
+    };
+    const hasExplicitBacklogExpandedState = (taskId) =>
+      Object.prototype.hasOwnProperty.call(state.tasksBacklogExpanded || {}, String(taskId || ""));
+    const isBacklogTaskExpanded = (taskId, hasChildren = false) => {
+      const key = String(taskId || "");
+      if (!key) return false;
+      if (hasExplicitBacklogExpandedState(key)) {
+        return Boolean(state.tasksBacklogExpanded?.[key]);
+      }
+      return Boolean(hasChildren);
+    };
+    const expandBacklogAncestors = (task, byIdSource = null) => {
+      const byId =
+        byIdSource instanceof Map
+          ? byIdSource
+          : new Map((state.tasksCache || []).map((item) => [String(item.id), item]));
+      let current = task;
+      let guard = 0;
+      while (current?.parent_id && guard < 300) {
+        const parentKey = String(current.parent_id || "");
+        if (!parentKey) break;
+        state.tasksBacklogExpanded[parentKey] = true;
+        current = byId.get(parentKey);
+        guard += 1;
+      }
+    };
+    const collapseBacklogDescendants = (taskId, byIdSource = null) => {
+      const rootKey = String(taskId || "");
+      if (!rootKey) return;
+      const items =
+        byIdSource instanceof Map ? Array.from(byIdSource.values()) : Array.from(state.tasksCache || []);
+      const childrenByParent = new Map();
+      items.forEach((item) => {
+        const parentKey = String(item?.parent_id || "");
+        const childKey = String(item?.id || "");
+        if (!parentKey || !childKey) return;
+        if (!childrenByParent.has(parentKey)) childrenByParent.set(parentKey, []);
+        childrenByParent.get(parentKey).push(childKey);
+      });
+      const queue = [...(childrenByParent.get(rootKey) || [])];
+      const seen = new Set();
+      while (queue.length) {
+        const currentKey = String(queue.shift() || "");
+        if (!currentKey || seen.has(currentKey)) continue;
+        seen.add(currentKey);
+        state.tasksBacklogExpanded[currentKey] = false;
+        (childrenByParent.get(currentKey) || []).forEach((childKey) => {
+          if (childKey && !seen.has(childKey)) queue.push(childKey);
+        });
+      }
+    };
     const resolveTaskFamilyId = (task, byId) => {
       const seen = new Set();
       let current = task;
@@ -9057,6 +9642,21 @@
         },
       });
       const applyBacklogTableMinWidth = () => {
+        const layoutMode = String(table.dataset.layoutMode || "");
+        if (layoutMode === "adaptive-tablet" || layoutMode === "content-auto") {
+          const $wrapper = $table.closest(".dataTables_wrapper");
+          $table.css("width", "max-content");
+          $table.css("min-width", "100%");
+          $wrapper.find(".dataTables_scrollHeadInner").css("width", "max-content");
+          $wrapper.find(".dataTables_scrollHeadInner").css("min-width", "100%");
+          $wrapper.find(".dataTables_scrollHeadInner table").css("width", "max-content");
+          $wrapper.find(".dataTables_scrollHeadInner table").css("min-width", "100%");
+          $wrapper.find(".dataTables_scrollBody table").css("width", "max-content");
+          $wrapper.find(".dataTables_scrollBody table").css("min-width", "100%");
+          $wrapper.find(".dataTable").css("width", "max-content");
+          $wrapper.find(".dataTable").css("min-width", "100%");
+          return;
+        }
         const raw = Number(table.dataset.minWidth || 0);
         if (!Number.isFinite(raw) || raw <= 0) return;
         const width = `${Math.round(raw)}px`;
@@ -9707,7 +10307,7 @@
                   <div class="mt-2">
                     <textarea class="form-control" id="task-comment-text" rows="3" placeholder="Escribe un comentario..."></textarea>
                     <div class="d-flex gap-2 mt-2">
-                      <button class="btn btn-primary btn-sm" type="button" id="task-comment-submit">Comentar</button>
+                      <button class="btn btn-success btn-sm" type="button" id="task-comment-submit">Comentar</button>
                     </div>
                   </div>
                 </div>
@@ -9758,7 +10358,7 @@
 	          <div class="d-flex gap-2 align-items-center">
 	            <button class="btn btn-primary" type="submit">Guardar</button>
 	            <button class="btn btn-outline-secondary" type="button" id="task-cancel-btn">Cancelar</button>
-	            <button class="btn btn-outline-danger ms-auto hidden" type="button" id="task-delete-btn">
+	            <button class="btn btn-danger ms-auto hidden" type="button" id="task-delete-btn">
 	              Eliminar
 	            </button>
 	          </div>
@@ -10069,11 +10669,12 @@
 	      const newSubtaskTitle = form.querySelector("#task-new-subtask-title");
 	      const newSubtaskCreate = form.querySelector("#task-new-subtask-create");
 	      const newSubtasksList = form.querySelector("#task-new-subtasks-list");
-	      const commentsList = form.querySelector("#task-comments-list");
-	      const commentText = form.querySelector("#task-comment-text");
-	      const commentSubmit = form.querySelector("#task-comment-submit");
+      const commentsList = form.querySelector("#task-comments-list");
+      const commentText = form.querySelector("#task-comment-text");
+      const commentSubmit = form.querySelector("#task-comment-submit");
 
       const resolvedCelulaId = Number(task?.celula_id || celulaId || resolveCelulaId() || 0);
+      const resolvedParentId = Number(task?.parent_id || parentId || 0);
       form.dataset.celulaId = resolvedCelulaId ? String(resolvedCelulaId) : "";
       const applyModalStatusDateRules = (nextStatusRaw) => {
         const nextStatus = String(nextStatusRaw || "").trim().toLowerCase();
@@ -10084,12 +10685,11 @@
           return;
         }
         if (nextStatus === "doing") {
-          if (!form.start_date.value) form.start_date.value = formatISO(getToday());
+          if (!form.start_date.value) form.start_date.value = getTodayKey();
           form.end_date.value = "";
         }
       };
       const personasFiltradas = personasActivas
-        .filter((p) => !resolvedCelulaId || personaBelongsToCelula(p, resolvedCelulaId))
         .map((p) => ({ id: p.id, nombre: `${p.nombre} ${p.apellido}`.trim() }))
         .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
       fillSelect(form.assignee_persona_id, personasFiltradas, {
@@ -10098,11 +10698,11 @@
         sortByLabel: true,
       });
 
-      form.dataset.parentId = parentId ? String(parentId) : "";
+      form.dataset.parentId = resolvedParentId ? String(resolvedParentId) : "";
 	      if (parentHint) {
-        if (parentId) {
-          const parent = (state.tasksCache || []).find((t) => String(t.id) === String(parentId));
-          parentHint.textContent = parent ? `Subtarea de: ${parent.titulo}` : `Subtarea de: #${parentId}`;
+        if (resolvedParentId) {
+          const parent = (state.tasksCache || []).find((t) => String(t.id) === String(resolvedParentId));
+          parentHint.textContent = parent ? `Subtarea de: ${parent.titulo}` : `Subtarea de: #${resolvedParentId}`;
         } else {
           parentHint.textContent = "";
         }
@@ -10260,7 +10860,7 @@
         form.end_date.value = "";
         if (deleteBtn) deleteBtn.classList.add("hidden");
         existingOnlyBlocks.forEach((node) => node.classList.add("hidden"));
-        const canUseDraftSubtasks = !parentId;
+        const canUseDraftSubtasks = !resolvedParentId;
 	        if (newSubtasksWrap) newSubtasksWrap.classList.toggle("hidden", !canUseDraftSubtasks);
 	        if (newSubtaskPanel) newSubtaskPanel.classList.add("hidden");
 	        if (newSubtaskToggle) {
@@ -10272,9 +10872,9 @@
 	      }
 
       if (formStatus) formStatus.textContent = "";
-      openAdminModal(form, task ? "Editar tarea" : parentId ? "Nueva subtarea" : "Nueva tarea");
+      openAdminModal(form, task ? "Editar tarea" : resolvedParentId ? "Nueva subtarea" : "Nueva tarea");
 
-      if (!form.dataset.boundSubmitOnEnter) {
+	      if (!form.dataset.boundSubmitOnEnter) {
         form.dataset.boundSubmitOnEnter = "true";
         form.addEventListener("keydown", (event) => {
           if (event.key !== "Enter" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) {
@@ -10290,6 +10890,24 @@
             target.closest("#task-new-subtask-panel") ||
             target.closest(".task-existing-only")
           ) {
+            return;
+          }
+          event.preventDefault();
+          const submitBtn = form.querySelector("button[type='submit']");
+          if (submitBtn?.disabled) return;
+          if (typeof form.requestSubmit === "function") {
+            form.requestSubmit(submitBtn || undefined);
+          } else {
+            submitBtn?.click();
+          }
+        });
+      }
+
+      const titleInput = form.querySelector("#task-titulo");
+      if (titleInput && !titleInput.dataset.boundSubmitOnEnter) {
+        titleInput.dataset.boundSubmitOnEnter = "true";
+        titleInput.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) {
             return;
           }
           event.preventDefault();
@@ -10364,6 +10982,7 @@
 	              fecha_vencimiento: null,
 	            });
 	            upsertTaskInCache(createdSubtask);
+              expandBacklogAncestors(createdSubtask);
 	            if (subtaskTitle) subtaskTitle.value = "";
 	            refreshTasksUi("all");
 	            renderSubtasks();
@@ -10557,10 +11176,12 @@
 	                if (editId) {
 	                  const updated = await putJson(`/tasks/${editId}`, payload);
 	                  upsertTaskInCache(updated);
+                    if (updated?.parent_id) expandBacklogAncestors(updated);
                     ensureTaskSegmentCatalogEntry(updated?.segmento || payload.segmento || "");
 	                } else {
 	                  const created = await postJson("/tasks", payload);
 	                  upsertTaskInCache(created);
+                    if (created?.parent_id) expandBacklogAncestors(created);
                     ensureTaskSegmentCatalogEntry(created?.segmento || payload.segmento || "");
 	                  const createdId = Number(created?.id || 0);
 	                  if (createdId && draftSubtasks.length) {
@@ -10577,6 +11198,7 @@
 	                        fecha_vencimiento: null,
 	                      });
 	                      upsertTaskInCache(createdSubtask);
+                        expandBacklogAncestors(createdSubtask);
 	                    }
 	                  }
 	                }
@@ -10643,27 +11265,45 @@
     const buildBacklogContext = (filtered, all) => {
       const byId = new Map((all || []).map((t) => [String(t.id), t]));
       const keep = new Map();
-      const statusFilter = (state.tasksStatusFilter || "").trim().toLowerCase();
-      const statusSet = new Set(
-        (state.tasksFilters?.statuses || []).map((value) => String(value || "").trim().toLowerCase()).filter(Boolean)
-      );
-      const statusAllowed = statusFilter ? new Set([statusFilter]) : statusSet.size ? statusSet : null;
-      const canKeepParentByStatus = (task) => {
-        if (!statusAllowed) return true;
-        return statusAllowed.has(String(task?.estado || "").trim().toLowerCase());
+      const hideSubtasks = Boolean(state.tasksFilters?.hideSubtasks);
+      const shouldExpandFilteredAncestors = !hideSubtasks && hasActivePersistedTaskFilters();
+      const descendantsByParent = new Map();
+      (all || []).forEach((task) => {
+        const parentId = task?.parent_id ? String(task.parent_id) : "";
+        if (!parentId) return;
+        if (!descendantsByParent.has(parentId)) descendantsByParent.set(parentId, []);
+        descendantsByParent.get(parentId).push(task);
+      });
+      const queueDescendants = (taskId, ancestors = new Set()) => {
+        const key = String(taskId || "");
+        if (!key || ancestors.has(key)) return;
+        const nextAncestors = new Set(ancestors);
+        nextAncestors.add(key);
+        const children = descendantsByParent.get(key) || [];
+        children.forEach((child) => {
+          const childKey = String(child?.id || "");
+          if (!childKey || keep.has(childKey)) return;
+          keep.set(childKey, child);
+          queueDescendants(childKey, nextAncestors);
+        });
       };
       (filtered || []).forEach((t) => {
         keep.set(String(t.id), t);
       });
       (filtered || []).forEach((t) => {
+        if (shouldExpandFilteredAncestors && t?.parent_id) {
+          expandBacklogAncestors(t, byId);
+        }
         let parentId = t?.parent_id ? String(t.parent_id) : "";
         while (parentId) {
           const parent = byId.get(parentId);
           if (!parent) break;
           if (keep.has(parentId)) break;
-          if (!canKeepParentByStatus(parent)) break;
           keep.set(parentId, parent);
           parentId = parent.parent_id ? String(parent.parent_id) : "";
+        }
+        if (!hideSubtasks) {
+          queueDescendants(String(t.id));
         }
       });
       return Array.from(keep.values());
@@ -10756,11 +11396,6 @@
         .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
 
       const personasFiltradas = personasActivas
-        .filter(
-          (p) =>
-            !hasTaskCelulas ||
-            (p.celulas || []).some((celula) => taskCelulaIds.has(String(celula.id)))
-        )
         .map((p) => ({ id: p.id, nombre: `${p.nombre} ${p.apellido}`.trim() }))
         .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
 
@@ -10810,7 +11445,15 @@
         horas_estimadas: 120,
         importante: 120,
       };
-      const resolveWidthPx = (key) => getColumnWidth(key) || widthPxDefaults[key] || 140;
+      const resolveWidthPx = (key) => {
+        if (isTabletBacklogAutoFit()) {
+          return 0;
+        }
+        if (key === "titulo") {
+          return 450;
+        }
+        return 0;
+      };
       const sortState = getTasksBacklogSort();
       const parseDateSortKey = (value) => {
         const raw = String(value || "").trim();
@@ -10870,16 +11513,23 @@
         th.dataset.colKey = key;
         th.draggable = true;
         const px = resolveWidthPx(key);
-        th.style.width = `${px}px`;
-        th.style.minWidth = `${Math.max(60, px)}px`;
+        if (px > 0) {
+          th.style.width = `${px}px`;
+          th.style.minWidth = `${Math.max(60, px)}px`;
+        } else {
+          th.style.width = "";
+          th.style.minWidth = "";
+        }
         const sortIndicator = document.createElement("span");
         sortIndicator.className = "tasks-th-sort-indicator";
         sortIndicator.setAttribute("aria-hidden", "true");
         th.appendChild(sortIndicator);
-        const resizer = document.createElement("span");
-        resizer.className = "tasks-col-resizer";
-        resizer.dataset.action = "resize-col";
-        th.appendChild(resizer);
+        if (key !== "titulo") {
+          const resizer = document.createElement("span");
+          resizer.className = "tasks-col-resizer";
+          resizer.dataset.action = "resize-col";
+          th.appendChild(resizer);
+        }
         return th;
       };
       if (theadRow) {
@@ -10897,20 +11547,21 @@
         const col = document.createElement("col");
         col.dataset.colKey = key;
         const px = resolveWidthPx(key);
-        col.style.width = `${px}px`;
+        if (px > 0) {
+          col.style.width = `${px}px`;
+          col.style.minWidth = `${px}px`;
+        } else {
+          col.style.width = "";
+          col.style.minWidth = "";
+        }
         colgroup.appendChild(col);
       });
       // Fix table width to the sum of column widths so resizing doesn't force other columns to shrink.
       // Enforce a minimum overflow room so horizontal scroll is always available in backlog.
-      const tableWidth = visibleColumns.reduce((acc, key) => acc + resolveWidthPx(key), 0);
-      const viewportWidth = Number(backlogList?.getBoundingClientRect?.().width || 0);
-      const enforcedMinWidth = Math.max(
-        tableWidth,
-        (Number.isFinite(viewportWidth) && viewportWidth > 0 ? Math.round(viewportWidth) : 0) + 320
-      );
-      table.style.width = `${enforcedMinWidth}px`;
-      table.style.minWidth = `${enforcedMinWidth}px`;
-      table.dataset.minWidth = String(enforcedMinWidth);
+      table.style.width = "max-content";
+      table.style.minWidth = "100%";
+      table.dataset.minWidth = "";
+      table.dataset.layoutMode = "content-auto";
 
       const buildStatusSelect = (task) => {
         const pill = document.createElement("span");
@@ -11134,7 +11785,7 @@
           cell.textContent = "-";
           return cell;
         }
-        const todayKey = formatISO(getToday());
+        const todayKey = getTodayKey();
         const overdue = todayKey > end;
         let className = "is-green";
         let overdueSiren = false;
@@ -11174,7 +11825,7 @@
             <button class="btn btn-outline-primary btn-sm" type="button" title="Subtarea" data-action="subtask">
               <i class="bi bi-node-plus"></i>
             </button>
-            <button class="btn btn-outline-danger btn-sm" type="button" title="Eliminar" data-action="delete">
+            <button class="btn btn-danger btn-sm" type="button" title="Eliminar" data-action="delete">
               <i class="bi bi-trash"></i>
             </button>
           </div>
@@ -11218,7 +11869,7 @@
         const bv = resolveBacklogSortValue(b, sortState.key);
         const aMissing = isMissingSortValue(av);
         const bMissing = isMissingSortValue(bv);
-        if (aMissing && bMissing) return compareTaskNatural(a, b);
+        if (aMissing && bMissing) return compareTaskHierarchyOrder(a, b);
         if (aMissing) return 1;
         if (bMissing) return -1;
         let cmp = 0;
@@ -11233,7 +11884,7 @@
           const priorityCmp = pb - pa; // urgente -> baja
           if (priorityCmp !== 0) return priorityCmp;
         }
-        if (cmp === 0) return compareTaskNatural(a, b);
+        if (cmp === 0) return compareTaskHierarchyOrder(a, b);
         return sortState.dir === "desc" ? -cmp : cmp;
       };
       const sortBacklogTasks = (items) => [...items].sort(compareBacklogTasks);
@@ -11248,7 +11899,7 @@
         const children = sortBacklogTasks(childrenByParent.get(String(task.id)) || []);
         const hasChildrenAny = children.length > 0;
         const hasChildren = !hideSubtasks && hasChildrenAny;
-        const expanded = Boolean(state.tasksBacklogExpanded?.[String(task.id)]);
+        const expanded = isBacklogTaskExpanded(task.id, hasChildrenAny);
 
         const tr = document.createElement("tr");
         tr.dataset.taskId = String(task.id);
@@ -11260,18 +11911,21 @@
           const titleTd = document.createElement("td");
         const titleWrap = document.createElement("div");
         titleWrap.className = "tasks-notion-name";
-        titleWrap.style.paddingLeft = `${depth * 16}px`;
         titleWrap.style.setProperty("--task-family-color", familyColor);
+
+        const contentWrap = document.createElement("div");
+        contentWrap.className = "tasks-notion-name-content";
+        contentWrap.style.paddingLeft = `${depth * 16}px`;
 
         const spacer = document.createElement("span");
         spacer.className = "tasks-tree-spacer";
         spacer.textContent = "";
-        titleWrap.appendChild(spacer);
+        contentWrap.appendChild(spacer);
 
         const familyDot = document.createElement("span");
         familyDot.className = "tasks-family-dot";
         familyDot.style.backgroundColor = familyColor;
-        titleWrap.appendChild(familyDot);
+        contentWrap.appendChild(familyDot);
 
         const main = document.createElement("div");
         main.className = "tasks-notion-name-main";
@@ -11318,7 +11972,8 @@
           segmentWrap.appendChild(segmentBadge);
           main.appendChild(segmentWrap);
         }
-        titleWrap.appendChild(main);
+        contentWrap.appendChild(main);
+        titleWrap.appendChild(contentWrap);
 
         queueTaskCommentCount(task.id);
         const commentCount = getTaskCommentCount(task.id);
@@ -11330,7 +11985,7 @@
           key: "comments",
           action: "comments",
           title: "Comentarios",
-          className: "btn btn-outline-secondary btn-sm tasks-comments-trigger",
+          className: "btn btn-success btn-sm tasks-comments-trigger",
           iconClass: "bi bi-chat-left-text",
           commentCount,
           hidden: commentCount <= 0,
@@ -11355,7 +12010,7 @@
           key: "delete",
           action: "delete",
           title: "Eliminar",
-          className: "btn btn-outline-danger btn-sm",
+          className: "btn btn-danger btn-sm",
           iconClass: "bi bi-trash",
         });
 
@@ -11685,7 +12340,7 @@
             <button class="btn btn-outline-primary btn-sm px-2" type="button" title="Subtarea" aria-label="Subtarea" data-action="subtask">
               <i class="bi bi-diagram-3" aria-hidden="true"></i>
             </button>
-            <button class="btn btn-outline-danger btn-sm px-2" type="button" title="Eliminar" aria-label="Eliminar" data-action="delete">
+            <button class="btn btn-danger btn-sm px-2" type="button" title="Eliminar" aria-label="Eliminar" data-action="delete">
               <i class="bi bi-trash" aria-hidden="true"></i>
             </button>
           `;
@@ -11836,7 +12491,7 @@
       }
 
       if (reportAging) {
-        const today = formatISO(getToday());
+        const today = getTodayKey();
         const feriadosSet = new Set((base.feriados || []).map((f) => f.fecha).filter(Boolean));
         let healthy = 0;
         let risk = 0;
@@ -11885,7 +12540,7 @@
           const st = String(t.estado || "").toLowerCase();
           return st !== "done" && st !== "archived";
         }).length;
-        const today = formatISO(getToday());
+        const today = getTodayKey();
         const overdue = tasks.filter((t) => {
           const st = String(t.estado || "").toLowerCase();
           if (st === "done" || st === "archived") return false;
@@ -11987,7 +12642,7 @@
           if (!Number.isFinite(total) || total <= 0) {
             daysCell.textContent = "-";
           } else {
-            const todayKey = formatISO(getToday());
+            const todayKey = getTodayKey();
             const overdue = todayKey > due;
             let className = "is-green";
             let overdueSiren = false;
@@ -12162,7 +12817,7 @@
         const bv = resolveBacklogSortValue(b, sortState.key);
         const aMissing = isMissingSortValue(av);
         const bMissing = isMissingSortValue(bv);
-        if (aMissing && bMissing) return compareTaskNatural(a, b);
+        if (aMissing && bMissing) return compareTaskHierarchyOrder(a, b);
         if (aMissing) return 1;
         if (bMissing) return -1;
         let cmp = 0;
@@ -12177,7 +12832,7 @@
           const priorityCmp = pb - pa;
           if (priorityCmp !== 0) return priorityCmp;
         }
-        if (cmp === 0) return compareTaskNatural(a, b);
+        if (cmp === 0) return compareTaskHierarchyOrder(a, b);
         return sortState.dir === "desc" ? -cmp : cmp;
       };
       const sortBacklogTasks = (items) => [...items].sort(compareBacklogTasks);
@@ -12230,6 +12885,10 @@
       }
 
       const orderedSet = new Set(orderedIds);
+      const hasMissingRows = orderedIds.some((id) => !rowById.has(id));
+      if (hasMissingRows) {
+        return false;
+      }
       let removedAny = false;
       if (prune) {
         rows.forEach((row) => {
@@ -12287,11 +12946,11 @@
         if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
         childrenByParent.get(parentId).push(row);
       });
-      const updateBranch = (taskId, parentVisible) => {
+        const updateBranch = (taskId, parentVisible) => {
         const key = String(taskId || "");
         if (!key) return;
-        const expanded = Boolean(state.tasksBacklogExpanded?.[key]);
         const children = childrenByParent.get(key) || [];
+        const expanded = isBacklogTaskExpanded(key, children.length > 0);
         children.forEach((childRow) => {
           const childId = String(childRow?.dataset?.taskId || "");
           const childVisible = Boolean(parentVisible && expanded);
@@ -12385,8 +13044,10 @@
 
     const updateTaskLocal = async (taskId, payload, okMessage, options = {}) => {
       try {
-        const updated = await putJson(`/tasks/${taskId}`, payload);
+        const updatedRaw = await putJson(`/tasks/${taskId}`, payload);
+        const updated = normalizeTaskDatesForClient(updatedRaw, payload);
         upsertTaskInCache(updated);
+        if (updated?.parent_id) expandBacklogAncestors(updated);
         if (okMessage) {
           setTasksStatus(okMessage, "ok");
         }
@@ -12411,7 +13072,7 @@
     };
 
     const updateOverdueInProgressToToday = async () => {
-      const today = formatISO(getToday());
+      const today = getTodayKey();
       const candidates = (state.tasksCache || []).filter((task) => {
         const status = String(task.estado || "")
           .trim()
@@ -13321,6 +13982,7 @@
           // Resize
           const handle = event.target.closest("[data-action='resize-col']");
           if (handle) {
+            if (key === "titulo") return;
             const selectorKey = CSS.escape(key);
             const col = table.querySelector(`colgroup col[data-col-key="${selectorKey}"]`);
             const startX = event.clientX;
@@ -13513,7 +14175,7 @@
                 "Actualizado.",
                 { rerender: "none" }
               );
-              syncBacklogRowAfterStatusUpdate(row, updated);
+              renderBacklogPreservingViewport();
               return;
             }
             if (field === "prioridad") {
@@ -13524,15 +14186,7 @@
                 "Actualizado.",
                 { rerender: "none" }
               );
-              const filtered = applyFilters(state.tasksCache || []);
-              updatePrioritySummaryButton(filtered);
-              renderReports(filtered);
-              const sortState = getTasksBacklogSort();
-              if (sortState.key === "fecha_vencimiento" || sortState.key === "prioridad") {
-                reorderBacklogRowsInPlace({ prune: true });
-              } else {
-                syncBacklogRowAfterStatusUpdate(row, updated);
-              }
+              renderBacklogPreservingViewport();
               return;
             }
             if (field === "tipo" || field === "segmento") {
@@ -13544,15 +14198,8 @@
                 { rerender: "none" }
               );
               ensureTaskSegmentCatalogEntry(updated?.segmento || nextSegment || "");
-              syncBacklogRowAfterSegmentUpdate(row, updated);
               renderTaskSegmentButtons();
-              const filtered = applyFilters(state.tasksCache || []);
-              updatePrioritySummaryButton(filtered);
-              renderReports(filtered);
-              const sortState = getTasksBacklogSort();
-              if (state.tasksSegmentFilter || sortState.key === "tipo") {
-                reorderBacklogRowsInPlace({ prune: true });
-              }
+              renderBacklogPreservingViewport();
               return;
             }
             if (field === "etiquetas") {
@@ -13602,8 +14249,7 @@
               const updated = await updateTaskLocal(taskId, { fecha_vencimiento: v || null }, "Actualizado.", {
                 rerender: "none",
               });
-              syncBacklogRowAfterStatusUpdate(row, updated);
-              reorderBacklogRowsInPlace({ prune: true });
+              renderBacklogPreservingViewport();
               return;
             }
             if (field === "puntos" || field === "horas_estimadas") {
@@ -13653,8 +14299,15 @@
           }
           if (action === "toggle-subtasks") {
             if (!taskId) return;
-            const nextExpanded = !Boolean(state.tasksBacklogExpanded[String(taskId)]);
+            const childRows = row?.parentElement
+              ? Array.from(row.parentElement.querySelectorAll(`tr[data-parent-id="${String(taskId)}"]`))
+              : [];
+            const currentExpanded = isBacklogTaskExpanded(taskId, childRows.length > 0);
+            const nextExpanded = !currentExpanded;
             state.tasksBacklogExpanded[String(taskId)] = nextExpanded;
+            if (!nextExpanded) {
+              collapseBacklogDescendants(taskId);
+            }
             btn.title = nextExpanded ? "Ocultar subtareas" : "Mostrar subtareas";
             btn.setAttribute("aria-expanded", nextExpanded ? "true" : "false");
             if (!applyBacklogExpandedVisibilityInPlace(String(taskId))) {
@@ -14025,7 +14678,7 @@
       input.className = "table-input form-control form-control-sm";
       const value = row[field] || "";
       const showToday = field === "end_date" && !value;
-      const displayValue = showToday ? formatISO(getToday()) : value;
+      const displayValue = showToday ? getTodayKey() : value;
       input.value = displayValue;
       if (!value) {
         input.dataset.emptyDate = "true";
@@ -16079,6 +16732,7 @@
     const celulaForm = qs("#form-celula");
     const personaForm = qs("#form-persona");
     const sprintForm = qs("#form-sprint");
+    const quarterForm = qs("#form-quarter");
     const feriadoForm = qs("#form-feriado");
     const eventoForm = qs("#form-evento");
     const tipoForm = qs("#form-evento-tipo");
@@ -16590,6 +17244,12 @@
         {
           key: "fecha_cumple",
           label: "Cumple",
+          getSortValue: (row) => {
+            if (!row.fecha_cumple) return "";
+            const [, mes, dia] = String(row.fecha_cumple).split("-");
+            if (!mes || !dia) return "";
+            return `${mes}${dia}`;
+          },
           render: (row) => {
             if (!row.fecha_cumple) return "";
             const [, mes, dia] = row.fecha_cumple.split("-");
@@ -17112,6 +17772,7 @@
     customizeNavbar();
     ensureTaskMenu();
     ensureComprasMenu();
+    syncSidebarActiveState();
     try {
       if (isPublicRetroView()) {
         await initRetroPublic();
@@ -17140,6 +17801,7 @@
       renderAdmin(base);
       initCelulaSelector(base);
       initDataEntrySections();
+      syncSidebarActiveState();
       initDaily();
       initTasks();
       initReleaseTable();
@@ -18077,6 +18739,61 @@
       const tasksLink = Array.from(nav.querySelectorAll("a.nav-link"))
         .find((link) => (link.textContent || "").trim() === "Tareas");
       if (tasksLink) tasksLink.classList.remove("active");
+    }
+  }
+
+  function syncSidebarActiveState() {
+    const nav = qs("#navigation");
+    if (!nav) return;
+
+    const cleanPath = (value) => String(value || "").split("?")[0].split("#")[0];
+    const currentFile = cleanPath(window.location.pathname).split("/").pop() || "index.html";
+    const page = String(document.body?.dataset?.page || "").trim().toLowerCase();
+    const pageTargets = {
+      dashboard: ["index.html"],
+      daily: ["daily.html"],
+      tasks: ["tasks.html"],
+      compras: ["compras.html"],
+      "one-to-one": ["one-to-one.html"],
+      retrospective: ["retrospective.html"],
+      "poker-planning": ["poker-planning.html"],
+      "data-entry": ["data-entry.html"],
+      admin: ["admin.html"],
+      capacity: ["capacity.html"],
+      connect: ["connect.html"],
+      ux: ["ux.html"],
+      releases: ["releases-table.html", "releases-gantt.html"],
+      "releases-table": ["releases-table.html"],
+      "releases-gantt": ["releases-gantt.html"],
+    };
+    const targets = new Set([currentFile, ...(pageTargets[page] || [])]);
+
+    const links = Array.from(nav.querySelectorAll("a.nav-link"));
+    links.forEach((link) => link.classList.remove("active"));
+    nav.querySelectorAll(".nav-item.menu-open, .nav-item.open").forEach((item) => {
+      item.classList.remove("menu-open", "open");
+    });
+
+    const matchingLinks = links.filter((link) => {
+      const rawHref = String(link.getAttribute("href") || "").trim();
+      if (!rawHref || rawHref === "#" || rawHref.startsWith("javascript:")) return false;
+      const hrefFile = cleanPath(rawHref).split("/").pop();
+      return targets.has(hrefFile);
+    });
+    const activeLink =
+      matchingLinks.find((link) => cleanPath(link.getAttribute("href")).split("/").pop() === currentFile) ||
+      matchingLinks[0];
+
+    if (!activeLink) return;
+    activeLink.classList.add("active");
+
+    const treeview = activeLink.closest(".nav-treeview");
+    if (treeview) {
+      const parentItem = treeview.closest(".nav-item");
+      if (parentItem) {
+        parentItem.classList.add("menu-open", "open");
+        parentItem.querySelector(":scope > .nav-link")?.classList.add("active");
+      }
     }
   }
 

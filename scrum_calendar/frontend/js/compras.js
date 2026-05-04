@@ -46,6 +46,9 @@
           supermercadoError: document.getElementById("supermercado-error"),
           supermercadoSuggestions: document.getElementById("supermercado-suggestions"),
           supermercadoSeleccionado: document.getElementById("supermercado-seleccionado"),
+          supermercadoSelectedRow: document.getElementById("supermercado-selected-row"),
+          supermercadoPicker: document.getElementById("supermercado-picker"),
+          btnToggleSupermercadoPicker: document.getElementById("toggle-supermercado-picker"),
           btnUsarSupermercado: document.getElementById("usar-supermercado"),
           inputProducto: document.getElementById("input-producto"),
           productoSuggestions: document.getElementById("producto-suggestions"),
@@ -781,12 +784,29 @@
           `;
         };
 
+        const syncSupermercadoPickerState = () => {
+          const hasSelected = Boolean(state.compraActual.supermercado);
+          if (refs.supermercadoSelectedRow) {
+            refs.supermercadoSelectedRow.classList.toggle("is-visible", hasSelected);
+          }
+          if (refs.supermercadoPicker) {
+            refs.supermercadoPicker.classList.toggle("d-none", hasSelected);
+          }
+          if (!hasSelected && refs.inputSupermercado) {
+            refs.inputSupermercado.focus();
+          }
+        };
+
         const setSupermercadoSeleccionado = (value) => {
           state.compraActual.supermercado = normalizeText(value);
           refs.supermercadoSeleccionado.textContent = state.compraActual.supermercado || "Sin seleccionar";
+          if (refs.inputSupermercado) {
+            refs.inputSupermercado.value = state.compraActual.supermercado || "";
+          }
           if (state.compraActual.supermercado) {
             refs.supermercadoError.textContent = "";
           }
+          syncSupermercadoPickerState();
           updateTotalHeader();
           persistDraftState();
         };
@@ -1907,6 +1927,19 @@
             const ok = await confirmSupermercadoInput();
             if (ok) autofillPriceFromHistory();
           });
+          if (refs.btnToggleSupermercadoPicker) {
+            refs.btnToggleSupermercadoPicker.addEventListener("click", () => {
+              state.compraActual.supermercado = "";
+              refs.supermercadoSeleccionado.textContent = "Sin seleccionar";
+              refs.supermercadoError.textContent = "";
+              if (refs.inputSupermercado) {
+                refs.inputSupermercado.value = "";
+              }
+              syncSupermercadoPickerState();
+              updateTotalHeader();
+              persistDraftState();
+            });
+          }
           refs.inputSupermercado.addEventListener("input", () => {
             refs.supermercadoError.textContent = "";
             persistDraftState();
@@ -2173,6 +2206,7 @@
           } else {
             setSupermercadoSeleccionado(state.compraActual.supermercado || "");
           }
+          syncSupermercadoPickerState();
           if (restoredDraft.view === "reportes") {
             renderReportes();
             switchView("reportes");
