@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Scrum Calendar · Daily</title>
-    <link rel="stylesheet" href="styles.css?v=20260115" />
+    <link rel="stylesheet" href="styles.css?v=20260508dailydonuts2" />
   </head>
   <body data-page="daily">
     <div class="bg-ambient">
@@ -36,6 +36,7 @@
         <nav class="menu">
           <a href="index.html"><span class="menu-text">Dashboard</span></a>
           <a href="daily.html" data-role="admin"><span class="menu-text">Daily</span></a>
+          <a href="reports.html" data-role="admin"><span class="menu-text">Reportes</span></a>
           <a href="one-to-one.html" data-role="admin"><span class="menu-text">1:1</span></a>
           <a href="poker-planning.html" data-role="admin"><span class="menu-text">Poker Planning</span></a>
           <a href="retrospective.html" data-role="admin"><span class="menu-text">Retrospectiva</span></a>
@@ -103,6 +104,26 @@
               <p class="text-muted">Promedio de cierre (incluye en curso).</p>
               <div class="storypoints-alerts" id="daily-kpi-storypoints"></div>
             </article>
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <article class="chart-card daily-card">
+                  <h3>Story Points por miembro</h3>
+                  <div class="daily-donut" id="daily-points-member-chart">
+                    <div class="donut"></div>
+                    <ul class="legend"></ul>
+                  </div>
+                </article>
+              </div>
+              <div class="col-12 col-md-6">
+                <article class="chart-card daily-card">
+                  <h3>Tareas por miembro</h3>
+                  <div class="daily-donut" id="daily-tasks-member-chart">
+                    <div class="donut"></div>
+                    <ul class="legend"></ul>
+                  </div>
+                </article>
+              </div>
+            </div>
 
             <article class="admin-card daily-card" id="daily-team-card">
               <div class="card-head">
@@ -155,6 +176,16 @@
             </article>
 
             <article class="admin-card daily-card daily-span-2">
+              <div class="card-head d-flex align-items-center justify-content-between gap-2">
+                <div>
+                  <h3>Carga manual</h3>
+                  <p class="daily-subtitle">Muestra u oculta el formulario manual.</p>
+                </div>
+                <button class="btn ghost" id="daily-manual-toggle" type="button" aria-expanded="false">Carga Manual</button>
+              </div>
+            </article>
+
+            <article class="admin-card daily-card daily-span-2 hidden" id="daily-manual-card-wrap">
               <div class="card-head">
                 <h3>Carga manual</h3>
                 <p>Registra items adicionales si es necesario.</p>
@@ -205,11 +236,22 @@
                 <p class="form-status" id="daily-status"></p>
               </form>
             </article>
+
+            <article class="admin-card daily-card daily-span-2">
+              <div class="card-head">
+                <h3>Gantt de tareas</h3>
+                <p class="daily-subtitle" id="daily-gantt-context">Vista total</p>
+              </div>
+              <div class="daily-meta" id="daily-gantt-summary"></div>
+              <div class="daily-gantt-scroll" id="daily-gantt-scroll">
+                <div class="daily-gantt-board" id="daily-gantt-board"></div>
+              </div>
+            </article>
           </div>
         </section>
       </main>
     </div>
 
-    <script src="app.js?v=dev"></script>
+    <script src="app.js?v=20260508dailydonuts2"></script>
   </body>
 </html>

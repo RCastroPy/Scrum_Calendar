@@ -115,6 +115,7 @@
     dailyPointsUserMetric: "points",
     dailyPointsShowLabels: false,
     dailySprintManual: false,
+    dailyManualFormOpen: false,
     dailyRealtimeSignature: "",
 	    dailySprintOpen: false,
 	    tasksView: "backlog",
@@ -148,8 +149,12 @@
     tableDataPage: {},
     tableDataState: {},
     releaseStatusFilter: "",
+    releaseStatusFilters: [],
+    releaseStatusOpen: false,
     releaseStatusValueFilter: "",
     releaseQuarterFilter: "",
+    releaseGanttQuarterFilter: "",
+    releaseGanttZoom: 100,
     releaseCompNewFilters: [],
     releaseTypeFilters: [],
     releaseItemsSource: "api",
@@ -1057,12 +1062,36 @@
     const totalDays = countSprintBusinessDays(start, end, feriadosSet);
     let remainingDays = 0;
     const today = getToday();
+    const now = getNow();
+    const noonCutoff = new Date(today.getTime());
+    noonCutoff.setHours(12, 0, 0, 0);
+    const isBeforeNoon = now < noonCutoff;
     if (today < start) {
       remainingDays = totalDays;
     } else if (today > end) {
       remainingDays = 0;
     } else {
-      const elapsed = countSprintBusinessDays(start, end, feriadosSet, today);
+      const sprintStartKey = formatISO(start);
+      const sprintEndKey = formatISO(end);
+      const sameDay = sprintStartKey === sprintEndKey;
+      const todayKey = formatISO(today);
+      let elapsed = 0;
+      const cursor = new Date(start);
+      while (cursor <= today && cursor <= end) {
+        const key = formatISO(cursor);
+        const isWeekend = cursor.getDay() === 0 || cursor.getDay() === 6;
+        if (!isWeekend && !feriadosSet.has(key)) {
+          let factor = 1;
+          if (!sameDay && (key === sprintStartKey || key === sprintEndKey)) {
+            factor = 0.5;
+          }
+          if (key === todayKey) {
+            factor = isBeforeNoon ? 0 : Math.min(0.5, factor);
+          }
+          elapsed += factor;
+        }
+        cursor.setDate(cursor.getDate() + 1);
+      }
       remainingDays = Math.max(0, totalDays - elapsed);
     }
     const ratio = totalDays > 0 ? Math.max(0, Math.min(1, remainingDays / totalDays)) : 0;
@@ -1724,9 +1753,9 @@
         }
         cursor.setDate(cursor.getDate() + 1);
       }
-      return Math.round(total);
+      return Number(total.toFixed(1));
     };
-    const roundValue = (value) => Math.round(value);
+    const roundValue = (value) => Number(Number(value || 0).toFixed(1));
 
     const eventosPorTipo = {};
     const eventosPorPersona = {};
@@ -3014,7 +3043,11 @@
     }
     const baseColumns = data.columns || [];
     const columns = [...baseColumns, { key: "_total", label: "Total" }];
-    const roundEventValue = (value) => Math.round(value || 0);
+    const roundEventValue = (value) => Number(Number(value || 0).toFixed(1));
+    const formatEventValue = (value) =>
+      Number.isInteger(Number(value || 0))
+        ? String(Number(value || 0))
+        : Number(value || 0).toFixed(1).replace(".", ",");
     const rowTotal = (row) =>
       baseColumns.reduce((sum, col) => sum + roundEventValue(row.counts[col.key]), 0);
     const table = document.createElement("table");
@@ -3040,10 +3073,10 @@
           td.textContent = row.persona;
         } else if (col.key === "_total") {
           const total = rowTotal(row);
-          td.textContent = String(total);
+          td.textContent = formatEventValue(total);
         } else {
           const value = roundEventValue(row.counts[col.key]);
-          td.textContent = String(value);
+          td.textContent = formatEventValue(value);
         }
         tr.appendChild(td);
       });
@@ -3066,7 +3099,7 @@
         td.textContent = "Total";
       } else {
         const value = totals[col.key] || 0;
-        td.textContent = String(value);
+        td.textContent = formatEventValue(value);
       }
       totalRow.appendChild(td);
     });
@@ -3152,7 +3185,8 @@
     data.labels.forEach((label, idx) => {
       const li = document.createElement("li");
       const suffix = data.suffix || "";
-      li.innerHTML = `<span style="background:${data.colors[idx]}"></span>${label}<strong class="legend-value">${data.values[idx]}${suffix}</strong>`;
+      const legendValue = data.valueLabels?.[idx] ?? `${data.values[idx]}${suffix}`;
+      li.innerHTML = `<span style="background:${data.colors[idx]}"></span>${label}<strong class="legend-value">${legendValue}</strong>`;
       legend.appendChild(li);
     });
   }
@@ -5807,7 +5841,10 @@
     const nonSortableTargets = Array.isArray(options.nonSortableTargets)
       ? options.nonSortableTargets.filter((idx) => Number.isFinite(Number(idx)))
       : [];
-    const defaultOrder = Array.isArray(options.defaultOrder) ? options.defaultOrder : [];
+    let defaultOrder = Array.isArray(options.defaultOrder) ? options.defaultOrder : [];
+    if (tableKey === "daily-items-table" && !defaultOrder.length) {
+      defaultOrder = [[2, "asc"]];
+    }
     if (
       tableKey === "daily-items-table" &&
       !nonSortableTargets.some((idx) => Number(idx) === 0)
@@ -6396,9 +6433,13 @@
     const devTable = qs("#daily-dev-table");
     const itemsTable = qs("#daily-items-table");
     const itemsCount = qs("#daily-items-count");
+    const manualToggle = qs("#daily-manual-toggle");
+    const manualCardWrap = qs("#daily-manual-card-wrap");
     const form = qs("#daily-form");
     const status = qs("#daily-status");
     const storypointsKpi = qs("#daily-kpi-storypoints");
+    const pointsMemberChart = qs("#daily-points-member-chart");
+    const tasksMemberChart = qs("#daily-tasks-member-chart");
     const pointsUserSelect = qs("#daily-points-user-select");
     const pointsLabelsToggle = qs("#daily-points-labels-toggle");
     const pointsMetricToggle = qs("#daily-points-metric-toggle");
@@ -6526,11 +6567,9 @@
     } else if (state.dailySprintManual) {
       selectedSprint = selectedSprintByState || activeSprint || firstSprintWithData || sprints[0];
     } else {
-      selectedSprint =
-        activeSprint || selectedSprintByState || firstSprintWithData || sprints[0];
-      if ((!selectedSprint || !hasDataForSprint(selectedSprint)) && firstSprintWithData) {
-        selectedSprint = firstSprintWithData;
-      }
+      // In Daily, automatic selection must follow the current Paraguay date/time first.
+      // If two sprints overlap on the boundary day, getActiveSprint already resolves AM/PM.
+      selectedSprint = activeSprint || selectedSprintByState || firstSprintWithData || sprints[0];
     }
     state.selectedSprintId = showAllDailySprints ? "__all__" : selectedSprint ? String(selectedSprint.id) : "";
 
@@ -6600,6 +6639,15 @@
     if (sprintLabel) sprintLabel.textContent = sprintLabelText;
     if (teamSprintLabel) teamSprintLabel.textContent = showAllDailySprints ? "Todos los sprints" : selectedSprint?.nombre || "-";
     if (itemsSprintLabel) itemsSprintLabel.textContent = showAllDailySprints ? "Todos los sprints" : selectedSprint?.nombre || "-";
+    if (manualCardWrap) {
+      manualCardWrap.classList.toggle("hidden", !state.dailyManualFormOpen);
+      if ("hidden" in manualCardWrap) manualCardWrap.hidden = !state.dailyManualFormOpen;
+    }
+    if (manualToggle) {
+      manualToggle.classList.toggle("is-active", Boolean(state.dailyManualFormOpen));
+      manualToggle.setAttribute("aria-expanded", state.dailyManualFormOpen ? "true" : "false");
+      manualToggle.textContent = state.dailyManualFormOpen ? "Ocultar Carga Manual" : "Carga Manual";
+    }
 
     const feriadosFiltrados = state.selectedCelulaId
       ? (base.feriados || []).filter(
@@ -6758,13 +6806,53 @@
         feriadosSet,
         state.dailyStoryPointsFilter
       );
+    const renderDailyMemberDonut = (container, rows, metric = "points") => {
+      if (!container) return;
+      const donutPalette = [
+        "#0d6efd",
+        "#20c997",
+        "#fd7e14",
+        "#6610f2",
+        "#dc3545",
+        "#198754",
+        "#0dcaf0",
+        "#ffc107",
+      ];
+      const totals = new Map();
+      rows.forEach((item) => {
+        const key = resolvePersonaNameFromItem(item, personaLookup, personaNameById) || "Sin asignar";
+        const points = Number(item?.story_points);
+        const value =
+          metric === "points"
+            ? Number.isFinite(points) && points > 0
+              ? points
+              : 0
+            : 1;
+        if (value <= 0) return;
+        totals.set(key, (totals.get(key) || 0) + value);
+      });
+      const ordered = Array.from(totals.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "es"));
+      renderPie(
+        container,
+        {
+          labels: ordered.map(([label]) => label),
+          values: ordered.map(([, value]) => value),
+          colors: ordered.map((_, idx) => donutPalette[idx % donutPalette.length]),
+          suffix: metric === "points" ? " pts" : "",
+        },
+        "donut"
+      );
+    };
 
     ensureStatusCard();
     if (statusChart) {
       const counts = new Map();
+      const pointsByStatus = new Map();
       itemsAll.forEach((item) => {
         const label = getStatusLabel(item.status) || "Sin estado";
         counts.set(label, (counts.get(label) || 0) + 1);
+        const points = Number(item.story_points);
+        pointsByStatus.set(label, (pointsByStatus.get(label) || 0) + (Number.isFinite(points) ? points : 0));
       });
       const preferredOrder = [
         "In Progress",
@@ -6789,6 +6877,12 @@
         "Sin estado": "#6c757d",
       };
       const values = ordered.map((label) => counts.get(label) || 0);
+      const valueLabels = ordered.map((label) => {
+        const itemsCount = counts.get(label) || 0;
+        const points = Number((pointsByStatus.get(label) || 0).toFixed(1));
+        const pointsLabel = Number.isInteger(points) ? String(points) : String(points).replace(".", ",");
+        return `${itemsCount} Items · ${pointsLabel} Pts`;
+      });
       const colors = ordered.map((label) => colorMap[label] || "#4ba3ff");
       renderPie(
         statusChart,
@@ -6796,6 +6890,7 @@
           labels: ordered,
           values,
           colors,
+          valueLabels,
         },
         "donut"
       );
@@ -6892,6 +6987,8 @@
     }
     renderDailyItemsSummary(itemsCount, items.length);
     renderStorypointsKpiCard(items);
+    renderDailyMemberDonut(pointsMemberChart, itemsAll, "points");
+    renderDailyMemberDonut(tasksMemberChart, itemsAll, "tasks");
 
     if (storypointsKpi && !storypointsKpi.dataset.bound) {
       storypointsKpi.dataset.bound = "true";
@@ -8124,6 +8221,35 @@
       };
     };
 
+    const ensureDailyCommentsPanel = (formEl, ref) => {
+      let panel = formEl.querySelector("#daily-item-comments-panel");
+      if (!panel) {
+        panel = document.createElement("section");
+        panel.id = "daily-item-comments-panel";
+        panel.className = "daily-comments-panel";
+        panel.innerHTML = `
+          <div class="daily-comments-head">
+            <div>
+              <h4 class="mb-0">Comentarios</h4>
+              <p class="mb-0">Notas internas del item seleccionado.</p>
+            </div>
+          </div>
+          <div class="daily-comments-list" data-daily-comments-list></div>
+          <div class="daily-comment-compose">
+            <input class="form-control" type="text" data-daily-comment-input placeholder="Agregar comentario..." />
+            <button class="btn btn-primary btn-sm" type="button" data-daily-comment-submit>Agregar</button>
+          </div>
+          <p class="form-status mb-0" data-daily-comment-status></p>
+        `;
+        const actions = formEl.querySelector(".d-flex.gap-2, .form-actions");
+        if (actions) actions.parentNode?.insertBefore(panel, actions);
+        else formEl.appendChild(panel);
+      }
+      panel.dataset.itemSource = ref.source;
+      panel.dataset.itemId = String(ref.id);
+      return panel;
+    };
+
     const upsertDailyItemLocal = (source, updated) => {
       if (!state.base || !updated) return;
       const targetKey = source === "release" ? "releaseItems" : "sprintItems";
@@ -8454,10 +8580,21 @@
       table.querySelector("tfoot")?.remove();
       const storyIndex = columns.findIndex((col) => col.key === "story_points");
       if (storyIndex < 0) return;
-      const total = rows.reduce((sum, row) => {
+      let total = rows.reduce((sum, row) => {
         const value = Number(row.story_points);
         return Number.isFinite(value) ? sum + value : sum;
       }, 0);
+      if (window.jQuery?.fn?.DataTable && window.jQuery.fn.DataTable.isDataTable(table)) {
+        const dt = window.jQuery(table).DataTable();
+        total = 0;
+        dt.rows({ search: "applied", page: "current" }).every(function () {
+          const cell = this.node()?.children?.[storyIndex];
+          const input = cell?.querySelector?.("input");
+          const rawValue = input ? input.value : cell?.textContent;
+          const value = Number(String(rawValue ?? "").replace(",", ".").trim());
+          if (Number.isFinite(value)) total += value;
+        });
+      }
       const tfoot = document.createElement("tfoot");
       const tr = document.createElement("tr");
       tr.className = "totals-row daily-items-total-row";
@@ -8476,6 +8613,9 @@
       tfoot.appendChild(tr);
       table.appendChild(tfoot);
     };
+    if (!state.tableSort["daily-items-table"]) {
+      state.tableSort["daily-items-table"] = { key: "issue_key", dir: "asc" };
+    }
 
     renderAdminTable(
       itemsTable,
@@ -8485,22 +8625,65 @@
         {
           label: "Editar",
           icon: editIcon,
-	          onClick: (row) => {
-	            if (!form) return;
+          onClick: (row) => {
+            if (!form) return;
             form.issue_type.value = row.issue_type || "Task";
             form.issue_key.value = row.issue_key || "";
             form.summary.value = row.summary || "";
             form.status.value = row.status || "To Do";
             form.story_points.value = row.story_points ?? "";
-	            form.persona_id.value = row.persona_id ? String(row.persona_id) : "";
-	            form.sprint_id.value = row.sprint_id ? String(row.sprint_id) : "";
+            form.persona_id.value = row.persona_id ? String(row.persona_id) : "";
+            form.sprint_id.value = row.sprint_id ? String(row.sprint_id) : "";
             form.dataset.editSource = String(row?.id || "").startsWith("rel-")
               ? "release"
               : "sprint";
-	            setFormMode(form, "edit", row.id, "Actualizar item");
-	            form.scrollIntoView({ behavior: "smooth", block: "center" });
-	          },
-	        },
+            setFormMode(form, "edit", row.id, "Actualizar item");
+            openAdminModal(form, `Editar item · ${row.issue_key || ""}`);
+            {
+              const ref = resolveDailyItemRef(row?.id);
+              if (ref.id) {
+                const panel = ensureDailyCommentsPanel(form, ref);
+                const list = panel.querySelector("[data-daily-comments-list]");
+                const statusEl = panel.querySelector("[data-daily-comment-status]");
+                if (list) list.innerHTML = `<p class="daily-comment-empty mb-0">Cargando...</p>`;
+                fetchJson(`/daily-items/${ref.source}/${ref.id}/comments`)
+                  .then((comments) => {
+                    if (!list) return;
+                    if (!Array.isArray(comments) || !comments.length) {
+                      list.innerHTML = `<p class="daily-comment-empty mb-0">Sin comentarios.</p>`;
+                    } else {
+                      list.innerHTML = comments
+                        .map(
+                          (comment) => `
+                            <div class="daily-comment-row" data-comment-id="${comment?.id || ""}">
+                              <div class="daily-comment-main">
+                                <strong>${comment?.usuario?.username || "admin"}</strong>
+                                <span data-comment-text>${String(comment?.texto || "")}</span>
+                                <small>${comment?.creado_en ? new Date(comment.creado_en).toLocaleString() : ""}</small>
+                              </div>
+                              <div class="daily-comment-actions">
+                                <button class="daily-comment-icon" type="button" title="Editar" data-action="edit-comment" data-comment-id="${comment?.id || ""}"><i class="bi bi-pencil"></i></button>
+                                <button class="daily-comment-icon daily-comment-danger" type="button" title="Eliminar" data-action="delete-comment" data-comment-id="${comment?.id || ""}"><i class="bi bi-trash"></i></button>
+                              </div>
+                            </div>
+                          `
+                        )
+                        .join("");
+                    }
+                    if (statusEl) statusEl.textContent = "";
+                  })
+                  .catch((err) => {
+                    if (list) list.innerHTML = `<p class="daily-comment-empty mb-0">No se pudieron cargar comentarios.</p>`;
+                    if (statusEl) {
+                      statusEl.textContent = err?.message || "";
+                      statusEl.dataset.type = "error";
+                    }
+                  });
+              }
+            }
+            window.setTimeout(() => form.issue_key?.focus(), 0);
+          },
+        },
         {
           label: "Eliminar",
           icon: trashIcon,
@@ -8529,6 +8712,18 @@
       []
     );
     appendDailyItemsStoryPointsFooter(itemsTable, items, itemsColumns, true);
+    {
+      const renderedTable = itemsTable?.querySelector("table");
+      if (renderedTable && window.jQuery?.fn?.DataTable?.isDataTable(renderedTable)) {
+        const $renderedTable = window.jQuery(renderedTable);
+        $renderedTable.off(".dailyItemsFooter");
+        $renderedTable.on(
+          "draw.dt.dailyItemsFooter search.dt.dailyItemsFooter order.dt.dailyItemsFooter length.dt.dailyItemsFooter page.dt.dailyItemsFooter",
+          () => appendDailyItemsStoryPointsFooter(itemsTable, items, itemsColumns, true)
+        );
+        appendDailyItemsStoryPointsFooter(itemsTable, items, itemsColumns, true);
+      }
+    }
     if (itemsTable && !itemsTable.querySelector("table")) {
       renderBasicItemsTable(itemsTable, items, itemsColumns);
       appendDailyItemsStoryPointsFooter(itemsTable, items, itemsColumns, false);
@@ -8568,6 +8763,7 @@
     const sprintSelect = qs("#daily-sprint-select");
     const sprintTrigger = qs("#daily-sprint-trigger");
     const sprintPanel = qs("#daily-sprint-panel");
+    const manualToggle = qs("#daily-manual-toggle");
     const form = qs("#daily-form");
     const clearBtn = qs("#daily-form-clear");
     const status = qs("#daily-status");
@@ -8603,6 +8799,13 @@
     if (sprintPanel && !sprintPanel.dataset.bound) {
       sprintPanel.dataset.bound = "true";
       sprintPanel.addEventListener("click", (event) => event.stopPropagation());
+    }
+    if (manualToggle && !manualToggle.dataset.bound) {
+      manualToggle.dataset.bound = "true";
+      manualToggle.addEventListener("click", async () => {
+        state.dailyManualFormOpen = !state.dailyManualFormOpen;
+        await renderDaily(state.base);
+      });
     }
 
     if (!state.dailyStatusOutsideBound) {
@@ -8706,7 +8909,10 @@
 
     if (clearBtn && !clearBtn.dataset.bound) {
       clearBtn.dataset.bound = "true";
-      clearBtn.addEventListener("click", () => resetDailyForm());
+      clearBtn.addEventListener("click", () => {
+        form?.querySelector("#daily-item-comments-panel")?.remove();
+        resetDailyForm();
+      });
     }
 
     if (pointsUserSelect && !pointsUserSelect.dataset.bound) {
@@ -8801,6 +9007,79 @@
     if (form && !form.dataset.bound) {
       form.dataset.bound = "true";
       form.issue_key?.addEventListener("input", () => normalizeDailyIssueKeyInput(form.issue_key));
+      form.addEventListener("adminmodal:closed", () => {
+        form?.querySelector("#daily-item-comments-panel")?.remove();
+      });
+      form.addEventListener("click", async (event) => {
+        const panel = form.querySelector("#daily-item-comments-panel");
+        if (!panel) return;
+        const ref = {
+          source: panel.dataset.itemSource,
+          id: Number(panel.dataset.itemId || 0),
+        };
+        if (!ref.source || !ref.id) return;
+        const statusEl = panel.querySelector("[data-daily-comment-status]");
+        const submitBtn = event.target.closest("[data-daily-comment-submit]");
+        const actionBtn = event.target.closest("[data-action][data-comment-id]");
+        try {
+          if (submitBtn) {
+            const input = panel.querySelector("[data-daily-comment-input]");
+            const texto = String(input?.value || "").trim();
+            if (!texto) return;
+            await postJson(`/daily-items/${ref.source}/${ref.id}/comments`, { texto });
+            if (input) input.value = "";
+          } else if (actionBtn) {
+            const commentId = Number(actionBtn.dataset.commentId || 0);
+            if (!commentId) return;
+            if (actionBtn.dataset.action === "edit-comment") {
+              const row = actionBtn.closest(".daily-comment-row");
+              const current = row?.querySelector("[data-comment-text]")?.textContent || "";
+              const next = prompt("Editar comentario", current);
+              if (next == null) return;
+              const clean = String(next || "").trim();
+              if (!clean) return;
+              await putJson(`/daily-items/${ref.source}/${ref.id}/comments/${commentId}`, { texto: clean });
+            } else if (actionBtn.dataset.action === "delete-comment") {
+              if (!confirm("Eliminar comentario?")) return;
+              const res = await fetchWithFallback(`/daily-items/${ref.source}/${ref.id}/comments/${commentId}`, { method: "DELETE" });
+              if (!res.ok) throw new Error("No se pudo eliminar el comentario");
+            }
+          } else {
+            return;
+          }
+          const comments = await fetchJson(`/daily-items/${ref.source}/${ref.id}/comments`);
+          const list = panel.querySelector("[data-daily-comments-list]");
+          if (list) {
+            if (!Array.isArray(comments) || !comments.length) {
+              list.innerHTML = `<p class="daily-comment-empty mb-0">Sin comentarios.</p>`;
+            } else {
+              list.innerHTML = comments
+                .map(
+                  (comment) => `
+                    <div class="daily-comment-row" data-comment-id="${comment?.id || ""}">
+                      <div class="daily-comment-main">
+                        <strong>${comment?.usuario?.username || "admin"}</strong>
+                        <span data-comment-text>${String(comment?.texto || "")}</span>
+                        <small>${comment?.creado_en ? new Date(comment.creado_en).toLocaleString() : ""}</small>
+                      </div>
+                      <div class="daily-comment-actions">
+                        <button class="daily-comment-icon" type="button" title="Editar" data-action="edit-comment" data-comment-id="${comment?.id || ""}"><i class="bi bi-pencil"></i></button>
+                        <button class="daily-comment-icon daily-comment-danger" type="button" title="Eliminar" data-action="delete-comment" data-comment-id="${comment?.id || ""}"><i class="bi bi-trash"></i></button>
+                      </div>
+                    </div>
+                  `
+                )
+                .join("");
+            }
+          }
+          if (statusEl) statusEl.textContent = "";
+        } catch (err) {
+          if (statusEl) {
+            statusEl.textContent = err?.message || "No se pudo actualizar comentarios.";
+            statusEl.dataset.type = "error";
+          }
+        }
+      });
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         const issueKey = normalizeDailyIssueKeyInput(form.issue_key);
@@ -8908,6 +9187,10 @@
             preserveValues: editId ? null : preservedFormValues,
             focusIssueKey: !editId,
           });
+          if (editId) {
+            form?.querySelector("#daily-item-comments-panel")?.remove();
+            closeAdminModal(false);
+          }
           void syncDailyRealtime({ forceRender: false, skipWhenEditing: true });
         } catch (err) {
           if (status) {
@@ -14578,6 +14861,10 @@
               <select id="release-quarter-filter" class="form-select form-select-sm"></select>
             </div>
             <div>
+              <label class="form-label mb-1">Estados</label>
+              <div id="release-status-filter"></div>
+            </div>
+            <div>
               <button class="btn btn-outline-secondary btn-sm" type="button" id="release-columns-btn">
                 <i class="bi bi-layout-three-columns me-1"></i>Columnas
               </button>
@@ -14760,6 +15047,7 @@
 
     const toolbar = ensureToolbar();
     const quarterFilterEl = qs("#release-quarter-filter", toolbar);
+    const releaseStatusFilterEl = qs("#release-status-filter", toolbar);
     const columnsBtn = qs("#release-columns-btn", toolbar);
     const columnsPanel = qs("#release-columns-panel", toolbar);
     const columnsList = qs("#release-columns-list", toolbar);
@@ -14826,6 +15114,77 @@
         });
       }
     }
+    if (releaseStatusFilterEl) {
+      releaseStatusFilterEl.innerHTML = "";
+      const wrapper = document.createElement("div");
+      wrapper.className = "status-filter";
+      if (state.releaseStatusOpen) wrapper.classList.add("open");
+      const trigger = document.createElement("button");
+      trigger.type = "button";
+      trigger.className = "status-filter-trigger";
+      const statusLabels = {
+        pendiente: "Pendiente",
+        progreso: "En progreso",
+        finalizada: "Finalizada",
+      };
+      const selectedReleaseStatuses = (state.releaseStatusFilters || []).filter(Boolean);
+      const triggerText = selectedReleaseStatuses.length
+        ? selectedReleaseStatuses.map((value) => statusLabels[value] || value).join(", ")
+        : "Todos";
+      trigger.innerHTML = `<span>${triggerText}</span><span class="status-filter-caret">▾</span>`;
+      trigger.addEventListener("click", (event) => {
+        event.stopPropagation();
+        state.releaseStatusOpen = !state.releaseStatusOpen;
+        initReleaseTable();
+      });
+      const panelFilter = document.createElement("div");
+      panelFilter.className = "status-filter-panel";
+      panelFilter.addEventListener("click", (event) => event.stopPropagation());
+      const allBtn = document.createElement("button");
+      allBtn.type = "button";
+      allBtn.className = "status-filter-option";
+      if (!selectedReleaseStatuses.length) allBtn.classList.add("is-selected");
+      allBtn.textContent = "Todos";
+      allBtn.addEventListener("click", () => {
+        state.releaseStatusFilters = [];
+        state.releaseStatusFilter = "";
+        state.releaseStatusOpen = false;
+        state.adminPage["release-table"] = 1;
+        initReleaseTable();
+      });
+      panelFilter.appendChild(allBtn);
+      [
+        ["pendiente", "Pendiente"],
+        ["progreso", "En progreso"],
+        ["finalizada", "Finalizada"],
+      ].forEach(([value, label]) => {
+        const optionLabel = document.createElement("label");
+        optionLabel.className = "status-filter-option";
+        if (selectedReleaseStatuses.includes(value)) optionLabel.classList.add("is-selected");
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.value = value;
+        input.checked = selectedReleaseStatuses.includes(value);
+        input.addEventListener("change", () => {
+          const selected = new Set(state.releaseStatusFilters || []);
+          if (input.checked) selected.add(value);
+          else selected.delete(value);
+          state.releaseStatusFilters = Array.from(selected);
+          state.releaseStatusFilter = state.releaseStatusFilters.length === 1 ? state.releaseStatusFilters[0] : "";
+          state.releaseStatusOpen = true;
+          state.adminPage["release-table"] = 1;
+          initReleaseTable();
+        });
+        const text = document.createElement("span");
+        text.textContent = label;
+        optionLabel.appendChild(input);
+        optionLabel.appendChild(text);
+        panelFilter.appendChild(optionLabel);
+      });
+      wrapper.appendChild(trigger);
+      wrapper.appendChild(panelFilter);
+      releaseStatusFilterEl.appendChild(wrapper);
+    }
 
     const toggleColumnsPanel = (open) => {
       if (!columnsPanel) return;
@@ -14876,9 +15235,9 @@
     const quarterFiltered = state.releaseQuarterFilter
       ? releasesFiltrados.filter((item) => getQuarterFilterValue(item) === state.releaseQuarterFilter)
       : releasesFiltrados;
-    const activeFilter = state.releaseStatusFilter || "";
-    const releasesVisibles = activeFilter
-      ? quarterFiltered.filter((item) => classifyReleaseStatus(item.status) === activeFilter)
+    const activeFilters = (state.releaseStatusFilters || []).filter(Boolean);
+    const releasesVisibles = activeFilters.length
+      ? quarterFiltered.filter((item) => activeFilters.includes(classifyReleaseStatus(item.status)))
       : quarterFiltered;
 
     const counts = quarterFiltered.reduce(
@@ -14900,7 +15259,17 @@
         card.addEventListener("click", () => {
           let filter = card.dataset.releaseFilter || "";
           if (filter === "all") filter = "";
-          state.releaseStatusFilter = state.releaseStatusFilter === filter ? "" : filter;
+          if (!filter) {
+            state.releaseStatusFilters = [];
+            state.releaseStatusFilter = "";
+          } else {
+            const selected = new Set(state.releaseStatusFilters || []);
+            if (selected.has(filter)) selected.delete(filter);
+            else selected.add(filter);
+            state.releaseStatusFilters = Array.from(selected);
+            state.releaseStatusFilter = state.releaseStatusFilters.length === 1 ? state.releaseStatusFilters[0] : "";
+          }
+          state.releaseStatusOpen = false;
           state.adminPage["release-table"] = 1;
           initReleaseTable();
         });
@@ -14909,9 +15278,18 @@
       const isAll = !filter || filter === "all";
       card.classList.toggle(
         "is-active",
-        (isAll && !state.releaseStatusFilter) || (!isAll && filter === state.releaseStatusFilter)
+        (isAll && !(state.releaseStatusFilters || []).length) ||
+          (!isAll && (state.releaseStatusFilters || []).includes(filter))
       );
     });
+    if (!state.releaseStatusOutsideBound) {
+      state.releaseStatusOutsideBound = true;
+      document.addEventListener("click", () => {
+        if (!state.releaseStatusOpen) return;
+        state.releaseStatusOpen = false;
+        initReleaseTable();
+      });
+    }
 
     const renderQuarterSummary = (rows) => {
       const container = qs("#release-quarter-summary");
@@ -15089,6 +15467,196 @@
         const colors = values.map((_, idx) => palette[idx % palette.length]);
         renderPie(breakdown, { labels, values, colors }, "donut");
       }
+    }
+  }
+  function initReleaseGantt() {
+    const panel = qs("#release-gantt-page");
+    if (!panel || !state.base) return;
+    const base = state.base;
+    const quarterFilterEl = qs("#release-gantt-quarter-filter", panel);
+    const summaryEl = qs("#release-gantt-summary", panel);
+    const boardEl = qs("#release-gantt-board", panel);
+    const zoomEl = qs("#release-gantt-zoom", panel);
+    const zoomOutEl = qs("#release-gantt-zoom-out", panel);
+    const zoomInEl = qs("#release-gantt-zoom-in", panel);
+    const zoomLabelEl = qs("#release-gantt-zoom-label", panel);
+    const kpiTotalEl = qs("#release-gantt-kpi-total", panel);
+    const kpiTotalContextEl = qs("#release-gantt-kpi-total-context", panel);
+    const kpiQuarterEl = qs("#release-gantt-kpi-quarter-total", panel);
+    const kpiQuarterContextEl = qs("#release-gantt-kpi-quarter-context", panel);
+    const getQuarterLabel = (row) => {
+      if (row.quarter) return row.quarter;
+      const startDate = parseDateOnly(row.start_date);
+      const dueDate = parseDateOnly(row.due_date);
+      const date = startDate || dueDate;
+      if (!date) return "-";
+      return `Q${Math.floor(date.getMonth() / 3) + 1} ${date.getFullYear()}`;
+    };
+    const isReleaseRow = (item) => {
+      const issueType = normalizeText(item.issue_type || "");
+      const tipo = normalizeText(item.release_tipo || "");
+      return issueType === "release" || (!!tipo && tipo !== "tarea");
+    };
+    const getDateRange = (row) => {
+      const start = parseDateOnly(row.start_date || row.due_date || row.end_date || "");
+      const end = parseDateOnly(row.end_date || row.due_date || row.start_date || "");
+      if (!start && !end) return null;
+      const resolvedStart = start || end;
+      const resolvedEnd = end || start;
+      if (!resolvedStart || !resolvedEnd) return null;
+      return {
+        start: resolvedStart <= resolvedEnd ? resolvedStart : resolvedEnd,
+        end: resolvedEnd >= resolvedStart ? resolvedEnd : resolvedStart,
+        openEnded: Boolean(row.start_date && !row.end_date && !row.due_date),
+        pendingEndDate: Boolean(row.start_date && row.due_date && !row.end_date),
+      };
+    };
+    const buildDateSpan = (start, end) => {
+      const dates = [];
+      if (!start || !end) return dates;
+      const cursor = new Date(start);
+      cursor.setHours(0, 0, 0, 0);
+      const last = new Date(end);
+      last.setHours(0, 0, 0, 0);
+      while (cursor <= last) {
+        dates.push(new Date(cursor));
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return dates;
+    };
+    const getWeekLabel = (date) => {
+      const oneJan = new Date(date.getFullYear(), 0, 1);
+      const dayMs = 24 * 60 * 60 * 1000;
+      return `S${Math.ceil((((date - oneJan) / dayMs) + oneJan.getDay() + 1) / 7)}`;
+    };
+    const getBarClass = (row, range) => {
+      const statusText = normalizeText(row.status || "");
+      if (isDoneStatus(row.status)) return "is-done";
+      if (range?.pendingEndDate) return "is-progress is-pending-end-date";
+      if (range?.openEnded) return "is-progress is-open-ended";
+      if (statusText.includes("progress") || statusText.includes("progreso") || statusText.includes("despliegue")) return "is-progress";
+      if (row.start_date && row.end_date && row.due_date) return "is-complete-dates";
+      return "is-pending";
+    };
+    const allReleases = (base.releaseItems || []).filter((item) => {
+      if (!isReleaseRow(item)) return false;
+      if (state.selectedCelulaId) return String(item.celula_id) === String(state.selectedCelulaId);
+      return true;
+    });
+    const quarterOptions = Array.from(new Set(allReleases.map((item) => getQuarterLabel(item)).filter((value) => value && value !== "-"))).sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
+    if (quarterFilterEl) {
+      const currentQuarter = `Q${Math.floor(getToday().getMonth() / 3) + 1} ${getToday().getFullYear()}`;
+      quarterFilterEl.innerHTML = `<option value="">Todos</option>${quarterOptions.map((value) => `<option value="${value}">${value}</option>`).join("")}`;
+      if (!state.releaseGanttQuarterFilter && quarterOptions.includes(currentQuarter)) state.releaseGanttQuarterFilter = currentQuarter;
+      quarterFilterEl.value = state.releaseGanttQuarterFilter || "";
+      if (!quarterFilterEl.dataset.bound) {
+        quarterFilterEl.dataset.bound = "true";
+        quarterFilterEl.addEventListener("change", () => {
+          state.releaseGanttQuarterFilter = quarterFilterEl.value || "";
+          initReleaseGantt();
+        });
+      }
+    }
+    const filteredReleases = state.releaseGanttQuarterFilter
+      ? allReleases.filter((item) => getQuarterLabel(item) === state.releaseGanttQuarterFilter)
+      : allReleases;
+    const datedRows = filteredReleases.map((item) => ({ item, range: getDateRange(item) })).filter((entry) => entry.range);
+    if (kpiTotalEl) kpiTotalEl.textContent = String(allReleases.length);
+    if (kpiTotalContextEl) kpiTotalContextEl.textContent = state.selectedCelulaId ? "Celula seleccionada" : "Todas las celulas";
+    if (kpiQuarterEl) kpiQuarterEl.textContent = String(filteredReleases.length);
+    if (kpiQuarterContextEl) kpiQuarterContextEl.textContent = `${state.selectedCelulaId ? "Celula seleccionada" : "Todas las celulas"} · ${state.releaseGanttQuarterFilter || "Todos"}`;
+    if (zoomEl) {
+      zoomEl.value = String(state.releaseGanttZoom || 100);
+      if (!zoomEl.dataset.bound) {
+        zoomEl.dataset.bound = "true";
+        zoomEl.addEventListener("input", () => {
+          state.releaseGanttZoom = Number(zoomEl.value || 100);
+          initReleaseGantt();
+        });
+      }
+    }
+    if (zoomOutEl && !zoomOutEl.dataset.bound) {
+      zoomOutEl.dataset.bound = "true";
+      zoomOutEl.addEventListener("click", () => {
+        state.releaseGanttZoom = Math.max(40, Number(state.releaseGanttZoom || 100) - 10);
+        initReleaseGantt();
+      });
+    }
+    if (zoomInEl && !zoomInEl.dataset.bound) {
+      zoomInEl.dataset.bound = "true";
+      zoomInEl.addEventListener("click", () => {
+        state.releaseGanttZoom = Math.min(160, Number(state.releaseGanttZoom || 100) + 10);
+        initReleaseGantt();
+      });
+    }
+    if (zoomLabelEl) zoomLabelEl.textContent = `${Number(state.releaseGanttZoom || 100)}%`;
+    if (!datedRows.length) {
+      if (summaryEl) summaryEl.textContent = filteredReleases.length ? "Los releases filtrados no tienen fechas para mostrar en Gantt." : "Sin releases para visualizar.";
+      if (boardEl) boardEl.innerHTML = '<p class="empty">Sin releases para visualizar en Gantt.</p>';
+      return;
+    }
+    const minStart = datedRows.reduce((min, entry) => (!min || entry.range.start < min ? entry.range.start : min), datedRows[0].range.start);
+    const maxEnd = datedRows.reduce((max, entry) => (!max || entry.range.end > max ? entry.range.end : max), datedRows[0].range.end);
+    const dates = buildDateSpan(minStart, maxEnd);
+    const dateKeys = dates.map((date) => formatISO(date));
+    const monthGroups = [];
+    const weekGroups = [];
+    dates.forEach((date) => {
+      const monthKey = `${date.getFullYear()}-${date.getMonth()}`;
+      const monthLabel = date.toLocaleDateString("es-PY", { month: "short", year: "numeric" });
+      const lastMonth = monthGroups[monthGroups.length - 1];
+      if (lastMonth?.key === monthKey) lastMonth.span += 1;
+      else monthGroups.push({ key: monthKey, label: monthLabel, span: 1 });
+      const weekKey = `${date.getFullYear()}-${getWeekLabel(date)}`;
+      const lastWeek = weekGroups[weekGroups.length - 1];
+      if (lastWeek?.key === weekKey) lastWeek.span += 1;
+      else weekGroups.push({ key: weekKey, label: getWeekLabel(date), span: 1 });
+    });
+    const holidayKeys = new Set((base.feriados || []).map((item) => item.fecha).filter(Boolean));
+    const dayInitials = ["D", "L", "M", "M", "J", "V", "S"];
+    const dayWidth = Math.round(36 * (Number(state.releaseGanttZoom || 100) / 100));
+    const gridColumns = `minmax(320px, 380px) repeat(${dates.length}, ${dayWidth}px)`;
+    if (summaryEl) summaryEl.textContent = `${state.releaseGanttQuarterFilter || "Todos"} · ${filteredReleases.length} release(s) · ${datedRows.length} con fechas`;
+    if (boardEl) {
+      boardEl.style.setProperty("--day-width", `${dayWidth}px`);
+      boardEl.innerHTML = `
+        <div class="daily-gantt-grid" style="grid-template-columns:${gridColumns}">
+          <div class="daily-gantt-head daily-gantt-task-head">Release</div>
+          ${monthGroups.map((group) => `<div class="daily-gantt-head" style="grid-column:span ${group.span}">${escapeHtml(group.label)}</div>`).join("")}
+          <div class="daily-gantt-subhead"></div>
+          ${weekGroups.map((group) => `<div class="daily-gantt-subhead" style="grid-column:span ${group.span}">${escapeHtml(group.label)}</div>`).join("")}
+          <div class="daily-gantt-subhead"></div>
+          ${dates.map((date) => {
+            const key = formatISO(date);
+            const classes = ["daily-gantt-day-head"];
+            if (holidayKeys.has(key)) classes.push("is-holiday");
+            return `<div class="${classes.join(" ")}">${dayInitials[date.getDay()]}<br>${date.getDate()}</div>`;
+          }).join("")}
+          ${datedRows.map(({ item, range }) => {
+            const startIndex = Math.max(0, dateKeys.indexOf(formatISO(range.start)));
+            const endIndex = Math.max(startIndex, dateKeys.indexOf(formatISO(range.end)));
+            const width = Math.max(1, endIndex - startIndex + 1);
+            const startDateText = item.start_date || item.due_date || "-";
+            const endDateText = item.end_date || item.due_date || "-";
+            return `
+              <div class="daily-gantt-task">
+                <strong>${escapeHtml(item.issue_key || "Sin issue")}</strong>
+                <div>${escapeHtml(item.summary || "Sin resumen")}</div>
+                <span>${escapeHtml(item.status || "-")} · ${escapeHtml(startDateText)} -> ${escapeHtml(endDateText)}</span>
+              </div>
+              <div class="daily-gantt-track" style="grid-column:span ${dates.length}">
+                ${dates.map((date) => {
+                  const key = formatISO(date);
+                  const classes = ["daily-gantt-cell"];
+                  if (holidayKeys.has(key)) classes.push("is-holiday");
+                  return `<div class="${classes.join(" ")}"></div>`;
+                }).join("")}
+                <div class="daily-gantt-bar ${getBarClass(item, range)}" style="left: calc(${startIndex} * var(--day-width, 36px)); width: calc(${width} * var(--day-width, 36px) - 8px);" title="${escapeHtml((item.issue_key || "") + " · " + (item.summary || ""))}">${escapeHtml(item.issue_key || "")}</div>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `;
     }
   }
   async function initRetrospective(options = {}) {
@@ -17761,6 +18329,7 @@
     initDaily();
     initTasks();
     initReleaseTable();
+    initReleaseGantt();
     initOneToOne();
     initRetrospective();
     initPokerPlanning();
@@ -17805,6 +18374,7 @@
       initDaily();
       initTasks();
       initReleaseTable();
+      initReleaseGantt();
       initOneToOne();
       initRetrospective();
       initPokerPlanning();

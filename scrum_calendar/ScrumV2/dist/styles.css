@@ -3276,6 +3276,58 @@ body.qr-zoomed::before {
   gap: 10px;
 }
 
+.release-toolbar #release-status-filter {
+  min-width: 180px;
+}
+
+.release-toolbar .status-filter {
+  min-width: 180px;
+}
+
+.release-toolbar .status-filter-panel {
+  left: 0;
+  right: auto;
+  min-width: 100%;
+  width: max-content;
+}
+
+.release-toolbar .status-filter-option {
+  display: flex;
+  width: 100%;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 8px 10px;
+  border-radius: 8px;
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.release-toolbar .status-filter-option input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent-2);
+  margin: 0;
+}
+
+.release-toolbar .status-filter-option span {
+  display: inline;
+}
+
+.release-toolbar .status-filter-option:hover {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.release-toolbar .status-filter-option.is-selected {
+  border-color: rgba(75, 163, 255, 0.5);
+  background: rgba(75, 163, 255, 0.12);
+}
+
 .release-columns-panel {
   max-width: 420px;
 }
@@ -6483,6 +6535,77 @@ body.theme-dark .tasks-comment {
   flex-direction: column;
   gap: 8px;
   padding-right: 4px;
+}
+
+.daily-comments-panel {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.04);
+}
+
+body.theme-dark .daily-comments-panel {
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.daily-comments-head h4 {
+  font-size: 1rem;
+}
+
+.daily-comments-head p,
+.daily-comment-empty {
+  color: #94a3b8;
+  font-size: 0.86rem;
+}
+
+.daily-comments-list {
+  display: grid;
+  gap: 8px;
+  max-height: 220px;
+  overflow: auto;
+  margin: 10px 0;
+}
+
+.daily-comment-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: start;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.daily-comment-main {
+  display: grid;
+  gap: 2px;
+}
+
+.daily-comment-main small {
+  color: #94a3b8;
+}
+
+.daily-comment-actions,
+.daily-comment-compose {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.daily-comment-icon {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  display: inline-grid;
+  place-items: center;
+}
+
+.daily-comment-danger {
+  color: #ef4444;
 }
 .tasks-report-chart {
   min-height: 140px;

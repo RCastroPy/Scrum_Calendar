@@ -303,6 +303,20 @@ class ReleaseItem(Base):
     persona = relationship("Persona", back_populates="release_items")
 
 
+class DailyItemComment(Base):
+    __tablename__ = "daily_item_comments"
+
+    id = Column(Integer, primary_key=True)
+    item_source = Column(String(20), nullable=False)
+    item_id = Column(Integer, nullable=False)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    texto = Column(Text, nullable=False)
+    creado_en = Column(DateTime, nullable=False, default=now_py)
+    actualizado_en = Column(DateTime, nullable=False, default=now_py, onupdate=now_py)
+
+    usuario = relationship("Usuario")
+
+
 class Task(Base):
     __tablename__ = "tasks"
 

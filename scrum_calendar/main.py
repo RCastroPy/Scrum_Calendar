@@ -11,6 +11,7 @@ from config.settings import settings
 from core.audit import log_security_event
 from data.db import SessionLocal, engine
 from data.models import Base, Sesion, now_py
+from app.modules.tasks.interface.routes import router as tasks_router
 
 app = FastAPI(
     title="Scrum Calendar",
@@ -305,6 +306,7 @@ def startup():
 
 
 app.include_router(router)
+app.include_router(tasks_router)
 
 frontend_dir = Path(__file__).resolve().parent / "frontend"
 adminlte_dir = Path(__file__).resolve().parent / "ScrumV2" / "dist"

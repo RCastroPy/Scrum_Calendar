@@ -702,6 +702,26 @@ class SprintImportItemOut(BaseModel):
     creado_en: datetime
 
 
+class DailyItemCommentCreate(BaseModel):
+    texto: str
+
+
+class DailyItemCommentUpdate(BaseModel):
+    texto: str
+
+
+class DailyItemCommentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    item_source: str
+    item_id: int
+    usuario_id: int
+    texto: str
+    creado_en: datetime
+    usuario: Optional[UsuarioLite] = None
+
+
 class ReleaseItemOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

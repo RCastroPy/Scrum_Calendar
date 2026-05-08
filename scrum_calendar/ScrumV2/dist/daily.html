@@ -64,7 +64,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.8/css/dataTables.bootstrap5.min.css" crossorigin="anonymous" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-buttons-bs5@2.4.2/css/buttons.bootstrap5.min.css" crossorigin="anonymous" />
     <!--end::Required Plugin(AdminLTE)-->
-    <link rel="stylesheet" href="./styles.css?v=20260503dailymetric1" />
+    <link rel="stylesheet" href="./styles.css?v=20260508dailydonuts2" />
 
     <!-- apexcharts -->
     <link
@@ -349,6 +349,12 @@
                 <a href="daily.html" class="nav-link active">
                   <i class="nav-icon bi bi-calendar3"></i>
                   <p>Daily</p>
+                </a>
+              </li>
+              <li class="nav-item" data-role="admin">
+                <a href="reports.html" class="nav-link">
+                  <i class="nav-icon bi bi-graph-up-arrow"></i>
+                  <p>Reportes</p>
                 </a>
               </li>
               <li class="nav-item" data-role="admin">
@@ -1015,6 +1021,30 @@
                       <div class="storypoints-alerts" id="daily-kpi-storypoints"></div>
                     </div>
                   </div>
+                  <div class="row g-3">
+                    <div class="col-12 col-md-6">
+                      <div class="card daily-card daily-status-card">
+                        <div class="card-body">
+                          <h3 class="card-title">Story Points por miembro</h3>
+                          <div class="daily-donut" id="daily-points-member-chart">
+                            <div class="donut"></div>
+                            <ul class="legend"></ul>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                      <div class="card daily-card daily-status-card">
+                        <div class="card-body">
+                          <h3 class="card-title">Tareas por miembro</h3>
+                          <div class="daily-donut" id="daily-tasks-member-chart">
+                            <div class="donut"></div>
+                            <ul class="legend"></ul>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 <div class="col-lg-8">
                   <div class="card daily-card" id="daily-team-card">
@@ -1083,41 +1113,19 @@
 
                 <div class="col-12">
                   <div class="card daily-card">
-                    <div class="card-header border-0 d-flex flex-wrap align-items-end justify-content-between gap-2">
+                    <div class="card-header border-0 d-flex flex-wrap align-items-center justify-content-between gap-2">
                       <div>
-                        <h3 class="card-title">Gantt de tareas</h3>
-                        <p class="daily-subtitle mb-0" id="daily-gantt-context">Vista total</p>
+                        <h3 class="card-title mb-0">Carga manual</h3>
+                        <p class="daily-subtitle mb-0">Muestra u oculta el formulario manual.</p>
                       </div>
-                      <div class="daily-gantt-zoom d-flex align-items-center gap-2">
-                        <span class="small text-muted">Zoom</span>
-                        <button class="btn btn-outline-secondary btn-sm" id="daily-gantt-zoom-out" type="button">
-                          <i class="bi bi-dash-lg"></i>
-                        </button>
-                        <input
-                          type="range"
-                          id="daily-gantt-zoom"
-                          class="form-range"
-                          min="60"
-                          max="250"
-                          step="10"
-                          value="100"
-                        />
-                        <button class="btn btn-outline-secondary btn-sm" id="daily-gantt-zoom-in" type="button">
-                          <i class="bi bi-plus-lg"></i>
-                        </button>
-                        <span id="daily-gantt-zoom-label" class="badge text-bg-primary">100%</span>
-                      </div>
-                    </div>
-                    <div class="card-body">
-                      <div class="daily-meta mb-2" id="daily-gantt-summary"></div>
-                      <div class="daily-gantt-scroll" id="daily-gantt-scroll">
-                        <div class="daily-gantt-board" id="daily-gantt-board"></div>
-                      </div>
+                      <button class="btn btn-outline-primary" id="daily-manual-toggle" type="button" aria-expanded="false">
+                        Carga Manual
+                      </button>
                     </div>
                   </div>
                 </div>
 
-                <div class="col-12">
+                <div class="col-12 hidden" id="daily-manual-card-wrap">
                   <div class="card daily-card">
                     <div class="card-header border-0">
                       <h3 class="card-title">Carga manual</h3>
@@ -1226,6 +1234,42 @@
                         </div>
                         <p class="form-status mt-2 mb-0" id="daily-status"></p>
                       </form>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="col-12">
+                  <div class="card daily-card">
+                    <div class="card-header border-0 d-flex flex-wrap align-items-end justify-content-between gap-2">
+                      <div>
+                        <h3 class="card-title">Gantt de tareas</h3>
+                        <p class="daily-subtitle mb-0" id="daily-gantt-context">Vista total</p>
+                      </div>
+                      <div class="daily-gantt-zoom d-flex align-items-center gap-2">
+                        <span class="small text-muted">Zoom</span>
+                        <button class="btn btn-outline-secondary btn-sm" id="daily-gantt-zoom-out" type="button">
+                          <i class="bi bi-dash-lg"></i>
+                        </button>
+                        <input
+                          type="range"
+                          id="daily-gantt-zoom"
+                          class="form-range"
+                          min="60"
+                          max="250"
+                          step="10"
+                          value="100"
+                        />
+                        <button class="btn btn-outline-secondary btn-sm" id="daily-gantt-zoom-in" type="button">
+                          <i class="bi bi-plus-lg"></i>
+                        </button>
+                        <span id="daily-gantt-zoom-label" class="badge text-bg-primary">100%</span>
+                      </div>
+                    </div>
+                    <div class="card-body">
+                      <div class="daily-meta mb-2" id="daily-gantt-summary"></div>
+                      <div class="daily-gantt-scroll" id="daily-gantt-scroll">
+                        <div class="daily-gantt-board" id="daily-gantt-board"></div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1364,7 +1408,7 @@
     <script src="https://cdn.jsdelivr.net/npm/pdfmake@0.2.7/build/vfs_fonts.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/datatables.net-buttons@2.4.2/js/buttons.html5.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/datatables.net-buttons@2.4.2/js/buttons.print.min.js"></script>
-<script src="./app.js?v=20260503dailymetric1"></script>
+<script src="./app.js?v=20260508dailydonuts2"></script>
     <!--end::Script-->
   </body>
   <!--end::Body-->
