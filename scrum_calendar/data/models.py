@@ -254,6 +254,7 @@ class SprintItem(Base):
     persona_id = Column(Integer, ForeignKey("personas.id"), nullable=True)
     assignee_nombre = Column(String(160), nullable=True)
     issue_key = Column(String(60), nullable=False)
+    release_issue_key = Column(String(60), nullable=True)
     issue_type = Column(String(60), nullable=False)
     summary = Column(String(255), nullable=False)
     status = Column(String(80), nullable=False)
@@ -280,6 +281,7 @@ class ReleaseItem(Base):
     persona_id = Column(Integer, ForeignKey("personas.id"), nullable=True)
     issue_type = Column(String(60), nullable=False)
     issue_key = Column(String(60), nullable=False)
+    release_issue_key = Column(String(60), nullable=True)
     issue_id = Column(String(60), nullable=True)
     summary = Column(String(255), nullable=False)
     reporter = Column(String(160), nullable=True)
@@ -317,6 +319,20 @@ class DailyItemComment(Base):
     usuario = relationship("Usuario")
 
 
+class ReleaseItemComment(Base):
+    __tablename__ = "release_item_comments"
+
+    id = Column(Integer, primary_key=True)
+    release_item_id = Column(Integer, ForeignKey("release_items.id"), nullable=False)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    texto = Column(Text, nullable=False)
+    creado_en = Column(DateTime, nullable=False, default=now_py)
+    actualizado_en = Column(DateTime, nullable=False, default=now_py, onupdate=now_py)
+
+    release_item = relationship("ReleaseItem")
+    usuario = relationship("Usuario")
+
+
 class Task(Base):
     __tablename__ = "tasks"
 
@@ -329,6 +345,7 @@ class Task(Base):
 
     titulo = Column(String(200), nullable=False)
     descripcion = Column(Text, nullable=True)
+    release_issue_key = Column(String(60), nullable=True)
     estado = Column(String(20), nullable=False, default="backlog")
     prioridad = Column(String(20), nullable=False, default="media")
     # Fecha real de inicio (se setea automaticamente al pasar a "doing")

@@ -116,6 +116,7 @@
     dailyPointsShowLabels: false,
     dailySprintManual: false,
     dailyManualFormOpen: false,
+    dailyItemsReleasesOnly: false,
     dailyRealtimeSignature: "",
 	    dailySprintOpen: false,
 	    tasksView: "backlog",
@@ -1927,6 +1928,7 @@
         suffix: " d",
       },
       birthdays: getUpcomingBirthdays(birthdaysPersonas || personasActivas),
+      birthdaysPersonas: birthdaysPersonas || personasActivas,
       sprints,
       activeSprintId: sprint.id,
       calendarEvents: calendarEventos,
@@ -2105,6 +2107,7 @@
     events = [],
     feriados = [],
     personas = [],
+    birthdaysPersonas = [],
     tipos = []
   ) {
     const grid = qs("#calendar-grid");
@@ -2202,11 +2205,7 @@
       while (cursor <= rangeEnd) {
         const key = formatISO(cursor);
         const isWeekend = cursor.getDay() === 0 || cursor.getDay() === 6;
-        if (isWeekend) {
-          cursor.setDate(cursor.getDate() + 1);
-          continue;
-        }
-        if (tipoName === "Vacaciones" && holidaySet.has(key)) {
+        if (tipoName === "Vacaciones" && (isWeekend || holidaySet.has(key))) {
           cursor.setDate(cursor.getDate() + 1);
           continue;
         }
@@ -2232,7 +2231,7 @@
       eventsByDate.set(key, list);
       holidayByDate.set(key, true);
     });
-    (personas || []).forEach((persona) => {
+    ((birthdaysPersonas && birthdaysPersonas.length ? birthdaysPersonas : personas) || []).forEach((persona) => {
       if (!persona.fecha_cumple) return;
       const [, m, d] = persona.fecha_cumple.split("-");
       if (!m || !d) return;
@@ -2775,6 +2774,7 @@
           data?.calendarEvents || [],
           data?.feriados || [],
           data?.personas || [],
+          data?.birthdaysPersonas || [],
           data?.tipos || []
         );
       } else {
@@ -2784,6 +2784,7 @@
           data?.calendarEvents || [],
           data?.feriados || [],
           data?.personas || [],
+          data?.birthdaysPersonas || [],
           data?.tipos || []
         );
       }
@@ -2866,6 +2867,9 @@
     }
     const advanceEl = qs("#dashboard-kpi-advance");
     const advanceExpectedEl = qs("#dashboard-kpi-advance-expected");
+    const advanceFillCurrentEl = qs("#dashboard-kpi-advance-fill-current");
+    const advanceFillExpectedEl = qs("#dashboard-kpi-advance-fill-expected");
+    const advanceStatusEl = qs("#dashboard-kpi-advance-status");
     if (advanceEl) {
       const sprintId = state.selectedSprintId || String(data.activeSprintId || "");
       const items = state.base?.sprintItems
@@ -2898,14 +2902,35 @@
       const expectedRounded = Number(expectedDisplay.toFixed(0));
       advanceEl.textContent = `${advanceDisplay}%`;
       advanceEl.classList.remove("kpi-ok", "kpi-warn", "kpi-bad");
+      if (advanceStatusEl) {
+        advanceStatusEl.classList.remove("kpi-ok", "kpi-warn", "kpi-bad");
+      }
       if (advanceDisplay < expectedRounded) {
         advanceEl.classList.add("kpi-bad");
+        if (advanceStatusEl) {
+          advanceStatusEl.classList.add("kpi-bad");
+          advanceStatusEl.textContent = "Por debajo de lo esperado";
+        }
       } else if (advanceDisplay === expectedRounded) {
         advanceEl.classList.add("kpi-warn");
+        if (advanceStatusEl) {
+          advanceStatusEl.classList.add("kpi-warn");
+          advanceStatusEl.textContent = "En línea con lo esperado";
+        }
       } else {
         advanceEl.classList.add("kpi-ok");
+        if (advanceStatusEl) {
+          advanceStatusEl.classList.add("kpi-ok");
+          advanceStatusEl.textContent = "Por encima de lo esperado";
+        }
       }
       if (advanceExpectedEl) advanceExpectedEl.textContent = `${expectedRounded}%`;
+      if (advanceFillCurrentEl) {
+        advanceFillCurrentEl.style.width = `${Math.max(0, Math.min(100, advanceDisplay))}%`;
+      }
+      if (advanceFillExpectedEl) {
+        advanceFillExpectedEl.style.width = `${Math.max(0, Math.min(100, expectedRounded))}%`;
+      }
     }
     renderLineChart(qs('[data-chart="capacityOverSprints"]'), data.capacityOverSprints);
     renderPie(qs('[data-chart="eventsByType"]'), data.eventsByType, "pie");
@@ -6129,9 +6154,17 @@
       : base.sprints;
   }
 
-  function renderDailyItemsSummary(container, count) {
+  function renderDailyItemsSummary(container, count, options = {}) {
     if (!container) return;
-    container.textContent = count ? `Mostrando ${count} items` : "Sin items cargados.";
+    if (!count) {
+      container.textContent = options.releasesOnly
+        ? "Sin releases cargados."
+        : "Sin items cargados.";
+      return;
+    }
+    container.textContent = options.releasesOnly
+      ? `Mostrando ${count} releases`
+      : `Mostrando ${count} items`;
   }
 
   function applyHeatmapClasses(rows, keys, options = {}) {
@@ -6433,6 +6466,12 @@
     const devTable = qs("#daily-dev-table");
     const itemsTable = qs("#daily-items-table");
     const itemsCount = qs("#daily-items-count");
+    const dailyItemsReleasesBtn = qs("#daily-items-releases-btn");
+    const dailyItemsColumnsBtn = qs("#daily-items-columns-btn");
+    const dailyItemsColumnsPanel = qs("#daily-items-columns-panel");
+    const dailyItemsColumnsList = qs("#daily-items-columns-list");
+    const dailyItemsColumnsClose = qs("#daily-items-columns-close");
+    const dailyItemsColumnsReset = qs("#daily-items-columns-reset");
     const manualToggle = qs("#daily-manual-toggle");
     const manualCardWrap = qs("#daily-manual-card-wrap");
     const form = qs("#daily-form");
@@ -6455,6 +6494,39 @@
     const ganttZoomLabel = qs("#daily-gantt-zoom-label");
     const ganttZoomOut = qs("#daily-gantt-zoom-out");
     const ganttZoomIn = qs("#daily-gantt-zoom-in");
+    const DAILY_ITEMS_COLUMNS_KEY = "scrum_calendar_daily_items_columns_v1";
+    const loadDailyItemsColumnsConfig = (defaultKeys = []) => {
+      if (state.dailyItemsColumnsConfig) {
+        const current = state.dailyItemsColumnsConfig;
+        const currentOrder = Array.isArray(current.order) ? current.order.filter((key) => defaultKeys.includes(key)) : [];
+        const missing = defaultKeys.filter((key) => !currentOrder.includes(key));
+        current.order = [...currentOrder, ...missing];
+        current.hidden = current.hidden && typeof current.hidden === "object" ? current.hidden : {};
+        return current;
+      }
+      let parsed = null;
+      try {
+        const raw = localStorage.getItem(DAILY_ITEMS_COLUMNS_KEY);
+        if (raw) parsed = JSON.parse(raw);
+      } catch {
+        parsed = null;
+      }
+      const hidden = parsed && parsed.hidden && typeof parsed.hidden === "object" ? { ...parsed.hidden } : {};
+      const savedOrder = Array.isArray(parsed?.order) ? parsed.order.filter((key) => defaultKeys.includes(key)) : [];
+      const missing = defaultKeys.filter((key) => !savedOrder.includes(key));
+      state.dailyItemsColumnsConfig = { hidden, order: [...savedOrder, ...missing] };
+      return state.dailyItemsColumnsConfig;
+    };
+    const saveDailyItemsColumnsConfig = () => {
+      try {
+        localStorage.setItem(
+          DAILY_ITEMS_COLUMNS_KEY,
+          JSON.stringify(state.dailyItemsColumnsConfig || { hidden: {}, order: [] })
+        );
+      } catch {
+        // ignore storage errors
+      }
+    };
     const syncLabelsToggle = () => {
       if (!pointsLabelsToggle) return;
       const active = Boolean(state.dailyPointsShowLabels);
@@ -6478,6 +6550,22 @@
         .map((sprint) => [normalizeText(sprint?.nombre || ""), sprint.id])
         .filter(([name]) => name)
     );
+    const sprintById = new Map(
+      sprints
+        .filter((sprint) => sprint?.id != null)
+        .map((sprint) => [String(sprint.id), sprint])
+    );
+    const itemMatchesSelectedSprint = (item, sprint) => {
+      if (!sprint) return true;
+      if (state.selectedCelulaId) {
+        return String(item?.sprint_id || "") === String(sprint.id);
+      }
+      const selectedName = normalizeText(sprint?.nombre || "");
+      const itemSprint = sprintById.get(String(item?.sprint_id || ""));
+      const itemSprintName = normalizeText(itemSprint?.nombre || item?.sprint_nombre || "");
+      if (selectedName && itemSprintName) return itemSprintName === selectedName;
+      return String(item?.sprint_id || "") === String(sprint.id);
+    };
     const toDailyItemKey = (item) => {
       const celula = String(item?.celula_id || "");
       const sprint = String(item?.sprint_id || "");
@@ -6501,6 +6589,7 @@
           persona_id: item.persona_id || null,
           assignee_nombre: item.assignee_nombre || "",
           issue_key: item.issue_key || "",
+          release_issue_key: item.release_issue_key || "",
           issue_type: item.issue_type || "",
           summary: item.summary || "",
           status: item.status || "",
@@ -6552,7 +6641,7 @@
         if (state.selectedCelulaId && String(item.celula_id) !== state.selectedCelulaId) {
           return false;
         }
-        return String(item.sprint_id) === String(sprint.id);
+        return itemMatchesSelectedSprint(item, sprint);
       });
     };
     const firstSprintWithData = sprints.find((sprint) => hasDataForSprint(sprint)) || null;
@@ -6795,9 +6884,7 @@
       if (item.persona_id && shouldFilterByPersona && !activePersonaIds.has(item.persona_id)) {
         return false;
       }
-      return selectedSprint
-        ? String(item.sprint_id) === String(selectedSprint.id)
-        : true;
+      return itemMatchesSelectedSprint(item, selectedSprint);
     });
     const renderStorypointsKpiCard = (itemsList) =>
       renderStorypointsKpi(
@@ -6985,7 +7072,12 @@
       const targetPoints = Number(state.dailyStoryPointsFilter);
       items = items.filter((item) => Number(item.story_points) === targetPoints);
     }
-    renderDailyItemsSummary(itemsCount, items.length);
+    if (state.dailyItemsReleasesOnly) {
+      items = items.filter((item) => normalizeText(item.issue_type || "") === "release");
+    }
+    renderDailyItemsSummary(itemsCount, items.length, {
+      releasesOnly: Boolean(state.dailyItemsReleasesOnly),
+    });
     renderStorypointsKpiCard(items);
     renderDailyMemberDonut(pointsMemberChart, itemsAll, "points");
     renderDailyMemberDonut(tasksMemberChart, itemsAll, "tasks");
@@ -7496,8 +7588,15 @@
     }
 
     const getGanttDateRange = (row) => {
+      const today = getToday();
       const start = parseDateOnly(row.start_date || "");
-      const end = parseDateOnly(row.end_date || row.due_date || row.start_date || "");
+      const end = parseDateOnly(
+        row.end_date ||
+          row.due_date ||
+          (row.start_date && !row.end_date && !row.due_date
+            ? formatISO(today)
+            : row.start_date || "")
+      );
       if (!start && !end) return null;
       const resolvedStart = start || end;
       const resolvedEnd = end || start;
@@ -7541,14 +7640,13 @@
       if (ganttZoom) ganttZoom.value = String(zoomValue);
       if (ganttZoomLabel) ganttZoomLabel.textContent = `${zoomValue}%`;
       const dayWidth = Math.round(36 * (zoomValue / 100));
-      const buildDatedRows = (sourceItems) =>
-        sourceItems
-        .map((item) => ({ item, range: getGanttDateRange(item) }))
-        .filter((entry) => entry.range);
+      const buildGanttRows = (sourceItems) =>
+        sourceItems.map((item) => ({ item, range: getGanttDateRange(item) }));
       let ganttSprint = selectedSprint;
       let ganttItems = items;
-      let datedRows = buildDatedRows(ganttItems);
-      if (!datedRows.length) {
+      let ganttRows = buildGanttRows(ganttItems);
+      let datedRows = ganttRows.filter((entry) => entry.range);
+      if (!ganttRows.length) {
         const datedSprintIds = new Set();
         dailyItemsSource.forEach((item) => {
           if (state.selectedCelulaId && String(item.celula_id) !== state.selectedCelulaId) return;
@@ -7566,7 +7664,8 @@
             if (item.persona_id && shouldFilterByPersona && !activePersonaIds.has(item.persona_id)) return false;
             return String(item.sprint_id || "") === String(fallbackSprint.id);
           });
-          datedRows = buildDatedRows(ganttItems);
+          ganttRows = buildGanttRows(ganttItems);
+          datedRows = ganttRows.filter((entry) => entry.range);
         }
       }
       if (ganttContext) {
@@ -7574,25 +7673,29 @@
           ? "Vista por persona"
           : "Vista total";
       }
-      if (!datedRows.length) {
+      if (!ganttRows.length) {
         if (ganttSummary) {
           ganttSummary.textContent = ganttSprint
-            ? `${ganttSprint.nombre} · Sin items con fechas para visualizar en Gantt.`
-            : "Sin items con fechas para visualizar en Gantt.";
+            ? `${ganttSprint.nombre} · Sin items para visualizar en Gantt.`
+            : "Sin items para visualizar en Gantt.";
         }
         ganttBoard.innerHTML = '<p class="empty">Sin items para visualizar en Gantt.</p>';
         return;
       }
       const sprintStart = parseDateOnly(ganttSprint?.fecha_inicio || "");
       const sprintEnd = parseDateOnly(ganttSprint?.fecha_fin || "");
-      const minStart = datedRows.reduce(
-        (min, entry) => (!min || entry.range.start < min ? entry.range.start : min),
-        sprintStart || datedRows[0].range.start
-      );
-      const maxEnd = datedRows.reduce(
-        (max, entry) => (!max || entry.range.end > max ? entry.range.end : max),
-        sprintEnd || datedRows[0].range.end
-      );
+      const minStart = datedRows.length
+        ? datedRows.reduce(
+            (min, entry) => (!min || entry.range.start < min ? entry.range.start : min),
+            sprintStart || datedRows[0].range.start
+          )
+        : sprintStart || sprintEnd || getToday();
+      const maxEnd = datedRows.length
+        ? datedRows.reduce(
+            (max, entry) => (!max || entry.range.end > max ? entry.range.end : max),
+            sprintEnd || datedRows[0].range.end
+          )
+        : sprintEnd || sprintStart || getToday();
       const dates = buildDateSpan(minStart, maxEnd);
       const dateKeys = dates.map((date) => formatISO(date));
       const monthGroups = [];
@@ -7610,6 +7713,12 @@
       });
       const holidayKeys = new Set(feriadosSet);
       const dayInitials = ["D", "L", "M", "M", "J", "V", "S"];
+      const todayKey = formatISO(getToday());
+      const todayIndex = dateKeys.indexOf(todayKey);
+      const sprintStartKey = sprintStart ? formatISO(sprintStart) : "";
+      const sprintEndKey = sprintEnd ? formatISO(sprintEnd) : "";
+      const sprintStartIndex = sprintStartKey ? dateKeys.indexOf(sprintStartKey) : -1;
+      const sprintEndIndex = sprintEndKey ? dateKeys.indexOf(sprintEndKey) : -1;
       const gridColumns = `minmax(260px, 320px) repeat(${dates.length}, ${dayWidth}px)`;
       const html = `
         <div class="daily-gantt-grid" style="grid-template-columns:${gridColumns}">
@@ -7626,39 +7735,52 @@
             .map((date) => {
               const key = formatISO(date);
               const classes = ["daily-gantt-day-head"];
+              if (sprintStartKey && sprintEndKey && key >= sprintStartKey && key <= sprintEndKey) {
+                classes.push("is-sprint-range");
+              }
+              if (date.getDay() === 0 || date.getDay() === 6) classes.push("is-weekend");
               if (holidayKeys.has(key)) classes.push("is-holiday");
               return `<div class="${classes.join(" ")}">${dayInitials[date.getDay()]}<br>${date.getDate()}</div>`;
             })
             .join("")}
-          ${datedRows
+          ${ganttRows
             .map(({ item, range }) => {
-              const startKey = formatISO(range.start);
-              const endKey = formatISO(range.end);
-              const startIndex = Math.max(0, dateKeys.indexOf(startKey));
-              const rawEndIndex = dateKeys.indexOf(endKey);
-              const endIndex = rawEndIndex >= 0 ? rawEndIndex : startIndex;
-              const span = Math.max(1, endIndex - startIndex + 1);
-              const left = startIndex * dayWidth;
-              const width = span * dayWidth;
               const title = `${item.issue_key || ""} - ${item.summary || ""}`.trim();
               const assignee = resolvePersonaNameFromItem(item, personaLookup, personaNameById) || "Sin asignar";
+              const metaEnd = item.end_date || item.due_date || "-";
+              const noDates = !range;
+              let barHtml = '<span class="daily-gantt-no-dates">Sin fechas</span>';
+              if (range) {
+                const startKey = formatISO(range.start);
+                const endKey = formatISO(range.end);
+                const startIndex = Math.max(0, dateKeys.indexOf(startKey));
+                const rawEndIndex = dateKeys.indexOf(endKey);
+                const endIndex = rawEndIndex >= 0 ? rawEndIndex : startIndex;
+                const span = Math.max(1, endIndex - startIndex + 1);
+                const left = startIndex * dayWidth;
+                const width = span * dayWidth;
+                barHtml = `<span class="daily-gantt-bar ${getGanttColorClass(item)}${range.openEnded ? " is-open-ended" : ""}${range.pendingEndDate ? " is-pending-end-date" : ""}" style="left:${left}px;width:${width}px">${escapeHtml(item.issue_key || "")}</span>`;
+              }
               return `
                 <div class="daily-gantt-task">
                   <strong>${escapeHtml(title || "Sin titulo")}</strong>
-                  <span>${escapeHtml(assignee)} · ${escapeHtml(getStatusLabel(item.status) || "Sin estado")} · ${escapeHtml(item.start_date || "-")} -> ${escapeHtml(item.end_date || item.due_date || "-")}</span>
+                  <span>${escapeHtml(assignee)} · ${escapeHtml(getStatusLabel(item.status) || "Sin estado")} · ${escapeHtml(item.start_date || "-")} -> ${escapeHtml(metaEnd)}${noDates ? " · Sin fechas" : ""}</span>
                 </div>
                 <div class="daily-gantt-track" style="grid-column:2 / span ${dates.length}; --day-width:${dayWidth}px">
                   ${dates
                     .map((date) => {
                       const key = formatISO(date);
                       const classes = ["daily-gantt-cell"];
+                      if (sprintStartKey && sprintEndKey && key >= sprintStartKey && key <= sprintEndKey) {
+                        classes.push("is-sprint-range");
+                      }
+                      if (date.getDay() === 0 || date.getDay() === 6) classes.push("is-weekend");
                       if (holidayKeys.has(key)) classes.push("is-holiday");
                       return `<span class="${classes.join(" ")}"></span>`;
                     })
                     .join("")}
-                  <span class="daily-gantt-bar ${getGanttColorClass(item)}${range.openEnded ? " is-open-ended" : ""}${range.pendingEndDate ? " is-pending-end-date" : ""}" style="left:${left}px;width:${width}px">
-                    ${escapeHtml(item.issue_key || "")}
-                  </span>
+                  ${todayIndex >= 0 ? `<span class="daily-gantt-today-line" style="left:${todayIndex * dayWidth}px"></span>` : ""}
+                  ${barHtml}
                 </div>
               `;
             })
@@ -7666,14 +7788,28 @@
         </div>
       `;
       if (ganttSummary) {
+        const tasksWithDates = datedRows.length;
+        const tasksWithoutDates = ganttRows.length - tasksWithDates;
         const fallbackLabel =
           selectedSprint && ganttSprint && String(selectedSprint.id) !== String(ganttSprint.id)
             ? ` · mostrando ultimo sprint con fechas porque ${selectedSprint.nombre} no tiene fechas`
             : "";
-        ganttSummary.textContent = `${ganttSprint?.nombre || "Sprints"} · ${formatISO(minStart)} -> ${formatISO(maxEnd)} · ${datedRows.length} item(s) con fechas${fallbackLabel}`;
+        ganttSummary.textContent = `${ganttSprint?.nombre || "Sprints"} · ${formatISO(minStart)} -> ${formatISO(maxEnd)} · ${ganttRows.length} item(s) · ${tasksWithDates} con fechas · ${tasksWithoutDates} sin fechas${fallbackLabel}`;
       }
       ganttBoard.innerHTML = html;
-      if (ganttScroll) ganttScroll.scrollLeft = 0;
+      if (todayIndex >= 0) {
+        const headerCells = ganttBoard.querySelectorAll(".daily-gantt-day-head");
+        const headerCell = headerCells[todayIndex];
+        if (headerCell) headerCell.classList.add("is-today");
+      }
+      if (ganttScroll) {
+        let focusIndex = sprintStartIndex >= 0 ? sprintStartIndex : 0;
+        if (todayIndex >= 0 && sprintStartKey && sprintEndKey && todayKey >= sprintStartKey && todayKey <= sprintEndKey) {
+          focusIndex = todayIndex;
+        }
+        const offset = Math.max(0, focusIndex - 1) * dayWidth;
+        ganttScroll.scrollLeft = offset;
+      }
     };
     renderDailyGantt();
     if (ganttZoom && !ganttZoom.dataset.bound) {
@@ -8540,6 +8676,173 @@
           getValue: (row) => resolvePersonaNameFromItem(row, personaLookup, personaMap),
         },
       ];
+    const dailyItemsColumnLabels = Object.fromEntries(
+      itemsColumns.map((column) => [column.key, column.label || column.key])
+    );
+    const dailyItemsColumnsDefault = itemsColumns.map((column) => column.key);
+    const dailyItemsColumnsCfg = loadDailyItemsColumnsConfig(dailyItemsColumnsDefault);
+    const orderedDailyItemsColumns = [
+      ...(dailyItemsColumnsCfg.order || []).filter((key) => dailyItemsColumnsDefault.includes(key)),
+      ...dailyItemsColumnsDefault.filter((key) => !(dailyItemsColumnsCfg.order || []).includes(key)),
+    ];
+    const visibleDailyItemsColumns = orderedDailyItemsColumns
+      .filter((key) => !dailyItemsColumnsCfg.hidden?.[key])
+      .map((key) => itemsColumns.find((column) => column.key === key))
+      .filter(Boolean);
+    const renderDailyItemsColumnsManager = () => {
+      if (!dailyItemsColumnsList) return;
+      dailyItemsColumnsList.innerHTML = orderedDailyItemsColumns
+        .map((key, idx) => {
+          const checked = !dailyItemsColumnsCfg.hidden?.[key];
+          const label = dailyItemsColumnLabels[key] || key;
+          return `
+            <div class="daily-columns-row" data-col-key="${key}" draggable="true">
+              <label class="d-flex align-items-center gap-2 flex-grow-1 mb-0">
+                <input class="form-check-input" type="checkbox" data-action="toggle-col" data-col-key="${key}" ${checked ? "checked" : ""} />
+                <span>${label}</span>
+              </label>
+              <div class="daily-columns-actions">
+                <button class="btn btn-outline-secondary btn-sm" type="button" data-action="move-up" data-col-key="${key}" ${idx === 0 ? "disabled" : ""}>
+                  <i class="bi bi-arrow-up"></i>
+                </button>
+                <button class="btn btn-outline-secondary btn-sm" type="button" data-action="move-down" data-col-key="${key}" ${idx === orderedDailyItemsColumns.length - 1 ? "disabled" : ""}>
+                  <i class="bi bi-arrow-down"></i>
+                </button>
+              </div>
+            </div>
+          `;
+        })
+        .join("");
+    };
+    const toggleDailyItemsColumnsPanel = (open) => {
+      if (!dailyItemsColumnsPanel) return;
+      const next = open ?? dailyItemsColumnsPanel.classList.contains("hidden");
+      dailyItemsColumnsPanel.classList.toggle("hidden", !next);
+    };
+    if (dailyItemsColumnsBtn && !dailyItemsColumnsBtn.dataset.bound) {
+      dailyItemsColumnsBtn.dataset.bound = "true";
+      dailyItemsColumnsBtn.addEventListener("click", () => {
+        toggleDailyItemsColumnsPanel();
+      });
+    }
+    if (dailyItemsReleasesBtn) {
+      dailyItemsReleasesBtn.classList.toggle("is-active", Boolean(state.dailyItemsReleasesOnly));
+      dailyItemsReleasesBtn.setAttribute(
+        "aria-pressed",
+        state.dailyItemsReleasesOnly ? "true" : "false"
+      );
+    }
+    if (dailyItemsReleasesBtn && !dailyItemsReleasesBtn.dataset.bound) {
+      dailyItemsReleasesBtn.dataset.bound = "true";
+      dailyItemsReleasesBtn.addEventListener("click", () => {
+        state.dailyItemsReleasesOnly = !state.dailyItemsReleasesOnly;
+        renderDaily(state.base);
+      });
+    }
+    if (dailyItemsColumnsClose && !dailyItemsColumnsClose.dataset.bound) {
+      dailyItemsColumnsClose.dataset.bound = "true";
+      dailyItemsColumnsClose.addEventListener("click", () => toggleDailyItemsColumnsPanel(false));
+    }
+    if (dailyItemsColumnsReset && !dailyItemsColumnsReset.dataset.bound) {
+      dailyItemsColumnsReset.dataset.bound = "true";
+      dailyItemsColumnsReset.addEventListener("click", () => {
+        state.dailyItemsColumnsConfig = {
+          hidden: {},
+          order: [...dailyItemsColumnsDefault],
+        };
+        saveDailyItemsColumnsConfig();
+        renderDaily(state.base);
+      });
+    }
+    if (dailyItemsColumnsPanel && !dailyItemsColumnsPanel.dataset.boundInside) {
+      dailyItemsColumnsPanel.dataset.boundInside = "true";
+      dailyItemsColumnsPanel.addEventListener("pointerdown", (event) => event.stopPropagation());
+      dailyItemsColumnsPanel.addEventListener("click", (event) => event.stopPropagation());
+    }
+    if (dailyItemsColumnsList && !dailyItemsColumnsList.dataset.bound) {
+      dailyItemsColumnsList.dataset.bound = "true";
+      let draggedKey = "";
+      dailyItemsColumnsList.addEventListener("click", (event) => {
+        const btn = event.target.closest("button[data-action][data-col-key]");
+        if (!btn) return;
+        const action = String(btn.dataset.action || "");
+        const key = String(btn.dataset.colKey || "");
+        const cfg = loadDailyItemsColumnsConfig(dailyItemsColumnsDefault);
+        const order = Array.isArray(cfg.order) ? [...cfg.order] : [...dailyItemsColumnsDefault];
+        const idx = order.indexOf(key);
+        if (idx < 0) return;
+        if (action === "move-up" && idx > 0) {
+          [order[idx - 1], order[idx]] = [order[idx], order[idx - 1]];
+        } else if (action === "move-down" && idx < order.length - 1) {
+          [order[idx + 1], order[idx]] = [order[idx], order[idx + 1]];
+        } else {
+          return;
+        }
+        cfg.order = order;
+        state.dailyItemsColumnsConfig = cfg;
+        saveDailyItemsColumnsConfig();
+        renderDaily(state.base);
+      });
+      dailyItemsColumnsList.addEventListener("dragstart", (event) => {
+        const row = event.target.closest(".daily-columns-row[data-col-key]");
+        if (!row) return;
+        draggedKey = String(row.dataset.colKey || "");
+        row.classList.add("is-dragging");
+        try {
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", draggedKey);
+        } catch {
+          // ignore
+        }
+      });
+      dailyItemsColumnsList.addEventListener("dragover", (event) => {
+        const row = event.target.closest(".daily-columns-row[data-col-key]");
+        if (!row) return;
+        event.preventDefault();
+        dailyItemsColumnsList
+          .querySelectorAll(".daily-columns-row.is-drop-target")
+          .forEach((item) => item.classList.remove("is-drop-target"));
+        if (String(row.dataset.colKey || "") !== draggedKey) {
+          row.classList.add("is-drop-target");
+        }
+      });
+      dailyItemsColumnsList.addEventListener("drop", (event) => {
+        const row = event.target.closest(".daily-columns-row[data-col-key]");
+        if (!row) return;
+        event.preventDefault();
+        const targetKey = String(row.dataset.colKey || "");
+        if (!draggedKey || !targetKey || draggedKey === targetKey) return;
+        const cfg = loadDailyItemsColumnsConfig(dailyItemsColumnsDefault);
+        const order = Array.isArray(cfg.order) ? [...cfg.order] : [...dailyItemsColumnsDefault];
+        const from = order.indexOf(draggedKey);
+        const to = order.indexOf(targetKey);
+        if (from < 0 || to < 0) return;
+        const [moved] = order.splice(from, 1);
+        order.splice(to, 0, moved);
+        cfg.order = order;
+        state.dailyItemsColumnsConfig = cfg;
+        saveDailyItemsColumnsConfig();
+        renderDaily(state.base);
+      });
+      dailyItemsColumnsList.addEventListener("dragend", () => {
+        draggedKey = "";
+        dailyItemsColumnsList
+          .querySelectorAll(".daily-columns-row")
+          .forEach((item) => item.classList.remove("is-dragging", "is-drop-target"));
+      });
+      dailyItemsColumnsList.addEventListener("change", (event) => {
+        const input = event.target.closest("input[data-action='toggle-col'][data-col-key]");
+        if (!input) return;
+        const key = String(input.dataset.colKey || "");
+        const cfg = loadDailyItemsColumnsConfig(dailyItemsColumnsDefault);
+        cfg.hidden = cfg.hidden || {};
+        cfg.hidden[key] = !input.checked;
+        state.dailyItemsColumnsConfig = cfg;
+        saveDailyItemsColumnsConfig();
+        renderDaily(state.base);
+      });
+    }
+    renderDailyItemsColumnsManager();
     const renderBasicItemsTable = (container, rows, columns) => {
       if (!container) return;
       const table = document.createElement("table");
@@ -8587,7 +8890,7 @@
       if (window.jQuery?.fn?.DataTable && window.jQuery.fn.DataTable.isDataTable(table)) {
         const dt = window.jQuery(table).DataTable();
         total = 0;
-        dt.rows({ search: "applied", page: "current" }).every(function () {
+        dt.rows({ search: "applied" }).every(function () {
           const cell = this.node()?.children?.[storyIndex];
           const input = cell?.querySelector?.("input");
           const rawValue = input ? input.value : cell?.textContent;
@@ -8620,7 +8923,7 @@
     renderAdminTable(
       itemsTable,
       items,
-      itemsColumns,
+      visibleDailyItemsColumns,
       [
         {
           label: "Editar",
@@ -8629,6 +8932,7 @@
             if (!form) return;
             form.issue_type.value = row.issue_type || "Task";
             form.issue_key.value = row.issue_key || "";
+            form.release_issue_key.value = row.release_issue_key || "";
             form.summary.value = row.summary || "";
             form.status.value = row.status || "To Do";
             form.story_points.value = row.story_points ?? "";
@@ -8711,7 +9015,7 @@
       ],
       []
     );
-    appendDailyItemsStoryPointsFooter(itemsTable, items, itemsColumns, true);
+    appendDailyItemsStoryPointsFooter(itemsTable, items, visibleDailyItemsColumns, true);
     {
       const renderedTable = itemsTable?.querySelector("table");
       if (renderedTable && window.jQuery?.fn?.DataTable?.isDataTable(renderedTable)) {
@@ -8719,14 +9023,14 @@
         $renderedTable.off(".dailyItemsFooter");
         $renderedTable.on(
           "draw.dt.dailyItemsFooter search.dt.dailyItemsFooter order.dt.dailyItemsFooter length.dt.dailyItemsFooter page.dt.dailyItemsFooter",
-          () => appendDailyItemsStoryPointsFooter(itemsTable, items, itemsColumns, true)
+          () => appendDailyItemsStoryPointsFooter(itemsTable, items, visibleDailyItemsColumns, true)
         );
-        appendDailyItemsStoryPointsFooter(itemsTable, items, itemsColumns, true);
+        appendDailyItemsStoryPointsFooter(itemsTable, items, visibleDailyItemsColumns, true);
       }
     }
     if (itemsTable && !itemsTable.querySelector("table")) {
       renderBasicItemsTable(itemsTable, items, itemsColumns);
-      appendDailyItemsStoryPointsFooter(itemsTable, items, itemsColumns, false);
+      appendDailyItemsStoryPointsFooter(itemsTable, items, visibleDailyItemsColumns, false);
     }
 
     if (form) {
@@ -8824,6 +9128,41 @@
       const match = raw.match(/^([A-Za-z0-9]+[-_])/);
       return match ? match[1].toUpperCase() : "";
     };
+    const normalizeDailyReleaseIssueKeyInput = (input) => {
+      if (!input) return "";
+      const rawValue = String(input.value || "");
+      const extracted = rawValue.match(/\b([A-Z0-9]+-\d+)\b/i);
+      if (extracted) {
+        return extracted[1].toUpperCase();
+      }
+      const start = input.selectionStart;
+      const end = input.selectionEnd;
+      const nextValue = rawValue.toUpperCase();
+      if (input.value !== nextValue) {
+        input.value = nextValue;
+        if (typeof input.setSelectionRange === "function" && start != null && end != null) {
+          input.setSelectionRange(start, end);
+        }
+      }
+      return nextValue.trim();
+    };
+    const syncDailyReleaseIssueOptions = () => {
+      const list = qs("#daily-release-keys");
+      if (!list) return;
+      const options = Array.from(
+        new Map(
+          (state.base?.releaseItems || [])
+            .map((item) => {
+              const issueKey = String(item?.issue_key || "").trim().toUpperCase();
+              const summary = String(item?.summary || "").trim();
+              if (!issueKey) return null;
+              return [issueKey, summary ? `${issueKey} ${summary}` : issueKey];
+            })
+            .filter(Boolean)
+        ).values()
+      ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base", numeric: true }));
+      list.innerHTML = options.map((value) => `<option value="${escapeHtml(value)}"></option>`).join("");
+    };
     const normalizeDailyIssueKeyInput = (input) => {
       if (!input) return "";
       const start = input.selectionStart;
@@ -8857,6 +9196,9 @@
         if (Object.prototype.hasOwnProperty.call(preserveValues, "issue_key")) {
           form.issue_key.value = preserveValues.issue_key || "";
         }
+        if (Object.prototype.hasOwnProperty.call(preserveValues, "release_issue_key")) {
+          form.release_issue_key.value = preserveValues.release_issue_key || "";
+        }
       }
       if (status && !keepStatus) status.textContent = "";
       renderDaily(state.base);
@@ -8888,23 +9230,6 @@
         next.unshift(item);
       }
       state.base.sprintItems = next;
-    };
-
-    const ensureDailyItemVisible = (targetSprintId, targetStatus) => {
-      if (targetSprintId) {
-        state.selectedSprintId = String(targetSprintId);
-        state.dailySprintManual = true;
-      }
-      state.dailySelectedPersonaId = "";
-      state.dailySelectedAssignee = "";
-      state.dailyStoryPointsFilter = null;
-      state.dailyPointsUserFilter = "";
-      if (targetStatus && Array.isArray(state.dailyStatusFilters) && state.dailyStatusFilters.length) {
-        const statusLabel = getStatusLabel(targetStatus) || targetStatus;
-        const next = new Set(state.dailyStatusFilters.filter(Boolean));
-        next.add(statusLabel);
-        state.dailyStatusFilters = Array.from(next);
-      }
     };
 
     if (clearBtn && !clearBtn.dataset.bound) {
@@ -9007,6 +9332,9 @@
     if (form && !form.dataset.bound) {
       form.dataset.bound = "true";
       form.issue_key?.addEventListener("input", () => normalizeDailyIssueKeyInput(form.issue_key));
+      form.release_issue_key?.addEventListener("input", () =>
+        normalizeDailyReleaseIssueKeyInput(form.release_issue_key)
+      );
       form.addEventListener("adminmodal:closed", () => {
         form?.querySelector("#daily-item-comments-panel")?.remove();
       });
@@ -9083,6 +9411,7 @@
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         const issueKey = normalizeDailyIssueKeyInput(form.issue_key);
+        const releaseIssueKey = normalizeDailyReleaseIssueKeyInput(form.release_issue_key);
         const issueType = form.issue_type.value.trim();
         const summary = form.summary.value.trim();
         const statusValue = form.status.value.trim();
@@ -9112,6 +9441,7 @@
           persona_id: personaId,
           assignee_nombre: persona ? `${persona.nombre} ${persona.apellido}` : null,
           issue_key: issueKey,
+          release_issue_key: releaseIssueKey || null,
           issue_type: issueType,
           summary,
           status: statusValue,
@@ -9122,6 +9452,7 @@
           sprint_id: String(sprintId),
           persona_id: String(personaId),
           issue_key: extractDailyIssuePrefix(issueKey),
+          release_issue_key: releaseIssueKey || "",
         };
         try {
           const editId = form.dataset.editId;
@@ -9131,6 +9462,7 @@
               persona_id: personaId,
               assignee_nombre: persona ? `${persona.nombre} ${persona.apellido}` : null,
               issue_key: issueKey,
+              release_issue_key: releaseIssueKey || null,
               issue_type: issueType,
               summary,
               status: statusValue,
@@ -9150,7 +9482,7 @@
                 : `/sprint-items/${numericEditId}`;
             const requestPayload =
               editSource === "release"
-                ? { status: statusValue }
+                ? { status: statusValue, release_issue_key: releaseIssueKey || null }
                 : updatePayload;
             const updated = await putJson(endpoint, requestPayload);
             if (editSource === "release") {
@@ -9168,7 +9500,7 @@
               status.textContent = "Item actualizado.";
               status.dataset.type = "ok";
             }
-            ensureDailyItemVisible(sprintId, statusValue);
+            await renderDaily(state.base);
           } else {
             const created = await postJson("/sprint-items", payload);
             upsertDailySprintItemInState(created);
@@ -9180,7 +9512,7 @@
               status.textContent = "Item guardado.";
               status.dataset.type = "ok";
             }
-            ensureDailyItemVisible(sprintId, statusValue);
+            await renderDaily(state.base);
           }
           resetDailyForm({
             keepStatus: true,
@@ -9201,6 +9533,7 @@
       });
     }
 
+    syncDailyReleaseIssueOptions();
     renderDaily(state.base);
     state.dailyRealtimeSignature = buildDailyRealtimeSignature(
       state.base.sprintItems || [],
@@ -10625,6 +10958,19 @@
                 <select class="form-select" id="task-assignee" name="assignee_persona_id"></select>
               </div>
               <div class="mb-3">
+                <label class="form-label" for="task-release-issue-key">Release relacionado</label>
+                <input
+                  class="form-control"
+                  id="task-release-issue-key"
+                  name="release_issue_key"
+                  type="text"
+                  placeholder="SMP-1234"
+                  list="task-release-keys"
+                  autocomplete="off"
+                />
+                <datalist id="task-release-keys"></datalist>
+              </div>
+              <div class="mb-3">
                 <label class="form-label" for="task-due">Vencimiento</label>
                 <input class="form-control" id="task-due" name="fecha_vencimiento" type="date" />
               </div>
@@ -10928,6 +11274,31 @@
       }
     };
 
+    const normalizeReleaseIssueKeyValue = (value) => {
+      const raw = String(value || "").trim();
+      if (!raw) return "";
+      const extracted = raw.match(/\b([A-Z0-9]+-\d+)\b/i);
+      if (extracted) return extracted[1].toUpperCase();
+      return raw.toUpperCase();
+    };
+
+    const syncTaskReleaseIssueOptions = (form) => {
+      const list = form?.querySelector("#task-release-keys");
+      if (!list) return;
+      const options = Array.from(
+        new Map(
+          (state.base?.releaseItems || [])
+            .map((item) => {
+              const issueKey = normalizeReleaseIssueKeyValue(item?.issue_key);
+              const summary = String(item?.summary || "").trim();
+              return issueKey ? [issueKey, summary ? `${issueKey} ${summary}` : issueKey] : null;
+            })
+            .filter(Boolean)
+        ).values()
+      ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base", numeric: true }));
+      list.innerHTML = options.map((value) => `<option value="${escapeHtml(value)}"></option>`).join("");
+    };
+
 	    const openTaskModal = (opts = {}) => {
       const {
         task = null,
@@ -10950,14 +11321,19 @@
 	      const newSubtaskToggle = form.querySelector("#task-new-subtask-toggle");
 	      const newSubtaskPanel = form.querySelector("#task-new-subtask-panel");
 	      const newSubtaskTitle = form.querySelector("#task-new-subtask-title");
-	      const newSubtaskCreate = form.querySelector("#task-new-subtask-create");
-	      const newSubtasksList = form.querySelector("#task-new-subtasks-list");
+      const newSubtaskCreate = form.querySelector("#task-new-subtask-create");
+      const newSubtasksList = form.querySelector("#task-new-subtasks-list");
       const commentsList = form.querySelector("#task-comments-list");
       const commentText = form.querySelector("#task-comment-text");
       const commentSubmit = form.querySelector("#task-comment-submit");
+      const releaseIssueInput = form.querySelector("#task-release-issue-key");
 
       const resolvedCelulaId = Number(task?.celula_id || celulaId || resolveCelulaId() || 0);
       const resolvedParentId = Number(task?.parent_id || parentId || 0);
+      const resolvedParentTask = resolvedParentId
+        ? (state.tasksCache || []).find((t) => String(t.id) === String(resolvedParentId)) || null
+        : null;
+      syncTaskReleaseIssueOptions(form);
       form.dataset.celulaId = resolvedCelulaId ? String(resolvedCelulaId) : "";
       const applyModalStatusDateRules = (nextStatusRaw) => {
         const nextStatus = String(nextStatusRaw || "").trim().toLowerCase();
@@ -10984,8 +11360,9 @@
       form.dataset.parentId = resolvedParentId ? String(resolvedParentId) : "";
 	      if (parentHint) {
         if (resolvedParentId) {
-          const parent = (state.tasksCache || []).find((t) => String(t.id) === String(resolvedParentId));
-          parentHint.textContent = parent ? `Subtarea de: ${parent.titulo}` : `Subtarea de: #${resolvedParentId}`;
+          parentHint.textContent = resolvedParentTask
+            ? `Subtarea de: ${resolvedParentTask.titulo}`
+            : `Subtarea de: #${resolvedParentId}`;
         } else {
           parentHint.textContent = "";
         }
@@ -11112,9 +11489,12 @@
 
 	      if (task) {
 	        form.dataset.currentTaskId = String(task.id);
-	        form.titulo.value = task.titulo || "";
-	        form.descripcion.value = task.descripcion || "";
-	        form.estado.value = task.estado || "backlog";
+        form.titulo.value = task.titulo || "";
+        form.descripcion.value = task.descripcion || "";
+        if (releaseIssueInput) {
+          releaseIssueInput.value = normalizeReleaseIssueKeyValue(task.release_issue_key || "");
+        }
+        form.estado.value = task.estado || "backlog";
         form.prioridad.value = task.prioridad || "media";
         populateTaskSegmentSelect(form.segmento, task.segmento || "");
         form.assignee_persona_id.value = task.assignee_persona_id ? String(task.assignee_persona_id) : "";
@@ -11139,6 +11519,11 @@
         form.estado.value = status || "backlog";
         if (status) form.estado.value = status;
         populateTaskSegmentSelect(form.segmento, "");
+        if (releaseIssueInput) {
+          releaseIssueInput.value = normalizeReleaseIssueKeyValue(
+            task?.release_issue_key || resolvedParentTask?.release_issue_key || ""
+          );
+        }
         form.start_date.value = "";
         form.end_date.value = "";
         if (deleteBtn) deleteBtn.classList.add("hidden");
@@ -11204,6 +11589,13 @@
         });
       }
 
+      if (releaseIssueInput && !releaseIssueInput.dataset.boundNormalize) {
+        releaseIssueInput.dataset.boundNormalize = "true";
+        releaseIssueInput.addEventListener("input", () => {
+          releaseIssueInput.value = normalizeReleaseIssueKeyValue(releaseIssueInput.value);
+        });
+      }
+
       if (form.estado && !form.estado.dataset.boundDateRules) {
         form.estado.dataset.boundDateRules = "true";
         form.estado.addEventListener("change", () => {
@@ -11256,6 +11648,7 @@
 	            const createdSubtask = await postJson("/tasks", {
 	              titulo: title,
 	              descripcion: null,
+	              release_issue_key: normalizeReleaseIssueKeyValue(parent.release_issue_key || "") || null,
 	              estado: parent.estado || "backlog",
 	              prioridad: parent.prioridad || "media",
                 segmento: parent.segmento || null,
@@ -11434,6 +11827,7 @@
           const payload = {
             titulo,
             descripcion: form.descripcion.value || null,
+            release_issue_key: normalizeReleaseIssueKeyValue(releaseIssueInput?.value) || null,
             estado: (form.estado.value || "backlog").trim().toLowerCase(),
             prioridad: (form.prioridad.value || "media").trim().toLowerCase(),
             segmento: normalizeSegmentName(form.segmento?.value || "") || null,
@@ -11472,6 +11866,7 @@
 	                      const createdSubtask = await postJson("/tasks", {
 	                        titulo: subTitle,
 	                        descripcion: null,
+	                        release_issue_key: payload.release_issue_key || null,
 	                        estado: payload.estado || "backlog",
 	                        prioridad: payload.prioridad || "media",
                           segmento: payload.segmento || null,
@@ -11550,26 +11945,6 @@
       const keep = new Map();
       const hideSubtasks = Boolean(state.tasksFilters?.hideSubtasks);
       const shouldExpandFilteredAncestors = !hideSubtasks && hasActivePersistedTaskFilters();
-      const descendantsByParent = new Map();
-      (all || []).forEach((task) => {
-        const parentId = task?.parent_id ? String(task.parent_id) : "";
-        if (!parentId) return;
-        if (!descendantsByParent.has(parentId)) descendantsByParent.set(parentId, []);
-        descendantsByParent.get(parentId).push(task);
-      });
-      const queueDescendants = (taskId, ancestors = new Set()) => {
-        const key = String(taskId || "");
-        if (!key || ancestors.has(key)) return;
-        const nextAncestors = new Set(ancestors);
-        nextAncestors.add(key);
-        const children = descendantsByParent.get(key) || [];
-        children.forEach((child) => {
-          const childKey = String(child?.id || "");
-          if (!childKey || keep.has(childKey)) return;
-          keep.set(childKey, child);
-          queueDescendants(childKey, nextAncestors);
-        });
-      };
       (filtered || []).forEach((t) => {
         keep.set(String(t.id), t);
       });
@@ -11584,9 +11959,6 @@
           if (keep.has(parentId)) break;
           keep.set(parentId, parent);
           parentId = parent.parent_id ? String(parent.parent_id) : "";
-        }
-        if (!hideSubtasks) {
-          queueDescendants(String(t.id));
         }
       });
       return Array.from(keep.values());
@@ -14895,16 +15267,18 @@
       }
       return toolbar;
     };
-    const updateReleaseItem = async (itemId, payload) => {
+    const updateReleaseItem = async (itemId, payload, options = {}) => {
       try {
         const updated = await putJson(`/release-items/${itemId}`, payload);
         const idx = state.base.releaseItems.findIndex((item) => item.id === itemId);
         if (idx >= 0) {
           state.base.releaseItems[idx] = updated;
         }
-        initReleaseTable();
+        if (options.refresh !== false) initReleaseTable();
+        return updated;
       } catch {
         setAdminStatus("No se pudo actualizar el release.", "error");
+        return null;
       }
     };
     const applyStatusStyle = (el, value) => {
@@ -14958,6 +15332,321 @@
         await updateReleaseItem(row.id, { tipo: select.value || null });
       });
       return select;
+    };
+    const ensureReleaseEditForm = () => {
+      let form = qs("#release-edit-form");
+      if (!form) {
+        form = document.createElement("form");
+        form.id = "release-edit-form";
+        form.className = "vstack gap-3";
+        form.innerHTML = `
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label" for="release-edit-issue-key">Issue</label>
+              <input class="form-control" id="release-edit-issue-key" name="issue_key" type="text" required />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label" for="release-edit-issue-type">Tipo issue</label>
+              <input class="form-control" id="release-edit-issue-type" name="issue_type" type="text" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label" for="release-edit-type">Type</label>
+              <select class="form-select" id="release-edit-type" name="tipo"></select>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="release-edit-summary">Resumen</label>
+              <textarea class="form-control" id="release-edit-summary" name="summary" rows="3" required></textarea>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label" for="release-edit-quarter">Quarter</label>
+              <select class="form-select" id="release-edit-quarter" name="quarter"></select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label" for="release-edit-status">Estado</label>
+              <select class="form-select" id="release-edit-status" name="status"></select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label" for="release-edit-start-date">Start Date</label>
+              <input class="form-control" id="release-edit-start-date" name="start_date" type="date" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label" for="release-edit-end-date">End Date</label>
+              <input class="form-control" id="release-edit-end-date" name="end_date" type="date" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label" for="release-edit-due-date">Due Date</label>
+              <input class="form-control" id="release-edit-due-date" name="due_date" type="date" />
+            </div>
+          </div>
+          <div class="daily-comments-panel mt-2" id="release-edit-comments-panel">
+            <div class="daily-comments-head">
+              <strong>Comentarios</strong>
+              <span class="text-muted small">Agregar, editar y eliminar.</span>
+            </div>
+            <div class="tasks-comments-modal-list" data-release-comments-list></div>
+            <div class="mt-2">
+              <label class="form-label" for="release-edit-comment-text">Nuevo comentario</label>
+              <textarea class="form-control" id="release-edit-comment-text" rows="3" placeholder="Escribe un comentario..."></textarea>
+              <div class="d-flex justify-content-end gap-2 mt-2">
+                <button class="btn btn-primary btn-sm" type="button" data-release-comment-submit>Agregar comentario</button>
+              </div>
+            </div>
+            <p class="form-status mt-2 mb-0" id="release-edit-comment-status"></p>
+          </div>
+          <p class="form-status mb-0" id="release-edit-status-msg"></p>
+          <div class="d-flex justify-content-end gap-2">
+            <button class="btn btn-outline-secondary" type="button" id="release-edit-cancel">Cancelar</button>
+            <button class="btn btn-primary" type="submit">Guardar cambios</button>
+          </div>
+        `;
+        document.body.appendChild(form);
+        const cancelBtn = form.querySelector('#release-edit-cancel');
+        if (cancelBtn) {
+          cancelBtn.addEventListener('click', () => closeAdminModal(true));
+        }
+        const renderReleaseComments = (comments) => {
+          const listEl = form.querySelector('[data-release-comments-list]');
+          if (!listEl) return;
+          const items = Array.isArray(comments) ? comments : [];
+          if (!items.length) {
+            listEl.innerHTML = `<p class="empty small mb-0">Sin comentarios.</p>`;
+            return;
+          }
+          listEl.innerHTML = items
+            .map(
+              (comment) => `
+                <div class="tasks-comment tasks-comment-compact" data-comment-id="${comment?.id || ""}">
+                  <div class="tasks-comment-head mb-1">
+                    <span class="text-muted small" data-role="comment-date">${comment?.creado_en ? new Date(comment.creado_en).toLocaleString() : ""}</span>
+                    <span class="tasks-comment-actions">
+                      <button class="icon-btn" type="button" title="Editar comentario" aria-label="Editar comentario" data-action="edit-release-comment" data-comment-id="${comment?.id || ""}">
+                        <i class="bi bi-pencil" aria-hidden="true"></i>
+                      </button>
+                      <button class="icon-btn" type="button" title="Eliminar comentario" aria-label="Eliminar comentario" data-action="delete-release-comment" data-comment-id="${comment?.id || ""}">
+                        <i class="bi bi-trash" aria-hidden="true"></i>
+                      </button>
+                    </span>
+                  </div>
+                  <div class="tasks-comment-body" data-role="comment-text">${String(comment?.texto || "")}</div>
+                  <div class="small text-muted mt-1">${comment?.usuario?.username || "admin"}</div>
+                </div>
+              `
+            )
+            .join('');
+        };
+        const loadReleaseComments = async () => {
+          const releaseId = Number(form.dataset.editId || 0);
+          const listEl = form.querySelector('[data-release-comments-list]');
+          if (!releaseId || !listEl) return;
+          listEl.innerHTML = `<p class="empty small mb-0">Cargando...</p>`;
+          try {
+            const comments = await fetchJson(`/release-items/${releaseId}/comments`);
+            renderReleaseComments(comments);
+          } catch {
+            listEl.innerHTML = `<p class="empty small mb-0">No se pudieron cargar comentarios.</p>`;
+          }
+        };
+        if (!form.dataset.commentsBound) {
+          form.dataset.commentsBound = 'true';
+          form.addEventListener('click', async (event) => {
+            const releaseId = Number(form.dataset.editId || 0);
+            if (!releaseId) return;
+            const statusEl = form.querySelector('#release-edit-comment-status');
+            const textEl = form.querySelector('#release-edit-comment-text');
+            const actionBtn = event.target.closest('button[data-action][data-comment-id]');
+            const submitBtn = event.target.closest('[data-release-comment-submit]');
+            try {
+              if (submitBtn) {
+                const text = String(textEl?.value || '').trim();
+                if (!text) {
+                  if (statusEl) {
+                    statusEl.textContent = 'Escribe un comentario.';
+                    statusEl.dataset.type = 'error';
+                  }
+                  return;
+                }
+                await postJson(`/release-items/${releaseId}/comments`, { texto: text });
+                if (textEl) textEl.value = '';
+                if (statusEl) {
+                  statusEl.textContent = 'Comentario agregado.';
+                  statusEl.dataset.type = 'ok';
+                }
+                await loadReleaseComments();
+                return;
+              }
+              if (!actionBtn) return;
+              const commentId = Number(actionBtn.dataset.commentId || 0);
+              if (!commentId) return;
+              if (actionBtn.dataset.action === 'edit-release-comment') {
+                const row = actionBtn.closest('.tasks-comment');
+                const body = row?.querySelector('[data-role="comment-text"]');
+                const current = String(body?.textContent || '').trim();
+                const next = prompt('Editar comentario', current);
+                const clean = String(next || '').trim();
+                if (!clean || clean === current) return;
+                await putJson(`/release-items/${releaseId}/comments/${commentId}`, { texto: clean });
+                if (statusEl) {
+                  statusEl.textContent = 'Comentario actualizado.';
+                  statusEl.dataset.type = 'ok';
+                }
+                await loadReleaseComments();
+                return;
+              }
+              if (actionBtn.dataset.action === 'delete-release-comment') {
+                if (!confirm('Eliminar comentario?')) return;
+                const res = await fetchWithFallback(`/release-items/${releaseId}/comments/${commentId}`, { method: 'DELETE' });
+                if (!res.ok) throw new Error('No se pudo eliminar comentario');
+                if (statusEl) {
+                  statusEl.textContent = 'Comentario eliminado.';
+                  statusEl.dataset.type = 'ok';
+                }
+                await loadReleaseComments();
+              }
+            } catch {
+              if (statusEl) {
+                statusEl.textContent = 'No se pudo guardar el comentario.';
+                statusEl.dataset.type = 'error';
+              }
+            }
+          });
+        }
+        form.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          const releaseId = Number(form.dataset.editId || 0);
+          if (!releaseId) return;
+          const statusMsg = form.querySelector('#release-edit-status-msg');
+          if (statusMsg) {
+            statusMsg.textContent = '';
+            statusMsg.dataset.type = 'info';
+          }
+          const formData = new FormData(form);
+          const payload = {
+            issue_key: String(formData.get('issue_key') || '').trim(),
+            issue_type: String(formData.get('issue_type') || '').trim() || null,
+            summary: String(formData.get('summary') || '').trim(),
+            quarter: String(formData.get('quarter') || '').trim() || null,
+            status: String(formData.get('status') || '').trim() || null,
+            start_date: String(formData.get('start_date') || '').trim() || null,
+            end_date: String(formData.get('end_date') || '').trim() || null,
+            due_date: String(formData.get('due_date') || '').trim() || null,
+            tipo: String(formData.get('tipo') || '').trim() || null,
+          };
+          if (!payload.issue_key || !payload.summary) {
+            if (statusMsg) {
+              statusMsg.textContent = 'Issue y Resumen son obligatorios.';
+              statusMsg.dataset.type = 'error';
+            }
+            return;
+          }
+          const updated = await updateReleaseItem(releaseId, payload, { refresh: false });
+          if (!updated) {
+            if (statusMsg) {
+              statusMsg.textContent = 'No se pudo actualizar el release.';
+              statusMsg.dataset.type = 'error';
+            }
+            return;
+          }
+          closeAdminModal(false);
+          setAdminStatus('Release actualizado.', 'ok');
+          initReleaseTable();
+        });
+      }
+      const typeSelect = form.querySelector('[name="tipo"]');
+      if (typeSelect) {
+        typeSelect.innerHTML = '<option value="">Sin tipo</option>' + typeOptions.map((value) => `<option value="${value}">${value}</option>`).join('');
+      }
+      const quarterSelect = form.querySelector('[name="quarter"]');
+      if (quarterSelect) {
+        quarterSelect.innerHTML = '<option value="">Sin quarter</option>' + quarterOptions.map((value) => `<option value="${value}">${value}</option>`).join('');
+      }
+      const statusSelect = form.querySelector('[name="status"]');
+      if (statusSelect) {
+        const values = Array.from(new Set([...(statusOptions || []), String(statusSelect.dataset.current || '').trim()].filter(Boolean)));
+        statusSelect.innerHTML = values.map((value) => `<option value="${value}">${value}</option>`).join('');
+      }
+      return form;
+    };
+    const openReleaseEditModal = (row) => {
+      const form = ensureReleaseEditForm();
+      form.dataset.editId = String(row.id || '');
+      form.querySelector('[name="issue_key"]').value = row.issue_key || '';
+      form.querySelector('[name="issue_type"]').value = row.issue_type || '';
+      form.querySelector('[name="summary"]').value = row.summary || '';
+      form.querySelector('[name="quarter"]').value = row.quarter || '';
+      const statusSelect = form.querySelector('[name="status"]');
+      if (statusSelect) {
+        statusSelect.dataset.current = row.status || '';
+        const values = Array.from(new Set([...(statusOptions || []), String(row.status || '').trim()].filter(Boolean)));
+        statusSelect.innerHTML = values.map((value) => `<option value="${value}">${value}</option>`).join('');
+        statusSelect.value = row.status || values[0] || '';
+      }
+      form.querySelector('[name="start_date"]').value = row.start_date || '';
+      form.querySelector('[name="end_date"]').value = row.end_date || '';
+      form.querySelector('[name="due_date"]').value = row.due_date || '';
+      form.querySelector('[name="tipo"]').value = row.tipo || '';
+      const statusMsg = form.querySelector('#release-edit-status-msg');
+      if (statusMsg) {
+        statusMsg.textContent = '';
+        statusMsg.dataset.type = 'info';
+      }
+      const commentStatus = form.querySelector('#release-edit-comment-status');
+      if (commentStatus) {
+        commentStatus.textContent = '';
+        commentStatus.dataset.type = 'info';
+      }
+      const commentText = form.querySelector('#release-edit-comment-text');
+      if (commentText) commentText.value = '';
+      const commentsList = form.querySelector('[data-release-comments-list]');
+      if (commentsList) commentsList.innerHTML = `<p class="empty small mb-0">Cargando...</p>`;
+      fetchJson(`/release-items/${row.id}/comments`)
+        .then((comments) => {
+          const listEl = form.querySelector('[data-release-comments-list]');
+          if (!listEl) return;
+          const items = Array.isArray(comments) ? comments : [];
+          if (!items.length) {
+            listEl.innerHTML = `<p class="empty small mb-0">Sin comentarios.</p>`;
+            return;
+          }
+          listEl.innerHTML = items
+            .map(
+              (comment) => `
+                <div class="tasks-comment tasks-comment-compact" data-comment-id="${comment?.id || ""}">
+                  <div class="tasks-comment-head mb-1">
+                    <span class="text-muted small" data-role="comment-date">${comment?.creado_en ? new Date(comment.creado_en).toLocaleString() : ""}</span>
+                    <span class="tasks-comment-actions">
+                      <button class="icon-btn" type="button" title="Editar comentario" aria-label="Editar comentario" data-action="edit-release-comment" data-comment-id="${comment?.id || ""}">
+                        <i class="bi bi-pencil" aria-hidden="true"></i>
+                      </button>
+                      <button class="icon-btn" type="button" title="Eliminar comentario" aria-label="Eliminar comentario" data-action="delete-release-comment" data-comment-id="${comment?.id || ""}">
+                        <i class="bi bi-trash" aria-hidden="true"></i>
+                      </button>
+                    </span>
+                  </div>
+                  <div class="tasks-comment-body" data-role="comment-text">${String(comment?.texto || "")}</div>
+                  <div class="small text-muted mt-1">${comment?.usuario?.username || "admin"}</div>
+                </div>
+              `
+            )
+            .join('');
+        })
+        .catch(() => {
+          const listEl = form.querySelector('[data-release-comments-list]');
+          if (listEl) listEl.innerHTML = `<p class="empty small mb-0">No se pudieron cargar comentarios.</p>`;
+        });
+      openAdminModal(form, `Editar release · ${row.issue_key || ''}`);
+    };
+    const deleteReleaseItem = async (row) => {
+      if (!row?.id) return;
+      if (!confirm(`Eliminar release ${row.issue_key || ''}?`)) return;
+      try {
+        const res = await fetchWithFallback(`/release-items/${row.id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('No se pudo eliminar');
+        state.base.releaseItems = (state.base.releaseItems || []).filter((item) => item.id !== row.id);
+        setAdminStatus('Release eliminado.', 'ok');
+        initReleaseTable();
+      } catch {
+        setAdminStatus('No se pudo eliminar el release.', 'error');
+      }
     };
     const buildDateInput = (row, field, options = {}) => {
       const input = document.createElement("input");
@@ -15400,8 +16089,20 @@
       .map((key) => tableColumnsByKey[key])
       .filter(Boolean);
     const finalColumns = [{ key: "_index", label: "#" }, ...(visibleColumns.length ? visibleColumns : [tableColumnsByKey.summary])];
+    const releaseActions = [
+      {
+        label: "Editar",
+        icon: '<i class="bi bi-pencil" aria-hidden="true"></i>',
+        onClick: (row) => openReleaseEditModal(row),
+      },
+      {
+        label: "Eliminar",
+        icon: '<i class="bi bi-trash" aria-hidden="true"></i>',
+        onClick: (row) => deleteReleaseItem(row),
+      },
+    ];
 
-    renderAdminTable(qs("#release-table"), releasesVisibles, finalColumns, []);
+    renderAdminTable(qs("#release-table"), releasesVisibles, finalColumns, releaseActions);
     renderQuarterSummary(quarterFiltered);
 
     const kpiCommitmentEl = qs("#release-kpi-commitment");
@@ -15473,25 +16174,15 @@
     const panel = qs("#release-gantt-page");
     if (!panel || !state.base) return;
     const base = state.base;
-    const quarterFilterEl = qs("#release-gantt-quarter-filter", panel);
     const summaryEl = qs("#release-gantt-summary", panel);
     const boardEl = qs("#release-gantt-board", panel);
+    const scrollEl = qs("#release-gantt-scroll", panel);
     const zoomEl = qs("#release-gantt-zoom", panel);
     const zoomOutEl = qs("#release-gantt-zoom-out", panel);
     const zoomInEl = qs("#release-gantt-zoom-in", panel);
     const zoomLabelEl = qs("#release-gantt-zoom-label", panel);
-    const kpiTotalEl = qs("#release-gantt-kpi-total", panel);
-    const kpiTotalContextEl = qs("#release-gantt-kpi-total-context", panel);
     const kpiQuarterEl = qs("#release-gantt-kpi-quarter-total", panel);
     const kpiQuarterContextEl = qs("#release-gantt-kpi-quarter-context", panel);
-    const getQuarterLabel = (row) => {
-      if (row.quarter) return row.quarter;
-      const startDate = parseDateOnly(row.start_date);
-      const dueDate = parseDateOnly(row.due_date);
-      const date = startDate || dueDate;
-      if (!date) return "-";
-      return `Q${Math.floor(date.getMonth() / 3) + 1} ${date.getFullYear()}`;
-    };
     const isReleaseRow = (item) => {
       const issueType = normalizeText(item.issue_type || "");
       const tipo = normalizeText(item.release_tipo || "");
@@ -15543,28 +16234,11 @@
       if (state.selectedCelulaId) return String(item.celula_id) === String(state.selectedCelulaId);
       return true;
     });
-    const quarterOptions = Array.from(new Set(allReleases.map((item) => getQuarterLabel(item)).filter((value) => value && value !== "-"))).sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
-    if (quarterFilterEl) {
-      const currentQuarter = `Q${Math.floor(getToday().getMonth() / 3) + 1} ${getToday().getFullYear()}`;
-      quarterFilterEl.innerHTML = `<option value="">Todos</option>${quarterOptions.map((value) => `<option value="${value}">${value}</option>`).join("")}`;
-      if (!state.releaseGanttQuarterFilter && quarterOptions.includes(currentQuarter)) state.releaseGanttQuarterFilter = currentQuarter;
-      quarterFilterEl.value = state.releaseGanttQuarterFilter || "";
-      if (!quarterFilterEl.dataset.bound) {
-        quarterFilterEl.dataset.bound = "true";
-        quarterFilterEl.addEventListener("change", () => {
-          state.releaseGanttQuarterFilter = quarterFilterEl.value || "";
-          initReleaseGantt();
-        });
-      }
-    }
-    const filteredReleases = state.releaseGanttQuarterFilter
-      ? allReleases.filter((item) => getQuarterLabel(item) === state.releaseGanttQuarterFilter)
-      : allReleases;
+    state.releaseGanttQuarterFilter = "";
+    const filteredReleases = allReleases;
     const datedRows = filteredReleases.map((item) => ({ item, range: getDateRange(item) })).filter((entry) => entry.range);
-    if (kpiTotalEl) kpiTotalEl.textContent = String(allReleases.length);
-    if (kpiTotalContextEl) kpiTotalContextEl.textContent = state.selectedCelulaId ? "Celula seleccionada" : "Todas las celulas";
     if (kpiQuarterEl) kpiQuarterEl.textContent = String(filteredReleases.length);
-    if (kpiQuarterContextEl) kpiQuarterContextEl.textContent = `${state.selectedCelulaId ? "Celula seleccionada" : "Todas las celulas"} · ${state.releaseGanttQuarterFilter || "Todos"}`;
+    if (kpiQuarterContextEl) kpiQuarterContextEl.textContent = state.selectedCelulaId ? "Celula seleccionada" : "Todas las celulas";
     if (zoomEl) {
       zoomEl.value = String(state.releaseGanttZoom || 100);
       if (!zoomEl.dataset.bound) {
@@ -15616,7 +16290,9 @@
     const dayInitials = ["D", "L", "M", "M", "J", "V", "S"];
     const dayWidth = Math.round(36 * (Number(state.releaseGanttZoom || 100) / 100));
     const gridColumns = `minmax(320px, 380px) repeat(${dates.length}, ${dayWidth}px)`;
-    if (summaryEl) summaryEl.textContent = `${state.releaseGanttQuarterFilter || "Todos"} · ${filteredReleases.length} release(s) · ${datedRows.length} con fechas`;
+    const todayKey = formatISO(getToday());
+    const todayIndex = dateKeys.indexOf(todayKey);
+    if (summaryEl) summaryEl.textContent = `${filteredReleases.length} release(s) · ${datedRows.length} con fechas`;
     if (boardEl) {
       boardEl.style.setProperty("--day-width", `${dayWidth}px`);
       boardEl.innerHTML = `
@@ -15629,6 +16305,8 @@
           ${dates.map((date) => {
             const key = formatISO(date);
             const classes = ["daily-gantt-day-head"];
+            if (key === todayKey) classes.push("is-today");
+            if (date.getDay() === 0 || date.getDay() === 6) classes.push("is-weekend");
             if (holidayKeys.has(key)) classes.push("is-holiday");
             return `<div class="${classes.join(" ")}">${dayInitials[date.getDay()]}<br>${date.getDate()}</div>`;
           }).join("")}
@@ -15645,9 +16323,11 @@
                 <span>${escapeHtml(item.status || "-")} · ${escapeHtml(startDateText)} -> ${escapeHtml(endDateText)}</span>
               </div>
               <div class="daily-gantt-track" style="grid-column:span ${dates.length}">
+                ${todayIndex >= 0 ? `<span class="daily-gantt-today-line" style="left:${todayIndex * dayWidth}px"></span>` : ""}
                 ${dates.map((date) => {
                   const key = formatISO(date);
                   const classes = ["daily-gantt-cell"];
+                  if (date.getDay() === 0 || date.getDay() === 6) classes.push("is-weekend");
                   if (holidayKeys.has(key)) classes.push("is-holiday");
                   return `<div class="${classes.join(" ")}"></div>`;
                 }).join("")}
@@ -15657,6 +16337,14 @@
           }).join("")}
         </div>
       `;
+    }
+    if (scrollEl && todayIndex >= 0) {
+      requestAnimationFrame(() => {
+        const stickyWidth = 360;
+        const todayOffset = stickyWidth + todayIndex * dayWidth;
+        const target = Math.max(0, todayOffset - Math.max(0, (scrollEl.clientWidth / 2) - dayWidth));
+        scrollEl.scrollLeft = target;
+      });
     }
   }
   async function initRetrospective(options = {}) {

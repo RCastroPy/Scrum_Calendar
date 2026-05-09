@@ -64,7 +64,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.8/css/dataTables.bootstrap5.min.css" crossorigin="anonymous" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-buttons-bs5@2.4.2/css/buttons.bootstrap5.min.css" crossorigin="anonymous" />
     <!--end::Required Plugin(AdminLTE)-->
-    <link rel="stylesheet" href="./styles.css?v=20260207f" />
+    <link rel="stylesheet" href="./styles.css?v=20260509dashadvance1" />
 
     <!-- apexcharts -->
     <link
@@ -372,12 +372,6 @@
                   </p>
                 </a>
                 <ul class="nav nav-treeview">
-                  <li class="nav-item">
-                    <a href="releases-gantt.html" class="nav-link">
-                      <i class="nav-icon bi bi-circle"></i>
-                      <p>Gantt</p>
-                    </a>
-                  </li>
                   <li class="nav-item">
                     <a href="releases-table.html" class="nav-link">
                       <i class="nav-icon bi bi-circle"></i>
@@ -1061,10 +1055,21 @@
                 <article class="chart-card">
                   <h3>% avance célula</h3>
                   <div class="kpi-advance">
-                    <div class="kpi-advance-current" id="dashboard-kpi-advance">—%</div>
-                    <div class="kpi-advance-expected">
-                      Esperado <span id="dashboard-kpi-advance-expected">—%</span>
+                    <div class="kpi-advance-head">
+                      <div class="kpi-advance-metric">
+                        <span class="kpi-advance-label">Actual</span>
+                        <strong class="kpi-advance-current" id="dashboard-kpi-advance">—%</strong>
+                      </div>
+                      <div class="kpi-advance-metric kpi-advance-metric-expected">
+                        <span class="kpi-advance-label">Esperado</span>
+                        <strong id="dashboard-kpi-advance-expected">—%</strong>
+                      </div>
                     </div>
+                    <div class="kpi-advance-track">
+                      <span class="kpi-advance-fill-expected" id="dashboard-kpi-advance-fill-expected"></span>
+                      <span class="kpi-advance-fill-current" id="dashboard-kpi-advance-fill-current"></span>
+                    </div>
+                    <div class="kpi-advance-status" id="dashboard-kpi-advance-status">Sin datos</div>
                   </div>
                 </article>
                 <article class="chart-card">
@@ -1232,7 +1237,7 @@
     <script src="https://cdn.jsdelivr.net/npm/pdfmake@0.2.7/build/vfs_fonts.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/datatables.net-buttons@2.4.2/js/buttons.html5.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/datatables.net-buttons@2.4.2/js/buttons.print.min.js"></script>
-<script src="./app.js?v=20260228dailyux9"></script>
+<script src="./app.js?v=20260509dashboardeventsweekend1"></script>
     <!--end::Script-->
   </body>
   <!--end::Body-->

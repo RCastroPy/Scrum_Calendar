@@ -21,6 +21,8 @@ def apply_task_update(task, payload, fields_set: Set[str], business_today: date)
         task.titulo = payload.titulo
     if payload.descripcion is not None:
         task.descripcion = payload.descripcion
+    if "release_issue_key" in fields_set:
+        task.release_issue_key = payload.release_issue_key
     if payload.estado is not None:
         task.estado = payload.estado
     if payload.prioridad is not None:

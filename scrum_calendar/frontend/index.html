@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Scrum Calendar · Dashboard</title>
-    <link rel="stylesheet" href="styles.css?v=20260110" />
+    <link rel="stylesheet" href="styles.css?v=20260509dashadvance1" />
   </head>
   <body data-page="dashboard" class="dashboard-adminlte">
     <div class="bg-ambient">
@@ -351,10 +351,21 @@
                 <article class="chart-card">
                   <h3>% avance célula</h3>
                   <div class="kpi-advance">
-                    <div class="kpi-advance-current" id="dashboard-kpi-advance">—%</div>
-                    <div class="kpi-advance-expected">
-                      Esperado <span id="dashboard-kpi-advance-expected">—%</span>
+                    <div class="kpi-advance-head">
+                      <div class="kpi-advance-metric">
+                        <span class="kpi-advance-label">Actual</span>
+                        <strong class="kpi-advance-current" id="dashboard-kpi-advance">—%</strong>
+                      </div>
+                      <div class="kpi-advance-metric kpi-advance-metric-expected">
+                        <span class="kpi-advance-label">Esperado</span>
+                        <strong id="dashboard-kpi-advance-expected">—%</strong>
+                      </div>
                     </div>
+                    <div class="kpi-advance-track">
+                      <span class="kpi-advance-fill-expected" id="dashboard-kpi-advance-fill-expected"></span>
+                      <span class="kpi-advance-fill-current" id="dashboard-kpi-advance-fill-current"></span>
+                    </div>
+                    <div class="kpi-advance-status" id="dashboard-kpi-advance-status">Sin datos</div>
                   </div>
                 </article>
                 <article class="chart-card">
@@ -393,7 +404,7 @@
       </main>
     </div>
 
-    <script src="app.js?v=dev"></script>
+    <script src="app.js?v=20260509dashboardeventsweekend1"></script>
     <div class="modal" id="day-modal">
       <div class="modal-content">
         <div class="modal-head">

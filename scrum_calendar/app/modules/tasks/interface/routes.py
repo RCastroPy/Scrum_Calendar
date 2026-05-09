@@ -27,6 +27,11 @@ from data.models import Celula, Persona, Sprint, Task, TaskComment, TaskSegment,
 router = APIRouter()
 
 
+def _normalize_release_issue_key(value: Optional[str]) -> Optional[str]:
+    clean = (value or "").strip().upper()
+    return clean or None
+
+
 def _same_optional_int(a: Optional[int], b: Optional[int]) -> bool:
     return same_optional_int(a, b)
 
@@ -101,10 +106,7 @@ def crear_task(
         parent = db.get(Task, payload.parent_id)
         if not parent:
             raise HTTPException(status_code=404, detail="Task padre no encontrado")
-        if resolved_celula_id is None:
-            resolved_celula_id = parent.celula_id
-        if not _same_optional_int(resolved_celula_id, parent.celula_id):
-            raise HTTPException(status_code=400, detail="La subtarea debe pertenecer a la misma celula del padre")
+        resolved_celula_id = parent.celula_id
     segmento = (payload.segmento or "").strip() or None
     if segmento and len(segmento) > 80:
         raise HTTPException(status_code=400, detail="Segmento demasiado largo")
@@ -127,6 +129,7 @@ def crear_task(
     task = Task(
         titulo=titulo,
         descripcion=payload.descripcion,
+        release_issue_key=_normalize_release_issue_key(payload.release_issue_key),
         estado=estado,
         prioridad=prioridad,
         celula_id=resolved_celula_id,
@@ -276,6 +279,8 @@ def actualizar_task(
         payload.titulo = titulo
     if payload.descripcion is not None:
         pass
+    if "release_issue_key" in fields_set:
+        payload.release_issue_key = _normalize_release_issue_key(payload.release_issue_key)
     if payload.estado is not None:
         estado = (payload.estado or "").strip().lower()
         if estado not in TASK_STATUSES:
@@ -321,9 +326,8 @@ def actualizar_task(
                 raise HTTPException(status_code=404, detail="Task padre no encontrado")
             if _would_create_parent_cycle(db, int(task.id), int(payload.parent_id)):
                 raise HTTPException(status_code=400, detail="Relacion padre-hijo invalida (ciclo)")
-            next_celula_id = payload.celula_id if "celula_id" in fields_set else task.celula_id
-            if not _same_optional_int(next_celula_id, parent.celula_id):
-                raise HTTPException(status_code=400, detail="La subtarea debe pertenecer a la misma celula del padre")
+            payload.celula_id = parent.celula_id
+            fields_set.add("celula_id")
     next_parent_id = payload.parent_id if "parent_id" in fields_set else task.parent_id
     if ("celula_id" in fields_set or "parent_id" in fields_set) and next_parent_id is not None:
         next_celula_id = payload.celula_id if "celula_id" in fields_set else task.celula_id

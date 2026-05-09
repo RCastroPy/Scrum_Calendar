@@ -64,7 +64,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.8/css/dataTables.bootstrap5.min.css" crossorigin="anonymous" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-buttons-bs5@2.4.2/css/buttons.bootstrap5.min.css" crossorigin="anonymous" />
     <!--end::Required Plugin(AdminLTE)-->
-    <link rel="stylesheet" href="./styles.css?v=20260508dailydonuts2" />
+    <link rel="stylesheet" href="./styles.css?v=20260509dailyprogresscyan2" />
 
     <!-- apexcharts -->
     <link
@@ -366,12 +366,6 @@
                   </p>
                 </a>
                 <ul class="nav nav-treeview">
-                  <li class="nav-item">
-                    <a href="releases-gantt.html" class="nav-link">
-                      <i class="nav-icon bi bi-circle"></i>
-                      <p>Gantt</p>
-                    </a>
-                  </li>
                   <li class="nav-item">
                     <a href="releases-table.html" class="nav-link">
                       <i class="nav-icon bi bi-circle"></i>
@@ -994,7 +988,6 @@
                   </div>
                 </div>
               </div>
-
               <div class="row g-3">
                 <div class="col-lg-4 daily-left-stack">
                   <div class="card daily-card">
@@ -1059,40 +1052,6 @@
                 </div>
 
                 <div class="col-12">
-                  <div class="card daily-card" id="daily-storypoints-user-card">
-                    <div class="card-header border-0">
-                      <div>
-                        <h3 class="card-title">Story Points por usuario</h3>
-                        <p class="daily-subtitle mb-0" id="daily-storypoints-user-summary">Vista total</p>
-                      </div>
-                    </div>
-                    <div class="card-body">
-                      <div class="daily-storypoints-toolbar">
-                        <div class="daily-storypoints-field">
-                          <label class="form-label mb-1" for="daily-points-user-select">Usuario</label>
-                          <select class="form-select form-select-sm" id="daily-points-user-select"></select>
-                        </div>
-                        <div class="daily-storypoints-field">
-                          <label class="form-label mb-1" for="daily-points-labels-toggle">Etiquetas</label>
-                          <button class="btn btn-outline-secondary btn-sm daily-labels-toggle" id="daily-points-labels-toggle" type="button">Etiquetas: Off</button>
-                        </div>
-                        <button class="btn btn-outline-primary btn-sm daily-metric-toggle" id="daily-points-metric-toggle" type="button">
-                          Ver cantidad de tareas
-                        </button>
-                        <button class="btn btn-outline-secondary btn-sm" id="daily-points-user-export" type="button">
-                          <i class="bi bi-download me-1"></i>Exportar tabla
-                        </button>
-                      </div>
-                      <div class="line-chart daily-line-chart mb-3" id="daily-points-user-line-chart">
-                        <svg viewBox="0 0 320 160" preserveAspectRatio="none"></svg>
-                      </div>
-                      <div class="daily-line-legend mb-3" id="daily-points-user-legend"></div>
-                      <div class="admin-table" id="daily-points-user-table"></div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="col-12">
                   <div class="card daily-card">
                     <div class="card-header border-0">
                       <h3 class="card-title">Items cargados</h3>
@@ -1104,136 +1063,37 @@
                           <span>Estado</span>
                           <div id="daily-status-filter" class="status-filter-list"></div>
                         </div>
+                        <div>
+                          <span class="daily-filter-label">Vista rápida</span>
+                          <button class="btn btn-outline-secondary btn-sm daily-quick-toggle" type="button" id="daily-items-releases-btn">
+                            <i class="bi bi-box-seam me-1"></i>Releases
+                          </button>
+                        </div>
+                        <div class="position-relative">
+                          <button class="btn btn-outline-secondary btn-sm" type="button" id="daily-items-columns-btn">
+                            <i class="bi bi-layout-three-columns me-1"></i>Columnas
+                          </button>
+                          <div id="daily-items-columns-panel" class="daily-columns-panel hidden" aria-label="Columnas Daily">
+                            <div class="card">
+                              <div class="card-body">
+                                <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                                  <div class="fw-bold">Columnas de Items</div>
+                                  <button class="btn btn-primary btn-sm" type="button" id="daily-items-columns-close">Cerrar</button>
+                                </div>
+                                <div class="text-muted small mb-2">Activa, oculta y ordena las columnas.</div>
+                                <div id="daily-items-columns-list"></div>
+                                <div class="mt-3">
+                                  <button class="btn btn-outline-secondary btn-sm" type="button" id="daily-items-columns-reset">
+                                    Restaurar por defecto
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                       <div class="daily-meta mb-3" id="daily-items-count"></div>
                       <div class="admin-table" id="daily-items-table"></div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="col-12">
-                  <div class="card daily-card">
-                    <div class="card-header border-0 d-flex flex-wrap align-items-center justify-content-between gap-2">
-                      <div>
-                        <h3 class="card-title mb-0">Carga manual</h3>
-                        <p class="daily-subtitle mb-0">Muestra u oculta el formulario manual.</p>
-                      </div>
-                      <button class="btn btn-outline-primary" id="daily-manual-toggle" type="button" aria-expanded="false">
-                        Carga Manual
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="col-12 hidden" id="daily-manual-card-wrap">
-                  <div class="card daily-card">
-                    <div class="card-header border-0">
-                      <h3 class="card-title">Carga manual</h3>
-                      <p class="text-muted mb-0">Registra items adicionales si es necesario.</p>
-                    </div>
-                    <div class="card-body">
-                      <form class="adminlte-form" id="daily-form">
-                        <div class="row">
-                          <div class="col-md-4">
-                            <div class="mb-3">
-                              <label class="form-label" for="daily-issue-type">Issue Type</label>
-                              <select
-                                class="form-select"
-                                name="issue_type"
-                                id="daily-issue-type"
-                                tabindex="1"
-                                required
-                              >
-                                <option value="Task">Task</option>
-                                <option value="Spike">Spike</option>
-                                <option value="Story">Story</option>
-                                <option value="Release">Release</option>
-                              </select>
-                            </div>
-                            <div class="mb-3">
-                              <label class="form-label" for="daily-issue-key">Issue Key</label>
-                              <input
-                                class="form-control"
-                                type="text"
-                                name="issue_key"
-                                id="daily-issue-key"
-                                tabindex="4"
-                                placeholder="SMP-0000"
-                                required
-                              />
-                            </div>
-                            <div class="mb-3">
-                              <label class="form-label" for="daily-summary">Resumen</label>
-                              <input
-                                class="form-control"
-                                type="text"
-                                name="summary"
-                                id="daily-summary"
-                                tabindex="7"
-                                required
-                              />
-                            </div>
-                          </div>
-                          <div class="col-md-4">
-                            <div class="mb-3">
-                              <label class="form-label" for="daily-status-field">Estado</label>
-                              <select
-                                class="form-select"
-                                name="status"
-                                id="daily-status-field"
-                                tabindex="2"
-                                required
-                              >
-                                <option value="To Do">To Do</option>
-                                <option value="In Progress">In Progress</option>
-                                <option value="Finalizada">Finalizada</option>
-                                <option value="Cancelada">Cancelada</option>
-                              </select>
-                            </div>
-                            <div class="mb-3">
-                              <label class="form-label" for="daily-points">Story Points</label>
-                              <input
-                                class="form-control"
-                                type="number"
-                                name="story_points"
-                                id="daily-points"
-                                tabindex="5"
-                                min="0"
-                                step="0.1"
-                              />
-                            </div>
-                          </div>
-                          <div class="col-md-4">
-                            <div class="mb-3">
-                              <label class="form-label" for="daily-persona">Asignado</label>
-                              <select
-                                class="form-select"
-                                name="persona_id"
-                                id="daily-persona"
-                                tabindex="3"
-                                required
-                              ></select>
-                            </div>
-                            <div class="mb-3">
-                              <label class="form-label" for="daily-sprint">Sprint</label>
-                              <select
-                                class="form-select"
-                                name="sprint_id"
-                                id="daily-sprint"
-                                tabindex="6"
-                                required
-                              ></select>
-                            </div>
-                          </div>
-                        </div>
-                        <div class="d-flex gap-2">
-                          <button class="btn btn-primary" type="submit">Agregar item</button>
-                          <button class="btn btn-outline-secondary" type="button" id="daily-form-clear">
-                            Limpiar
-                          </button>
-                        </div>
-                        <p class="form-status mt-2 mb-0" id="daily-status"></p>
-                      </form>
                     </div>
                   </div>
                 </div>
@@ -1270,6 +1130,190 @@
                       <div class="daily-gantt-scroll" id="daily-gantt-scroll">
                         <div class="daily-gantt-board" id="daily-gantt-board"></div>
                       </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="col-12">
+                  <div class="card daily-card" id="daily-storypoints-user-card">
+                    <div class="card-header border-0">
+                      <div>
+                        <h3 class="card-title">Story Points por usuario</h3>
+                        <p class="daily-subtitle mb-0" id="daily-storypoints-user-summary">Vista total</p>
+                      </div>
+                    </div>
+                    <div class="card-body">
+                      <div class="daily-storypoints-toolbar">
+                        <div class="daily-storypoints-field">
+                          <label class="form-label mb-1" for="daily-points-user-select">Usuario</label>
+                          <select class="form-select form-select-sm" id="daily-points-user-select"></select>
+                        </div>
+                        <div class="daily-storypoints-field">
+                          <label class="form-label mb-1" for="daily-points-labels-toggle">Etiquetas</label>
+                          <button class="btn btn-outline-secondary btn-sm daily-labels-toggle" id="daily-points-labels-toggle" type="button">Etiquetas: Off</button>
+                        </div>
+                        <button class="btn btn-outline-primary btn-sm daily-metric-toggle" id="daily-points-metric-toggle" type="button">
+                          Ver cantidad de tareas
+                        </button>
+                        <button class="btn btn-outline-secondary btn-sm" id="daily-points-user-export" type="button">
+                          <i class="bi bi-download me-1"></i>Exportar tabla
+                        </button>
+                      </div>
+                      <div class="line-chart daily-line-chart mb-3" id="daily-points-user-line-chart">
+                        <svg viewBox="0 0 320 160" preserveAspectRatio="none"></svg>
+                      </div>
+                      <div class="daily-line-legend mb-3" id="daily-points-user-legend"></div>
+                      <div class="admin-table" id="daily-points-user-table"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="col-12">
+                  <div class="card daily-card">
+                    <div class="card-header border-0 d-flex flex-wrap align-items-center justify-content-between gap-2">
+                      <div>
+                        <h3 class="card-title mb-0">Carga manual</h3>
+                        <p class="daily-subtitle mb-0">Muestra u oculta el formulario manual.</p>
+                      </div>
+                      <button class="btn btn-outline-primary" id="daily-manual-toggle" type="button" aria-expanded="false">
+                        Carga Manual
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="col-12 hidden" id="daily-manual-card-wrap">
+                  <div class="card daily-card">
+                    <div class="card-header border-0">
+                      <h3 class="card-title">Carga manual</h3>
+                      <p class="text-muted mb-0">Registra items adicionales si es necesario.</p>
+                    </div>
+                    <div class="card-body">
+                      <form class="adminlte-form" id="daily-form">
+                        <div class="row g-3">
+                          <div class="col-md-4">
+                            <div class="mb-3">
+                              <label class="form-label" for="daily-issue-type">Issue Type</label>
+                              <select
+                                class="form-select"
+                                name="issue_type"
+                                id="daily-issue-type"
+                                tabindex="1"
+                                required
+                              >
+                                <option value="Task">Task</option>
+                                <option value="Spike">Spike</option>
+                                <option value="Story">Story</option>
+                                <option value="Release">Release</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div class="col-md-4">
+                            <div class="mb-3">
+                              <label class="form-label" for="daily-status-field">Estado</label>
+                              <select
+                                class="form-select"
+                                name="status"
+                                id="daily-status-field"
+                                tabindex="2"
+                                required
+                              >
+                                <option value="To Do">To Do</option>
+                                <option value="In Progress">In Progress</option>
+                                <option value="Finalizada">Finalizada</option>
+                                <option value="Cancelada">Cancelada</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div class="col-md-4">
+                            <div class="mb-3">
+                              <label class="form-label" for="daily-persona">Asignado</label>
+                              <select
+                                class="form-select"
+                                name="persona_id"
+                                id="daily-persona"
+                                tabindex="3"
+                                required
+                              ></select>
+                            </div>
+                          </div>
+                          <div class="col-md-4">
+                            <div class="mb-3">
+                              <label class="form-label" for="daily-issue-key">Issue Key</label>
+                              <input
+                                class="form-control"
+                                type="text"
+                                name="issue_key"
+                                id="daily-issue-key"
+                                tabindex="4"
+                                placeholder="SMP-0000"
+                                required
+                              />
+                            </div>
+                          </div>
+                          <div class="col-md-4">
+                            <div class="mb-3">
+                              <label class="form-label" for="daily-points">Story Points</label>
+                              <input
+                                class="form-control"
+                                type="number"
+                                name="story_points"
+                                id="daily-points"
+                                tabindex="5"
+                                min="0"
+                                step="0.1"
+                              />
+                            </div>
+                          </div>
+                          <div class="col-md-4">
+                            <div class="mb-3">
+                              <label class="form-label" for="daily-sprint">Sprint</label>
+                              <select
+                                class="form-select"
+                                name="sprint_id"
+                                id="daily-sprint"
+                                tabindex="6"
+                                required
+                              ></select>
+                            </div>
+                          </div>
+                          <div class="col-md-8">
+                            <div class="mb-3">
+                              <label class="form-label" for="daily-summary">Resumen</label>
+                              <input
+                                class="form-control"
+                                type="text"
+                                name="summary"
+                                id="daily-summary"
+                                tabindex="7"
+                                required
+                              />
+                            </div>
+                          </div>
+                          <div class="col-md-4">
+                            <div class="mb-3">
+                              <label class="form-label" for="daily-release-issue-key">Release relacionado</label>
+                              <input
+                                class="form-control"
+                                type="text"
+                                name="release_issue_key"
+                                id="daily-release-issue-key"
+                                placeholder="SMP-1234"
+                                list="daily-release-keys"
+                                autocomplete="off"
+                              />
+                              <datalist id="daily-release-keys"></datalist>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="d-flex gap-2">
+                          <button class="btn btn-primary" type="submit">Agregar item</button>
+                          <button class="btn btn-outline-secondary" type="button" id="daily-form-clear">
+                            Limpiar
+                          </button>
+                        </div>
+                        <p class="form-status mt-2 mb-0" id="daily-status"></p>
+                      </form>
                     </div>
                   </div>
                 </div>
@@ -1408,7 +1452,7 @@
     <script src="https://cdn.jsdelivr.net/npm/pdfmake@0.2.7/build/vfs_fonts.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/datatables.net-buttons@2.4.2/js/buttons.html5.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/datatables.net-buttons@2.4.2/js/buttons.print.min.js"></script>
-<script src="./app.js?v=20260508dailydonuts2"></script>
+<script src="./app.js?v=20260509taskdailyrelease2"></script>
     <!--end::Script-->
   </body>
   <!--end::Body-->

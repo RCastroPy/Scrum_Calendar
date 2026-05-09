@@ -215,6 +215,8 @@ def startup():
             conn.execute(text("alter table release_items add column tipo varchar(20)"))
         if "quarter" not in column_names:
             conn.execute(text("alter table release_items add column quarter varchar(20)"))
+        if "release_issue_key" not in column_names:
+            conn.execute(text("alter table release_items add column release_issue_key varchar(60)"))
         columns = conn.execute(
             text(
                 "select column_name from information_schema.columns "
@@ -277,6 +279,8 @@ def startup():
                 conn.execute(text("alter table tasks add column importante boolean not null default false"))
             if "segmento" not in task_col_names:
                 conn.execute(text("alter table tasks add column segmento varchar(80)"))
+            if "release_issue_key" not in task_col_names:
+                conn.execute(text("alter table tasks add column release_issue_key varchar(60)"))
 
         # Compras: ensure item ticket-check column exists for cross-device validation.
         compra_items_cols = conn.execute(

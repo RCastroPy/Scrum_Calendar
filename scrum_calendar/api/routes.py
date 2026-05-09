@@ -100,6 +100,9 @@ from api.schemas import (
     DailyItemCommentCreate,
     DailyItemCommentOut,
     DailyItemCommentUpdate,
+    ReleaseItemCommentCreate,
+    ReleaseItemCommentOut,
+    ReleaseItemCommentUpdate,
     QuarterOptionCreate,
     QuarterOptionOut,
     QuarterOptionUpdate,
@@ -125,6 +128,7 @@ from data.models import (
     Compra,
     CompraItem,
     DailyItemComment,
+    ReleaseItemComment,
     OneOnOneEntry,
     OneOnOneNote,
     OneOnOneSession,
@@ -3427,6 +3431,7 @@ def crear_sprint_item(
         persona_id=payload.persona_id,
         assignee_nombre=payload.assignee_nombre,
         issue_key=payload.issue_key,
+        release_issue_key=(payload.release_issue_key or "").strip().upper() or None,
         issue_type=payload.issue_type,
         summary=payload.summary,
         status=payload.status,
@@ -3489,6 +3494,8 @@ def actualizar_sprint_item(
         item.assignee_nombre = data["assignee_nombre"]
     if "issue_key" in data:
         item.issue_key = data["issue_key"]
+    if "release_issue_key" in data:
+        item.release_issue_key = (data["release_issue_key"] or "").strip().upper() or None
     if "issue_type" in data:
         item.issue_type = data["issue_type"]
     if "summary" in data:
@@ -3655,6 +3662,97 @@ def eliminar_daily_item_comment(
     _require_daily_item(source, item_id, db)
     comment = db.get(DailyItemComment, comment_id)
     if not comment or comment.item_source != source or comment.item_id != item_id:
+        raise HTTPException(status_code=404, detail="Comentario no encontrado")
+    if user.rol != "admin" and comment.usuario_id != user.id:
+        raise HTTPException(status_code=403, detail="Sin permisos")
+    db.delete(comment)
+    db.commit()
+    return None
+
+
+@router.get("/release-items/{item_id}/comments", response_model=List[ReleaseItemCommentOut])
+def listar_release_item_comments(
+    item_id: int,
+    _: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    item = db.get(ReleaseItem, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Release no encontrado")
+    return (
+        db.query(ReleaseItemComment)
+        .options(joinedload(ReleaseItemComment.usuario))
+        .filter(ReleaseItemComment.release_item_id == item_id)
+        .order_by(ReleaseItemComment.creado_en.asc(), ReleaseItemComment.id.asc())
+        .all()
+    )
+
+
+@router.post(
+    "/release-items/{item_id}/comments",
+    response_model=ReleaseItemCommentOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def crear_release_item_comment(
+    item_id: int,
+    payload: ReleaseItemCommentCreate,
+    user: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    item = db.get(ReleaseItem, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Release no encontrado")
+    texto = (payload.texto or "").strip()
+    if not texto:
+        raise HTTPException(status_code=400, detail="Texto requerido")
+    comment = ReleaseItemComment(
+        release_item_id=item_id,
+        usuario_id=user.id,
+        texto=texto,
+    )
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+    return comment
+
+
+@router.put("/release-items/{item_id}/comments/{comment_id}", response_model=ReleaseItemCommentOut)
+def actualizar_release_item_comment(
+    item_id: int,
+    comment_id: int,
+    payload: ReleaseItemCommentUpdate,
+    user: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    item = db.get(ReleaseItem, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Release no encontrado")
+    comment = db.get(ReleaseItemComment, comment_id)
+    if not comment or comment.release_item_id != item_id:
+        raise HTTPException(status_code=404, detail="Comentario no encontrado")
+    if user.rol != "admin" and comment.usuario_id != user.id:
+        raise HTTPException(status_code=403, detail="Sin permisos")
+    texto = (payload.texto or "").strip()
+    if not texto:
+        raise HTTPException(status_code=400, detail="Texto requerido")
+    comment.texto = texto
+    db.commit()
+    db.refresh(comment)
+    return comment
+
+
+@router.delete("/release-items/{item_id}/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
+def eliminar_release_item_comment(
+    item_id: int,
+    comment_id: int,
+    user: Usuario = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    item = db.get(ReleaseItem, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Release no encontrado")
+    comment = db.get(ReleaseItemComment, comment_id)
+    if not comment or comment.release_item_id != item_id:
         raise HTTPException(status_code=404, detail="Comentario no encontrado")
     if user.rol != "admin" and comment.usuario_id != user.id:
         raise HTTPException(status_code=403, detail="Sin permisos")
@@ -4198,6 +4296,8 @@ def actualizar_release_item(
     if not item:
         raise HTTPException(status_code=404, detail="Release no encontrado")
     data = payload.model_dump(exclude_unset=True)
+    if "release_issue_key" in data:
+        data["release_issue_key"] = (data["release_issue_key"] or "").strip().upper() or None
     for key, value in data.items():
         setattr(item, key, value)
     db.commit()
@@ -4686,6 +4786,9 @@ def eliminar_release_item(
     item = db.get(ReleaseItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Release no encontrado")
+    db.query(ReleaseItemComment).filter(
+        ReleaseItemComment.release_item_id == item.id
+    ).delete(synchronize_session=False)
     db.query(ReleaseImportItem).filter(
         ReleaseImportItem.issue_key == item.issue_key,
         ReleaseImportItem.celula_id == item.celula_id,

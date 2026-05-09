@@ -438,6 +438,7 @@ class EventoOut(BaseModel):
 class TaskCreate(BaseModel):
     titulo: str
     descripcion: Optional[str] = None
+    release_issue_key: Optional[str] = None
     estado: str = "backlog"
     prioridad: str = "media"
     celula_id: Optional[int] = None
@@ -459,6 +460,7 @@ class TaskCreate(BaseModel):
 class TaskUpdate(BaseModel):
     titulo: Optional[str] = None
     descripcion: Optional[str] = None
+    release_issue_key: Optional[str] = None
     estado: Optional[str] = None
     prioridad: Optional[str] = None
     celula_id: Optional[int] = None
@@ -483,6 +485,7 @@ class TaskOut(BaseModel):
     id: int
     titulo: str
     descripcion: Optional[str]
+    release_issue_key: Optional[str]
     estado: str
     prioridad: str
     celula_id: Optional[int]
@@ -637,6 +640,7 @@ class SprintItemOut(BaseModel):
     persona_id: Optional[int]
     assignee_nombre: Optional[str]
     issue_key: str
+    release_issue_key: Optional[str] = None
     issue_type: str
     summary: str
     status: str
@@ -653,6 +657,7 @@ class SprintItemCreate(BaseModel):
     persona_id: Optional[int] = None
     assignee_nombre: Optional[str] = None
     issue_key: str
+    release_issue_key: Optional[str] = None
     issue_type: str
     summary: str
     status: str
@@ -666,6 +671,7 @@ class SprintItemUpdate(BaseModel):
     persona_id: Optional[int] = None
     assignee_nombre: Optional[str] = None
     issue_key: Optional[str] = None
+    release_issue_key: Optional[str] = None
     issue_type: Optional[str] = None
     summary: Optional[str] = None
     status: Optional[str] = None
@@ -722,6 +728,25 @@ class DailyItemCommentOut(BaseModel):
     usuario: Optional[UsuarioLite] = None
 
 
+class ReleaseItemCommentCreate(BaseModel):
+    texto: str
+
+
+class ReleaseItemCommentUpdate(BaseModel):
+    texto: str
+
+
+class ReleaseItemCommentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    release_item_id: int
+    usuario_id: int
+    texto: str
+    creado_en: datetime
+    usuario: Optional[UsuarioLite] = None
+
+
 class ReleaseItemOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -731,6 +756,7 @@ class ReleaseItemOut(BaseModel):
     persona_id: Optional[int]
     issue_type: str
     issue_key: str
+    release_issue_key: Optional[str] = None
     issue_id: Optional[str]
     summary: str
     reporter: Optional[str]
@@ -752,6 +778,7 @@ class ReleaseItemOut(BaseModel):
 
 class ReleaseItemUpdate(BaseModel):
     status: Optional[str] = None
+    release_issue_key: Optional[str] = None
     release_tipo: Optional[str] = None
     tipo: Optional[str] = None
     quarter: Optional[str] = None
