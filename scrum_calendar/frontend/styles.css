@@ -1500,6 +1500,27 @@ h1 {
   width: 100%;
 }
 
+.daily-top-grid > [class*="col-"] {
+  display: flex;
+}
+
+.daily-top-grid .daily-card {
+  width: 100%;
+}
+
+.daily-top-grid .daily-card .card-body {
+  padding: 16px;
+  gap: 10px;
+}
+
+.daily-top-grid .daily-donut {
+  min-height: 205px;
+}
+
+.daily-top-grid .card-title {
+  margin-bottom: 0;
+}
+
 .daily-status-card {
   margin-top: 12px;
 }
@@ -1818,14 +1839,59 @@ h1 {
 }
 
 .daily-gantt-cell {
+  position: relative;
   min-height: 58px;
   border-right: 1px solid rgba(148, 163, 184, 0.14);
+  overflow: hidden;
 }
 
 .daily-gantt-day-head.is-weekend,
 .daily-gantt-cell.is-weekend {
-  background: rgba(226, 232, 240, 0.1);
-  color: rgba(203, 213, 225, 0.9);
+  background: linear-gradient(135deg, rgba(51, 65, 85, 0.88) 0%, rgba(71, 85, 105, 0.82) 50%, rgba(51, 65, 85, 0.88) 100%);
+  color: rgba(226, 232, 240, 0.96);
+}
+
+.daily-gantt-day-head.is-weekend.is-sprint-range,
+.daily-gantt-cell.is-weekend.is-sprint-range {
+  background: linear-gradient(135deg, rgba(51, 65, 85, 0.88) 0%, rgba(71, 85, 105, 0.82) 50%, rgba(51, 65, 85, 0.88) 100%);
+}
+
+.daily-gantt-weekend-head-mark {
+  display: block;
+  margin-top: 5px;
+  font-size: 0.54rem;
+  font-weight: 900;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: rgba(248, 250, 252, 0.88);
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(241, 245, 249, 0.24);
+  border-radius: 999px;
+  padding: 1px 6px;
+  width: fit-content;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.daily-gantt-weekend-mark {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 1.6px;
+  color: rgba(241, 245, 249, 0.22);
+  pointer-events: none;
+  user-select: none;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(15, 23, 42, 0.08) 0,
+    rgba(15, 23, 42, 0.08) 8px,
+    rgba(148, 163, 184, 0.02) 8px,
+    rgba(148, 163, 184, 0.02) 16px
+  );
 }
 
 .daily-gantt-day-head.is-sprint-range,
@@ -6914,4 +6980,21 @@ body.theme-dark .tasks-kpi-card span {
 .tasks-tree-spacer {
   display: inline-block;
   width: 16px;
+}
+
+
+.daily-items-users-wrap {
+  flex: 1 1 100%;
+  min-width: 100%;
+}
+
+.daily-items-user-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.daily-items-user-filter .btn {
+  border-radius: 999px;
+  white-space: nowrap;
 }

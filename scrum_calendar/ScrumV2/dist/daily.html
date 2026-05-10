@@ -64,7 +64,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.8/css/dataTables.bootstrap5.min.css" crossorigin="anonymous" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-buttons-bs5@2.4.2/css/buttons.bootstrap5.min.css" crossorigin="anonymous" />
     <!--end::Required Plugin(AdminLTE)-->
-    <link rel="stylesheet" href="./styles.css?v=20260509dailyprogresscyan2" />
+    <link rel="stylesheet" href="./styles.css?v=20260510dailyganttsprints1" />
 
     <!-- apexcharts -->
     <link
@@ -988,9 +988,9 @@
                   </div>
                 </div>
               </div>
-              <div class="row g-3">
-                <div class="col-lg-4 daily-left-stack">
-                  <div class="card daily-card">
+              <div class="row g-3 daily-top-grid">
+                <div class="col-12 col-sm-6 col-xl-3">
+                  <div class="card daily-card h-100">
                     <div class="card-body">
                       <h3 class="card-title">Sprint Actual / Remaining Days</h3>
                       <div class="daily-sprint-label" id="daily-sprint-label">-</div>
@@ -998,7 +998,9 @@
                       <span class="remaining-label">dias</span>
                     </div>
                   </div>
-                  <div class="card daily-card daily-status-card">
+                </div>
+                <div class="col-12 col-sm-6 col-xl-3">
+                  <div class="card daily-card daily-status-card h-100">
                     <div class="card-body">
                       <h3 class="card-title">Estados de items</h3>
                       <div class="daily-donut" id="daily-status-chart">
@@ -1007,39 +1009,39 @@
                       </div>
                     </div>
                   </div>
-                  <div class="card daily-card daily-kpi-card">
+                </div>
+                <div class="col-12 col-sm-6 col-xl-3">
+                  <div class="card daily-card daily-kpi-card h-100">
                     <div class="card-body">
                       <h3 class="card-title">Promedio por Story Points</h3>
                       <p class="text-muted small mb-2">Promedio de cierre (incluye en curso).</p>
                       <div class="storypoints-alerts" id="daily-kpi-storypoints"></div>
                     </div>
                   </div>
-                  <div class="row g-3">
-                    <div class="col-12 col-md-6">
-                      <div class="card daily-card daily-status-card">
-                        <div class="card-body">
-                          <h3 class="card-title">Story Points por miembro</h3>
-                          <div class="daily-donut" id="daily-points-member-chart">
-                            <div class="donut"></div>
-                            <ul class="legend"></ul>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div class="col-12 col-md-6">
-                      <div class="card daily-card daily-status-card">
-                        <div class="card-body">
-                          <h3 class="card-title">Tareas por miembro</h3>
-                          <div class="daily-donut" id="daily-tasks-member-chart">
-                            <div class="donut"></div>
-                            <ul class="legend"></ul>
-                          </div>
-                        </div>
+                </div>
+                <div class="col-12 col-sm-6 col-xl-3">
+                  <div class="card daily-card daily-status-card h-100">
+                    <div class="card-body">
+                      <h3 class="card-title">Story Points por miembro</h3>
+                      <div class="daily-donut" id="daily-points-member-chart">
+                        <div class="donut"></div>
+                        <ul class="legend"></ul>
                       </div>
                     </div>
                   </div>
                 </div>
-                <div class="col-lg-8">
+                <div class="col-12 col-sm-6 col-xl-3">
+                  <div class="card daily-card daily-status-card h-100">
+                    <div class="card-body">
+                      <h3 class="card-title">Tareas por miembro</h3>
+                      <div class="daily-donut" id="daily-tasks-member-chart">
+                        <div class="donut"></div>
+                        <ul class="legend"></ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-12">
                   <div class="card daily-card" id="daily-team-card">
                     <div class="card-header border-0">
                       <h3 class="card-title">Seguimiento Dev Team</h3>
@@ -1068,6 +1070,10 @@
                           <button class="btn btn-outline-secondary btn-sm daily-quick-toggle" type="button" id="daily-items-releases-btn">
                             <i class="bi bi-box-seam me-1"></i>Releases
                           </button>
+                        </div>
+                        <div class="daily-items-users-wrap">
+                          <span class="daily-filter-label">Recursos</span>
+                          <div id="daily-items-user-filter" class="daily-items-user-filter"></div>
                         </div>
                         <div class="position-relative">
                           <button class="btn btn-outline-secondary btn-sm" type="button" id="daily-items-columns-btn">
@@ -1452,7 +1458,7 @@
     <script src="https://cdn.jsdelivr.net/npm/pdfmake@0.2.7/build/vfs_fonts.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/datatables.net-buttons@2.4.2/js/buttons.html5.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/datatables.net-buttons@2.4.2/js/buttons.print.min.js"></script>
-<script src="./app.js?v=20260509taskdailyrelease2"></script>
+<script src="./app.js?v=20260510dailyganttsprints1"></script>
     <!--end::Script-->
   </body>
   <!--end::Body-->

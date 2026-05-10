@@ -6467,6 +6467,7 @@
     const itemsTable = qs("#daily-items-table");
     const itemsCount = qs("#daily-items-count");
     const dailyItemsReleasesBtn = qs("#daily-items-releases-btn");
+    const dailyItemsUserFilter = qs("#daily-items-user-filter");
     const dailyItemsColumnsBtn = qs("#daily-items-columns-btn");
     const dailyItemsColumnsPanel = qs("#daily-items-columns-panel");
     const dailyItemsColumnsList = qs("#daily-items-columns-list");
@@ -6868,6 +6869,10 @@
           )
         )
       : personasActivas;
+    const personasDevFiltradas = personasFiltradas.filter((persona) => {
+      const rol = String(persona.rol || "").trim().toLowerCase();
+      return rol !== "sm" && rol !== "po";
+    });
     const personaLookup = buildPersonaLookup(personasFiltradas);
     const personaNameById = Object.fromEntries(
       personasActivas.map((persona) => [
@@ -6877,6 +6882,36 @@
     );
     const activePersonaIds = new Set(personasActivas.map((persona) => persona.id));
     const shouldFilterByPersona = activePersonaIds.size > 0;
+    const toggleDailyPersonaSelection = (personaId = "", assigneeName = "") => {
+      const personaKey = personaId ? String(personaId) : "";
+      const assigneeKey = assigneeName ? normalizeText(assigneeName) : "";
+      if (personaKey) {
+        if (state.dailySelectedPersonaId === personaKey) {
+          state.dailySelectedPersonaId = "";
+          state.dailySelectedAssignee = "";
+          state.dailyPointsUserFilter = "";
+        } else {
+          state.dailySelectedPersonaId = personaKey;
+          state.dailySelectedAssignee = "";
+          state.dailyPointsUserFilter = `persona:${personaKey}`;
+        }
+      } else if (assigneeName) {
+        if (normalizeText(state.dailySelectedAssignee) === assigneeKey) {
+          state.dailySelectedAssignee = "";
+          state.dailySelectedPersonaId = "";
+          state.dailyPointsUserFilter = "";
+        } else {
+          state.dailySelectedAssignee = assigneeName;
+          state.dailySelectedPersonaId = "";
+          state.dailyPointsUserFilter = `nombre:${assigneeKey || "sin_asignar"}`;
+        }
+      } else {
+        state.dailySelectedPersonaId = "";
+        state.dailySelectedAssignee = "";
+        state.dailyPointsUserFilter = "";
+      }
+      renderDaily(state.base);
+    };
     const itemsAll = dailyItemsSource.filter((item) => {
       if (state.selectedCelulaId && String(item.celula_id) !== state.selectedCelulaId) {
         return false;
@@ -6931,11 +6966,34 @@
       );
     };
 
+    const selectedPersonaId = state.dailySelectedPersonaId;
+    const selectedAssignee = state.dailySelectedAssignee;
+    const matchesSelectedDailyUser = (item) => {
+      if (selectedPersonaId) {
+        return String(resolvePersonaIdFromItem(item, personaLookup) || "") === String(selectedPersonaId);
+      }
+      if (selectedAssignee) {
+        return normalizeText(item.assignee_nombre) === normalizeText(selectedAssignee);
+      }
+      return true;
+    };
+    let userFilteredItems = itemsAll;
+    if (selectedPersonaId) {
+      userFilteredItems = userFilteredItems.filter(
+        (item) =>
+          String(resolvePersonaIdFromItem(item, personaLookup) || "") ===
+          String(selectedPersonaId)
+      );
+    } else if (selectedAssignee) {
+      const target = normalizeText(selectedAssignee);
+      userFilteredItems = userFilteredItems.filter((item) => normalizeText(item.assignee_nombre) === target);
+    }
+
     ensureStatusCard();
     if (statusChart) {
       const counts = new Map();
       const pointsByStatus = new Map();
-      itemsAll.forEach((item) => {
+      userFilteredItems.forEach((item) => {
         const label = getStatusLabel(item.status) || "Sin estado";
         counts.set(label, (counts.get(label) || 0) + 1);
         const points = Number(item.story_points);
@@ -7051,22 +7109,30 @@
       wrapper.appendChild(panel);
       statusFilter.appendChild(wrapper);
     }
-    let items = itemsAll;
+    if (dailyItemsUserFilter) {
+      dailyItemsUserFilter.innerHTML = "";
+      const allBtn = document.createElement("button");
+      allBtn.type = "button";
+      allBtn.className = `btn btn-sm ${selectedPersonaId || selectedAssignee ? "btn-outline-secondary" : "btn-primary"}`;
+      allBtn.textContent = "Todos";
+      allBtn.addEventListener("click", () => toggleDailyPersonaSelection("", ""));
+      dailyItemsUserFilter.appendChild(allBtn);
+      personasDevFiltradas
+        .slice()
+        .sort((a, b) => `${a.nombre || ""} ${a.apellido || ""}`.localeCompare(`${b.nombre || ""} ${b.apellido || ""}`, "es", { sensitivity: "base" }))
+        .forEach((persona) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = `btn btn-sm ${String(persona.id) === String(selectedPersonaId) ? "btn-primary" : "btn-outline-secondary"}`;
+          btn.textContent = `${persona.nombre || ""} ${persona.apellido || ""}`.trim() || `Persona ${persona.id}`;
+          btn.addEventListener("click", () => toggleDailyPersonaSelection(persona.id));
+          dailyItemsUserFilter.appendChild(btn);
+        });
+    }
+    let items = userFilteredItems;
     if (state.dailyStatusFilters && state.dailyStatusFilters.length) {
       const target = new Set(state.dailyStatusFilters.map((value) => normalizeText(value)));
       items = items.filter((item) => target.has(normalizeText(getStatusLabel(item.status))));
-    }
-    const selectedPersonaId = state.dailySelectedPersonaId;
-    const selectedAssignee = state.dailySelectedAssignee;
-    if (selectedPersonaId) {
-      items = items.filter(
-        (item) =>
-          String(resolvePersonaIdFromItem(item, personaLookup) || "") ===
-          String(selectedPersonaId)
-      );
-    } else if (selectedAssignee) {
-      const target = normalizeText(selectedAssignee);
-      items = items.filter((item) => normalizeText(item.assignee_nombre) === target);
     }
     if (state.dailyStoryPointsFilter != null) {
       const targetPoints = Number(state.dailyStoryPointsFilter);
@@ -7079,8 +7145,8 @@
       releasesOnly: Boolean(state.dailyItemsReleasesOnly),
     });
     renderStorypointsKpiCard(items);
-    renderDailyMemberDonut(pointsMemberChart, itemsAll, "points");
-    renderDailyMemberDonut(tasksMemberChart, itemsAll, "tasks");
+    renderDailyMemberDonut(pointsMemberChart, userFilteredItems, "points");
+    renderDailyMemberDonut(tasksMemberChart, userFilteredItems, "tasks");
 
     if (storypointsKpi && !storypointsKpi.dataset.bound) {
       storypointsKpi.dataset.bound = "true";
@@ -7354,9 +7420,7 @@
     };
     const sprintTimeline = [...sprints].sort(compareSprintTimeline);
     const pointsItemsBySprint = new Map();
-    dailyItemsSource.forEach((item) => {
-      if (state.selectedCelulaId && String(item.celula_id) !== state.selectedCelulaId) return;
-      if (item.persona_id && shouldFilterByPersona && !activePersonaIds.has(item.persona_id)) return;
+    userFilteredItems.forEach((item) => {
       const metricValue = getDailyUserMetricValue(item);
       if (!Number.isFinite(metricValue) || metricValue <= 0) return;
       const sprintId = String(item.sprint_id || "");
@@ -7409,6 +7473,12 @@
         return false;
       }
       if (item.persona_id && shouldFilterByPersona && !activePersonaIds.has(item.persona_id)) {
+        return false;
+      }
+      if (selectedPersonaId && String(resolvePersonaIdFromItem(item, personaLookup) || "") !== String(selectedPersonaId)) {
+        return false;
+      }
+      if (selectedAssignee && normalizeText(item.assignee_nombre) !== normalizeText(selectedAssignee)) {
         return false;
       }
       const metricValue = getDailyUserMetricValue(item);
@@ -7626,6 +7696,14 @@
       const dayMs = 24 * 60 * 60 * 1000;
       return `S${Math.ceil((((date - oneJan) / dayMs) + oneJan.getDay() + 1) / 7)}`;
     };
+    const getDailySprintHeaderLabel = (sprint) => {
+      const sprintName = String(sprint?.nombre || "").trim();
+      const compactMatch = sprintName.match(/Sprint\s+\d{4}(\d{2})/i);
+      if (compactMatch) return `Sprint ${compactMatch[1]}`;
+      const simpleMatch = sprintName.match(/Sprint\s+(\d{1,2})\b/i);
+      if (simpleMatch) return `Sprint ${String(simpleMatch[1]).padStart(2, "0")}`;
+      return sprintName || `Sprint ${sprint?.id || ""}`;
+    };
     const getGanttColorClass = (row) => {
       const statusText = normalizeText(row.status || "");
       if (isDoneStatus(row.status)) return "is-done";
@@ -7699,17 +7777,35 @@
       const dates = buildDateSpan(minStart, maxEnd);
       const dateKeys = dates.map((date) => formatISO(date));
       const monthGroups = [];
-      const weekGroups = [];
+      const sprintGroups = [];
       dates.forEach((date) => {
         const monthKey = `${date.getFullYear()}-${date.getMonth()}`;
         const monthLabel = date.toLocaleDateString("es-PY", { month: "short", year: "numeric" });
         const lastMonth = monthGroups[monthGroups.length - 1];
         if (lastMonth?.key === monthKey) lastMonth.span += 1;
         else monthGroups.push({ key: monthKey, label: monthLabel, span: 1 });
-        const weekKey = `${date.getFullYear()}-${getWeekLabel(date)}`;
-        const lastWeek = weekGroups[weekGroups.length - 1];
-        if (lastWeek?.key === weekKey) lastWeek.span += 1;
-        else weekGroups.push({ key: weekKey, label: getWeekLabel(date), span: 1 });
+        const matchingSprint = sprintTimeline.find((sprint) => {
+          const sprintStartDate = parseDateOnly(sprint.fecha_inicio || "");
+          const sprintEndDate = parseDateOnly(sprint.fecha_fin || "");
+          if (!sprintStartDate || !sprintEndDate) return false;
+          return date >= sprintStartDate && date <= sprintEndDate;
+        });
+        const sprintKey = matchingSprint
+          ? `${matchingSprint.id}-${matchingSprint.fecha_inicio || ""}-${matchingSprint.fecha_fin || ""}`
+          : "__no_sprint__";
+        const lastSprint = sprintGroups[sprintGroups.length - 1];
+        if (lastSprint?.key === sprintKey) {
+          lastSprint.span += 1;
+        } else {
+          sprintGroups.push({
+            key: sprintKey,
+            label: matchingSprint ? getDailySprintHeaderLabel(matchingSprint) : "",
+            title: matchingSprint
+              ? `${matchingSprint.nombre || ""} · ${matchingSprint.fecha_inicio || "-"} -> ${matchingSprint.fecha_fin || "-"}`
+              : "",
+            span: 1,
+          });
+        }
       });
       const holidayKeys = new Set(feriadosSet);
       const dayInitials = ["D", "L", "M", "M", "J", "V", "S"];
@@ -7727,8 +7823,8 @@
             .map((group) => `<div class="daily-gantt-head" style="grid-column:span ${group.span}">${escapeHtml(group.label)}</div>`)
             .join("")}
           <div class="daily-gantt-subhead"></div>
-          ${weekGroups
-            .map((group) => `<div class="daily-gantt-subhead" style="grid-column:span ${group.span}">${escapeHtml(group.label)}</div>`)
+          ${sprintGroups
+            .map((group) => `<div class="daily-gantt-subhead" style="grid-column:span ${group.span}" title="${escapeHtml(group.title || "")}">${escapeHtml(group.label || "")}</div>`)
             .join("")}
           <div class="daily-gantt-subhead"></div>
           ${dates
@@ -7738,14 +7834,17 @@
               if (sprintStartKey && sprintEndKey && key >= sprintStartKey && key <= sprintEndKey) {
                 classes.push("is-sprint-range");
               }
-              if (date.getDay() === 0 || date.getDay() === 6) classes.push("is-weekend");
+              const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+              if (isWeekend) classes.push("is-weekend");
               if (holidayKeys.has(key)) classes.push("is-holiday");
-              return `<div class="${classes.join(" ")}">${dayInitials[date.getDay()]}<br>${date.getDate()}</div>`;
+              return `<div class="${classes.join(" ")}">${dayInitials[date.getDay()]}<br>${date.getDate()}${isWeekend ? '<span class="daily-gantt-weekend-head-mark">No habil</span>' : ""}</div>`;
             })
             .join("")}
           ${ganttRows
             .map(({ item, range }) => {
               const title = `${item.issue_key || ""} - ${item.summary || ""}`.trim();
+              const storyPoints = Number.isFinite(Number(item.story_points)) ? Number(item.story_points) : null;
+              const titleWithPoints = storyPoints !== null ? `${title || "Sin titulo"} | ${storyPoints} Pts` : (title || "Sin titulo");
               const assignee = resolvePersonaNameFromItem(item, personaLookup, personaNameById) || "Sin asignar";
               const metaEnd = item.end_date || item.due_date || "-";
               const noDates = !range;
@@ -7763,7 +7862,7 @@
               }
               return `
                 <div class="daily-gantt-task">
-                  <strong>${escapeHtml(title || "Sin titulo")}</strong>
+                  <strong>${escapeHtml(titleWithPoints)}</strong>
                   <span>${escapeHtml(assignee)} · ${escapeHtml(getStatusLabel(item.status) || "Sin estado")} · ${escapeHtml(item.start_date || "-")} -> ${escapeHtml(metaEnd)}${noDates ? " · Sin fechas" : ""}</span>
                 </div>
                 <div class="daily-gantt-track" style="grid-column:2 / span ${dates.length}; --day-width:${dayWidth}px">
@@ -7774,7 +7873,8 @@
                       if (sprintStartKey && sprintEndKey && key >= sprintStartKey && key <= sprintEndKey) {
                         classes.push("is-sprint-range");
                       }
-                      if (date.getDay() === 0 || date.getDay() === 6) classes.push("is-weekend");
+                      const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                      if (isWeekend) classes.push("is-weekend");
                       if (holidayKeys.has(key)) classes.push("is-holiday");
                       return `<span class="${classes.join(" ")}"></span>`;
                     })
@@ -8065,6 +8165,7 @@
           if (item.persona_id && shouldFilterByPersona && !activePersonaIds.has(item.persona_id)) {
             return false;
           }
+          if (!matchesSelectedDailyUser(item)) return false;
           return String(item.sprint_id) === String(previousSprint.id);
         })
       : [];
@@ -8076,6 +8177,7 @@
           if (item.persona_id && shouldFilterByPersona && !activePersonaIds.has(item.persona_id)) {
             return false;
           }
+          if (!matchesSelectedDailyUser(item)) return false;
           return String(item.sprint_id) === String(previousSprint2.id);
         })
       : [];
@@ -8103,7 +8205,7 @@
       (prevCapacidad2?.detalle_por_persona || []).map((entry) => [entry.persona_id, entry.porcentaje])
     );
 
-    const currentStats = buildSprintItemStats(itemsAll, personaLookup);
+    const currentStats = buildSprintItemStats(userFilteredItems, personaLookup);
     const previousStats = buildSprintItemStats(previousItems, personaLookup);
     const previousStats2 = buildSprintItemStats(previousItems2, personaLookup);
 
@@ -8112,7 +8214,10 @@
       two: getTrend(current, prev2),
     });
 
-    const teamRows = personasFiltradas.map((persona) => {
+    const visibleTeamPersonas = selectedPersonaId
+      ? personasFiltradas.filter((persona) => String(persona.id) === String(selectedPersonaId))
+      : personasFiltradas;
+    const teamRows = visibleTeamPersonas.map((persona) => {
       const stats = currentStats.byPersona.get(persona.id) || {
         totalTareas: 0,
         totalPoints: 0,
@@ -8178,21 +8283,11 @@
         _isSelectedUser: isSelected,
         _rowClass: isSelected ? "is-selected" : "",
         _isDev: isDev,
-        _rowClick: () => {
-          if (state.dailySelectedPersonaId === String(persona.id)) {
-            state.dailySelectedPersonaId = "";
-            state.dailySelectedAssignee = "";
-            state.dailyPointsUserFilter = "";
-          } else {
-            state.dailySelectedPersonaId = String(persona.id);
-            state.dailySelectedAssignee = "";
-            state.dailyPointsUserFilter = `persona:${persona.id}`;
-          }
-          renderDaily(state.base);
-        },
+        _rowClick: () => toggleDailyPersonaSelection(persona.id),
       };
     });
 
+    if (!selectedPersonaId) {
     Array.from(currentStats.byName.values()).forEach((stats) => {
       const pendingPoints = stats.totalPoints - stats.donePoints;
       const avance =
@@ -8235,20 +8330,10 @@
         _isSelectedUser: isSelected,
         _rowClass: isSelected ? "is-selected" : "",
         _isDev: false,
-        _rowClick: () => {
-          if (normalizeText(state.dailySelectedAssignee) === key) {
-            state.dailySelectedAssignee = "";
-            state.dailySelectedPersonaId = "";
-            state.dailyPointsUserFilter = "";
-          } else {
-            state.dailySelectedAssignee = stats.nombre;
-            state.dailySelectedPersonaId = "";
-            state.dailyPointsUserFilter = `nombre:${key || "sin_asignar"}`;
-          }
-          renderDaily(state.base);
-        },
+        _rowClick: () => toggleDailyPersonaSelection("", stats.nombre),
       });
     });
+    }
 
     const heatmapKeys = [
       "capacidad",
