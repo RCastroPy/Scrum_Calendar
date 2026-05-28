@@ -11339,18 +11339,6 @@
       syncAssigneeKpiState();
     };
 
-    const shouldShowDoneSubtasksInModal = () => {
-      const explicitStatus = String(state.tasksStatusFilter || "").trim().toLowerCase();
-      if (explicitStatus) return explicitStatus === "done";
-      const selectedStatuses =
-        Array.isArray(state.tasksFilters?.statuses) && state.tasksFilters.statuses.length
-          ? state.tasksFilters.statuses
-          : DEFAULT_TASKS_ADVANCED_FILTERS.statuses;
-      return selectedStatuses
-        .map((value) => String(value || "").trim().toLowerCase())
-        .includes("done");
-    };
-
     const syncOpenTaskModalSubtasks = () => {
       const taskForm = qs("#task-form");
       if (!taskForm || typeof taskForm.__renderSubtasks !== "function") return;
@@ -11912,15 +11900,12 @@
 	          subtasksList.innerHTML = "";
 	          return;
 	        }
-	        const showDoneSubtasks = shouldShowDoneSubtasksInModal();
 	        const subtasks = sortTasks(
-	          (state.tasksCache || []).filter((t) => {
-	            if (Number(t.parent_id || 0) !== taskId) return false;
-	            const statusKey = String(t?.estado || "").trim().toLowerCase();
-	            if (statusKey === "done" && !showDoneSubtasks) return false;
-	            return true;
-	          })
-	        );
+            applyFiltersWithOptions(
+              (state.tasksCache || []).filter((t) => Number(t.parent_id || 0) === taskId),
+              { ignoreHideSubtasks: true }
+            )
+          );
 	        if (!subtasks.length) {
 	          subtasksList.innerHTML = `<p class="empty small mb-0">No hay subtareas.</p>`;
 	          return;
@@ -12411,7 +12396,7 @@
 	                        release_issue_key: payload.release_issue_key || null,
 	                        estado: payload.estado || "backlog",
 	                        prioridad: payload.prioridad || "media",
-                          segmento: payload.segmento || null,
+                          segmento: normalizeSegmentName(payload.segmento || "") || null,
 	                        celula_id: payload.celula_id,
 	                        parent_id: createdId,
 	                        assignee_persona_id: payload.assignee_persona_id || null,
@@ -12442,6 +12427,7 @@
       const ignoreStatuses = Boolean(options?.ignoreStatuses);
       const ignoreAssignees = Boolean(options?.ignoreAssignees);
       const ignoreSegment = Boolean(options?.ignoreSegment);
+      const ignoreHideSubtasks = Boolean(options?.ignoreHideSubtasks);
       const query = normalizeText(state.tasksSearch || "");
       const statusFilter = (state.tasksStatusFilter || "").trim().toLowerCase();
       const statusSet = new Set(
@@ -12489,7 +12475,7 @@
         );
       };
       return items.filter((task) => {
-        if (hideSubtasks && task.parent_id) return false;
+        if (!ignoreHideSubtasks && hideSubtasks && task.parent_id) return false;
         if (!ignoreStatuses && statusAllowed && !statusAllowed.has(String(task.estado || "").toLowerCase())) return false;
         if (prioritySet.size && !prioritySet.has(String(task.prioridad || "").toLowerCase())) return false;
         if (!ignoreSegment && segmentKey && normalizeSegmentKey(task?.segmento || "") !== segmentKey) return false;
