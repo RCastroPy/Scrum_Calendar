@@ -10890,6 +10890,21 @@
       state.tasksSegments = [...(state.tasksSegments || []), nextId ? { id: nextId, nombre: name } : { nombre: name }];
     };
 
+    const syncFilterEmptyState = (container, hasVisibleItems, message) => {
+      if (!container) return;
+      let empty = container.querySelector(".tasks-kpi-empty");
+      if (hasVisibleItems) {
+        if (empty) empty.remove();
+        return;
+      }
+      if (!empty) {
+        empty = document.createElement("span");
+        empty.className = "tasks-kpi-empty";
+        container.appendChild(empty);
+      }
+      empty.textContent = message;
+    };
+
     const sanitizeTaskSegmentFilter = () => {
       const activeName = normalizeSegmentName(state.tasksSegmentFilter || "");
       const activeKey = normalizeSegmentKey(activeName);
@@ -10969,6 +10984,7 @@
       });
       segmentButtons.innerHTML = "";
       const buildButton = (label, count, value, isActive) => {
+        if (Number(count || 0) <= 0) return null;
         const button = document.createElement("button");
         button.type = "button";
         button.className = `tasks-segment-btn${isActive ? " is-active" : ""}`;
@@ -10981,14 +10997,13 @@
         button.appendChild(total);
         return button;
       };
-      segmentButtons.appendChild(
-        buildButton("Todos", scopedItems.length, "", !activeKey)
-      );
+      const totalButton = buildButton("Todos", scopedItems.length, "", !activeKey);
+      if (totalButton) segmentButtons.appendChild(totalButton);
       segments.forEach((segment) => {
-        segmentButtons.appendChild(
-          buildButton(segment.nombre, counts.get(segment.key) || 0, segment.nombre, activeKey === segment.key)
-        );
+        const button = buildButton(segment.nombre, counts.get(segment.key) || 0, segment.nombre, activeKey === segment.key);
+        if (button) segmentButtons.appendChild(button);
       });
+      syncFilterEmptyState(segmentButtons, Boolean(segmentButtons.querySelector(".tasks-segment-btn")), "Sin segmentos con datos");
     };
 
     const applyTaskSegmentFilter = (value = "") => {
@@ -11196,8 +11211,16 @@
       });
       ["total", "urgente", "alta", "media", "baja"].forEach((key) => {
         const el = priorityKpis.querySelector(`[data-priority-kpi="${key}"]`);
-        if (el) el.textContent = String(counts[key] || 0);
+        if (!el) return;
+        el.textContent = String(counts[key] || 0);
+        const button = el.closest(".tasks-priority-kpi");
+        if (button) button.hidden = Number(counts[key] || 0) <= 0;
       });
+      syncFilterEmptyState(
+        priorityKpis,
+        Boolean(priorityKpis.querySelector(".tasks-priority-kpi:not([hidden])")),
+        "Sin prioridades con datos"
+      );
       syncPriorityKpiState();
     };
 
@@ -11240,8 +11263,16 @@
       });
       ["total", ...TASK_ACTIVE_STATUS_KEYS].forEach((key) => {
         const el = statusKpis.querySelector(`[data-status-kpi="${key}"]`);
-        if (el) el.textContent = String(counts[key] || 0);
+        if (!el) return;
+        el.textContent = String(counts[key] || 0);
+        const button = el.closest(".tasks-status-kpi");
+        if (button) button.hidden = Number(counts[key] || 0) <= 0;
       });
+      syncFilterEmptyState(
+        statusKpis,
+        Boolean(statusKpis.querySelector(".tasks-status-kpi:not([hidden])")),
+        "Sin estados con datos"
+      );
       syncStatusKpiState();
     };
 
@@ -15108,7 +15139,7 @@
         saveTasksFiltersState();
       };
 
-      const renderFilterChips = () => {
+      function renderFilterChips() {
         if (!filterChips) return;
         const chips = [];
         if (state.tasksStatusFilter) {
@@ -15157,7 +15188,7 @@
             `
           )
           .join("");
-      };
+      }
 
       root.__tasksRenderFilterChips = renderFilterChips;
 
