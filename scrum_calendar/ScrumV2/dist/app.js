@@ -10958,8 +10958,11 @@
       if (!segmentButtons) return;
       const segments = getTaskSegmentsCatalog();
       const activeKey = normalizeSegmentKey(state.tasksSegmentFilter || "");
+      const scopedItems = applyFiltersWithOptions(Array.isArray(state.tasksCache) ? state.tasksCache : [], {
+        ignoreSegment: true,
+      });
       const counts = new Map();
-      (state.tasksCache || []).forEach((task) => {
+      scopedItems.forEach((task) => {
         const key = normalizeSegmentKey(task?.segmento || "");
         if (!key) return;
         counts.set(key, (counts.get(key) || 0) + 1);
@@ -10979,7 +10982,7 @@
         return button;
       };
       segmentButtons.appendChild(
-        buildButton("Todos", Number(state.tasksCache?.length || 0), "", !activeKey)
+        buildButton("Todos", scopedItems.length, "", !activeKey)
       );
       segments.forEach((segment) => {
         segmentButtons.appendChild(
@@ -12427,6 +12430,7 @@
     const applyFiltersWithOptions = (items, options = {}) => {
       const ignoreStatuses = Boolean(options?.ignoreStatuses);
       const ignoreAssignees = Boolean(options?.ignoreAssignees);
+      const ignoreSegment = Boolean(options?.ignoreSegment);
       const query = normalizeText(state.tasksSearch || "");
       const statusFilter = (state.tasksStatusFilter || "").trim().toLowerCase();
       const statusSet = new Set(
@@ -12477,7 +12481,7 @@
         if (hideSubtasks && task.parent_id) return false;
         if (!ignoreStatuses && statusAllowed && !statusAllowed.has(String(task.estado || "").toLowerCase())) return false;
         if (prioritySet.size && !prioritySet.has(String(task.prioridad || "").toLowerCase())) return false;
-        if (segmentKey && normalizeSegmentKey(task?.segmento || "") !== segmentKey) return false;
+        if (!ignoreSegment && segmentKey && normalizeSegmentKey(task?.segmento || "") !== segmentKey) return false;
         if (!ignoreAssignees && assigneeSet.size) {
           const key = task.assignee_persona_id ? String(task.assignee_persona_id) : "__none__";
           if (!assigneeSet.has(key)) return false;
