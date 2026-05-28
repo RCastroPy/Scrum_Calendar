@@ -9317,7 +9317,7 @@
       if (preservedSprintId && sprintOptions.some((item) => String(item.id) === preservedSprintId)) {
         form.sprint_id.value = preservedSprintId;
       }
-      if (selectedSprint) {
+      if (!preservedSprintId && selectedSprint) {
         form.sprint_id.value = String(selectedSprint.id);
       }
     }
