@@ -126,8 +126,8 @@
 	    tasksDatePreset: "",
 	    tasksCache: [],
 	    tasksFilters: {
-	      statuses: ["backlog", "todo", "doing", "done"],
-	      priorities: ["baja", "media", "alta", "urgente"],
+	      statuses: ["backlog", "todo", "doing"],
+	      priorities: ["urgente", "alta", "media", "baja"],
 	      assignees: [],
 	      dueFrom: "",
 	      dueTo: "",
@@ -1054,6 +1054,37 @@
     return count;
   }
 
+  function countRemainingSprintBusinessDays(start, end, feriadosSet, today = getToday(), now = getNow()) {
+    if (!start || !end) return 0;
+    if (today < start) return countSprintBusinessDays(start, end, feriadosSet);
+    if (today > end) return 0;
+    const sprintStartKey = formatISO(start);
+    const sprintEndKey = formatISO(end);
+    const sameDay = sprintStartKey === sprintEndKey;
+    const todayKey = formatISO(today);
+    const noonCutoff = new Date(today.getTime());
+    noonCutoff.setHours(12, 0, 0, 0);
+    const isBeforeNoon = now < noonCutoff;
+    let count = 0;
+    const cursor = new Date(today);
+    while (cursor <= end) {
+      const key = formatISO(cursor);
+      const isWeekend = cursor.getDay() === 0 || cursor.getDay() === 6;
+      if (!isWeekend && !feriadosSet.has(key)) {
+        let factor = 1;
+        if (!sameDay && (key === sprintStartKey || key === sprintEndKey)) {
+          factor = 0.5;
+        }
+        if (key === todayKey) {
+          factor = isBeforeNoon ? Math.min(0.5, factor) : 0;
+        }
+        count += factor;
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return count;
+  }
+
   function getSprintRemainingDays(sprint, feriados) {
     if (!sprint) return { remaining: 0, total: 0, ratio: 0 };
     const start = parseDateOnly(sprint.fecha_inicio);
@@ -1061,40 +1092,7 @@
     if (!start || !end) return { remaining: 0, total: 0, ratio: 0 };
     const feriadosSet = new Set((feriados || []).map((feriado) => feriado.fecha));
     const totalDays = countSprintBusinessDays(start, end, feriadosSet);
-    let remainingDays = 0;
-    const today = getToday();
-    const now = getNow();
-    const noonCutoff = new Date(today.getTime());
-    noonCutoff.setHours(12, 0, 0, 0);
-    const isBeforeNoon = now < noonCutoff;
-    if (today < start) {
-      remainingDays = totalDays;
-    } else if (today > end) {
-      remainingDays = 0;
-    } else {
-      const sprintStartKey = formatISO(start);
-      const sprintEndKey = formatISO(end);
-      const sameDay = sprintStartKey === sprintEndKey;
-      const todayKey = formatISO(today);
-      let elapsed = 0;
-      const cursor = new Date(start);
-      while (cursor <= today && cursor <= end) {
-        const key = formatISO(cursor);
-        const isWeekend = cursor.getDay() === 0 || cursor.getDay() === 6;
-        if (!isWeekend && !feriadosSet.has(key)) {
-          let factor = 1;
-          if (!sameDay && (key === sprintStartKey || key === sprintEndKey)) {
-            factor = 0.5;
-          }
-          if (key === todayKey) {
-            factor = isBeforeNoon ? 0 : Math.min(0.5, factor);
-          }
-          elapsed += factor;
-        }
-        cursor.setDate(cursor.getDate() + 1);
-      }
-      remainingDays = Math.max(0, totalDays - elapsed);
-    }
+    const remainingDays = countRemainingSprintBusinessDays(start, end, feriadosSet);
     const ratio = totalDays > 0 ? Math.max(0, Math.min(1, remainingDays / totalDays)) : 0;
     return { remaining: remainingDays, total: totalDays, ratio };
   }
@@ -1805,17 +1803,8 @@
       return count;
     };
     const totalDays = sprintStart && sprintEnd ? countSprintDays(sprintStart, sprintEnd) : 0;
-    let remainingDays = 0;
-    if (sprintStart && sprintEnd) {
-      if (today < sprintStart) {
-        remainingDays = totalDays;
-      } else if (today > sprintEnd) {
-        remainingDays = 0;
-      } else {
-        const elapsedDays = countSprintDays(sprintStart, sprintEnd, today);
-        remainingDays = Math.max(0, totalDays - elapsedDays);
-      }
-    }
+    const remainingDays =
+      sprintStart && sprintEnd ? countRemainingSprintBusinessDays(sprintStart, sprintEnd, holidaySet, today) : 0;
     const totalDaysForRatio = totalDays > 0 ? totalDays : 1;
     const remainingRatio = Math.max(0, Math.min(1, remainingDays / totalDaysForRatio));
     const formatDays = (value) => (Number.isInteger(value) ? String(value) : value.toFixed(1));
@@ -7110,6 +7099,28 @@
       statusFilter.appendChild(wrapper);
     }
     if (dailyItemsUserFilter) {
+      const availableDailyUsers = Array.from(
+        itemsAll.reduce((map, item) => {
+          const personaId = resolvePersonaIdFromItem(item, personaLookup);
+          const nombre = resolvePersonaNameFromItem(item, personaLookup, personaNameById) || "Sin asignar";
+          const filterKey = personaId
+            ? `persona:${String(personaId)}`
+            : `nombre:${normalizeText(nombre) || "sin_asignar"}`;
+          if (!map.has(filterKey)) {
+            map.set(filterKey, {
+              filterKey,
+              personaId: personaId ? String(personaId) : "",
+              nombre,
+            });
+          }
+          return map;
+        }, new Map()).values()
+      ).sort((a, b) =>
+        String(a.nombre || "").localeCompare(String(b.nombre || ""), "es", {
+          sensitivity: "base",
+          numeric: true,
+        })
+      );
       dailyItemsUserFilter.innerHTML = "";
       const allBtn = document.createElement("button");
       allBtn.type = "button";
@@ -7117,17 +7128,21 @@
       allBtn.textContent = "Todos";
       allBtn.addEventListener("click", () => toggleDailyPersonaSelection("", ""));
       dailyItemsUserFilter.appendChild(allBtn);
-      personasDevFiltradas
-        .slice()
-        .sort((a, b) => `${a.nombre || ""} ${a.apellido || ""}`.localeCompare(`${b.nombre || ""} ${b.apellido || ""}`, "es", { sensitivity: "base" }))
-        .forEach((persona) => {
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = `btn btn-sm ${String(persona.id) === String(selectedPersonaId) ? "btn-primary" : "btn-outline-secondary"}`;
-          btn.textContent = `${persona.nombre || ""} ${persona.apellido || ""}`.trim() || `Persona ${persona.id}`;
-          btn.addEventListener("click", () => toggleDailyPersonaSelection(persona.id));
-          dailyItemsUserFilter.appendChild(btn);
-        });
+      availableDailyUsers.forEach((user) => {
+        const isSelected = user.personaId
+          ? String(user.personaId) === String(selectedPersonaId)
+          : normalizeText(selectedAssignee) === normalizeText(user.nombre);
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = `btn btn-sm ${isSelected ? "btn-primary" : "btn-outline-secondary"}`;
+        btn.textContent = user.nombre;
+        btn.addEventListener("click", () =>
+          user.personaId
+            ? toggleDailyPersonaSelection(user.personaId)
+            : toggleDailyPersonaSelection("", user.nombre)
+        );
+        dailyItemsUserFilter.appendChild(btn);
+      });
     }
     let items = userFilteredItems;
     if (state.dailyStatusFilters && state.dailyStatusFilters.length) {
@@ -8511,6 +8526,7 @@
           "release_tipo",
           "tipo",
           "quarter",
+          "release_issue_key",
           "start_date",
           "end_date",
           "due_date",
@@ -8541,6 +8557,158 @@
           status.dataset.type = "error";
         }
       }
+    };
+
+    const buildReleaseSearchIndex = () =>
+      (base.releaseItems || [])
+        .map((item) => {
+          const issueKey = String(item?.issue_key || "").trim().toUpperCase();
+          if (!issueKey) return null;
+          const summary = String(item?.summary || "").trim();
+          const haystack = normalizeText(
+            [issueKey, summary, item?.issue_type, item?.assignee_nombre, item?.quarter].filter(Boolean).join(" ")
+          );
+          const tokens = haystack.split(/\s+/).filter(Boolean);
+          return {
+            issueKey,
+            summary,
+            label: summary ? `${issueKey} - ${summary}` : issueKey,
+            haystack,
+            tokens,
+          };
+        })
+        .filter(Boolean);
+
+    const releaseSearchIndex = buildReleaseSearchIndex();
+    const releaseIndexByKey = new Map(releaseSearchIndex.map((item) => [item.issueKey, item]));
+
+    const rankReleaseCandidates = (query, row, limit = 8) => {
+      const currentIssueKey = String(row?.issue_key || "").trim().toUpperCase();
+      const normalizedQuery = normalizeText(query);
+      const queryTokens = normalizedQuery.split(/\s+/).filter(Boolean);
+      const scored = releaseSearchIndex
+        .filter((candidate) => candidate.issueKey !== currentIssueKey)
+        .map((candidate) => {
+          let score = 0;
+          if (!normalizedQuery) {
+            if (candidate.issueKey === String(row?.release_issue_key || "").trim().toUpperCase()) score += 1000;
+          } else {
+            const normalizedKey = normalizeText(candidate.issueKey);
+            if (normalizedKey === normalizedQuery) score += 1200;
+            if (normalizedKey.startsWith(normalizedQuery)) score += 700;
+            if (candidate.haystack.includes(normalizedQuery)) score += 350;
+            queryTokens.forEach((token) => {
+              if (normalizedKey === token) score += 300;
+              else if (normalizedKey.includes(token)) score += 120;
+              candidate.tokens.forEach((candidateToken) => {
+                if (candidateToken === token) score += 90;
+                else if (candidateToken.startsWith(token)) score += 55;
+                else if (candidateToken.includes(token)) score += 25;
+              });
+            });
+          }
+          return { candidate, score };
+        })
+        .filter((entry) => entry.score > 0)
+        .sort(
+          (a, b) =>
+            b.score - a.score ||
+            a.candidate.label.localeCompare(b.candidate.label, "es", { sensitivity: "base", numeric: true })
+        )
+        .slice(0, limit)
+        .map((entry) => entry.candidate);
+
+      if (!scored.length && row?.release_issue_key) {
+        const fallback = releaseIndexByKey.get(String(row.release_issue_key || "").trim().toUpperCase());
+        if (fallback) return [fallback];
+      }
+      return scored;
+    };
+
+    const resolveReleaseCandidateFromText = (value, row) => {
+      const raw = String(value || "").trim();
+      if (!raw) return null;
+      const extracted = raw.match(/\b([A-Z0-9]+-\d+)\b/i);
+      if (extracted) {
+        const key = extracted[1].toUpperCase();
+        if (releaseIndexByKey.has(key)) return releaseIndexByKey.get(key);
+      }
+      const normalizedRaw = normalizeText(raw);
+      const exactLabel = releaseSearchIndex.find(
+        (candidate) => normalizeText(candidate.label) === normalizedRaw || normalizeText(candidate.issueKey) === normalizedRaw
+      );
+      if (exactLabel) return exactLabel;
+      return rankReleaseCandidates(raw, row, 1)[0] || null;
+    };
+
+    const buildMotherInput = (row) => {
+      const wrap = document.createElement("div");
+      const input = document.createElement("input");
+      const list = document.createElement("datalist");
+      const listId = `daily-madre-list-${String(row?.id || "").replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+      const linkedRelease = releaseIndexByKey.get(String(row?.release_issue_key || "").trim().toUpperCase());
+      const renderValue = (candidate, fallbackKey = "") =>
+        candidate?.label || (fallbackKey ? String(fallbackKey).trim().toUpperCase() : "");
+
+      wrap.className = "daily-madre-cell";
+      input.type = "search";
+      input.className = "table-input form-control form-control-sm";
+      input.setAttribute("list", listId);
+      input.placeholder = "Buscar madre...";
+      input.autocomplete = "off";
+      input.value = renderValue(linkedRelease, row?.release_issue_key || "");
+      list.id = listId;
+
+      const syncSuggestions = (query = input.value || "") => {
+        const options = rankReleaseCandidates(query, row);
+        list.innerHTML = options
+          .map((candidate) => `<option value="${escapeHtml(candidate.label)}"></option>`)
+          .join("");
+      };
+
+      const restoreCurrentValue = () => {
+        const current = releaseIndexByKey.get(String(row?.release_issue_key || "").trim().toUpperCase());
+        input.value = renderValue(current, row?.release_issue_key || "");
+      };
+
+      const commitValue = async () => {
+        const raw = String(input.value || "").trim();
+        if (!raw) {
+          await updateDailyItem(row, { release_issue_key: null });
+          input.value = "";
+          return;
+        }
+        const selected = resolveReleaseCandidateFromText(raw, row);
+        if (!selected) {
+          restoreCurrentValue();
+          if (status) {
+            status.textContent = "No se encontro una Madre similar en releases.";
+            status.dataset.type = "error";
+          }
+          return;
+        }
+        if (String(row?.release_issue_key || "").trim().toUpperCase() === selected.issueKey) {
+          input.value = selected.label;
+          return;
+        }
+        await updateDailyItem(row, { release_issue_key: selected.issueKey });
+        input.value = selected.label;
+      };
+
+      input.addEventListener("focus", () => syncSuggestions(input.value || ""));
+      input.addEventListener("input", () => syncSuggestions(input.value || ""));
+      input.addEventListener("change", async () => {
+        await commitValue();
+      });
+      input.addEventListener("keydown", async (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        await commitValue();
+      });
+
+      wrap.appendChild(input);
+      wrap.appendChild(list);
+      return wrap;
     };
 
     const buildDateInput = (row, field) => {
@@ -8715,6 +8883,15 @@
         { key: "issue_key", label: "Issue" },
         { key: "issue_type", label: "Tipo" },
         { key: "summary", label: "Resumen" },
+        {
+          key: "release_issue_key",
+          label: "Madre",
+          render: (row) => buildMotherInput(row),
+          getValue: (row) => {
+            const linkedRelease = releaseIndexByKey.get(String(row?.release_issue_key || "").trim().toUpperCase());
+            return linkedRelease?.label || row?.release_issue_key || "";
+          },
+        },
         {
           key: "status",
           label: "Estado",
@@ -9660,6 +9837,8 @@
     const filtersBtn = qs("#tasks-filters-btn");
     const filterPanel = qs("#tasks-filter-panel");
     const filterChips = qs("#tasks-filter-chips");
+    const filterTabs = qs("#tasks-filter-tabs");
+    const topFilterTabs = qs("#tasks-top-filter-tabs");
     const filterAssignee = qs("#tasks-filter-assignee");
     const filterDueFrom = qs("#tasks-filter-due-from");
     const filterDueTo = qs("#tasks-filter-due-to");
@@ -9675,6 +9854,8 @@
     const segmentButtons = qs("#tasks-segment-buttons");
     const segmentManageBtn = qs("#tasks-segment-manage-btn");
     const priorityKpis = qs("#tasks-priority-kpis");
+    const statusKpis = qs("#tasks-status-kpis");
+    const assigneeKpis = qs("#tasks-assignee-kpis");
     const columnsPanel = qs("#tasks-columns-panel");
     const columnsList = qs("#tasks-columns-list");
     const columnsCloseBtn = qs("#tasks-columns-close");
@@ -9687,6 +9868,8 @@
     let backlogDataTable = null;
     let cleanupBacklogHorizontalBar = null;
     let backlogDataTableSearchFilter = null;
+    state.tasksFilterTab = String(state.tasksFilterTab || "estado").trim().toLowerCase() || "estado";
+    state.tasksTopFilterTab = String(state.tasksTopFilterTab || "segmentos").trim().toLowerCase() || "segmentos";
     state.tasksSegments = Array.isArray(state.tasksSegments) ? state.tasksSegments : [];
     state.tasksCommentCounts = state.tasksCommentCounts && typeof state.tasksCommentCounts === "object"
       ? state.tasksCommentCounts
@@ -9707,6 +9890,7 @@
       urgente: "Urgente",
     };
     const TASK_PRIORITY_KEYS = ["baja", "media", "alta", "urgente"];
+    const TASK_ACTIVE_STATUS_KEYS = ["backlog", "todo", "doing"];
     const normalizeSegmentName = (value) => String(value || "").replace(/\s+/g, " ").trim().slice(0, 80);
     const normalizeSegmentKey = (value) => normalizeText(normalizeSegmentName(value));
     const TASK_FAMILY_COLORS = [
@@ -9757,10 +9941,10 @@
       horas_estimadas: "Horas",
       importante: "Importante",
     };
-    const TASK_FILTERS_KEY = "scrum_calendar_tasks_filters_v1";
+    const TASK_FILTERS_KEY = "scrum_calendar_tasks_filters_v2";
     const DEFAULT_TASKS_ADVANCED_FILTERS = {
-      statuses: ["backlog", "todo", "doing", "done"],
-      priorities: ["baja", "media", "alta", "urgente"],
+      statuses: ["backlog", "todo", "doing"],
+      priorities: ["urgente", "alta", "media", "baja"],
       assignees: [],
       dueFrom: "",
       dueTo: "",
@@ -9859,6 +10043,73 @@
       } catch {
         // ignore storage errors
       }
+    };
+
+    const syncTaskAssigneeFilterOptions = () => {
+      if (!filterAssignee) return;
+      const selectedStatuses = Array.isArray(state.tasksFilters?.statuses) && state.tasksFilters.statuses.length
+        ? state.tasksFilters.statuses
+        : DEFAULT_TASKS_ADVANCED_FILTERS.statuses;
+      const allowedStatuses = new Set(
+        selectedStatuses
+          .map((value) => String(value || "").trim().toLowerCase())
+          .filter((value) => TASK_ASSIGNEE_FILTER_STATUSES.has(value))
+      );
+
+      const assignedIds = new Set(
+        (state.tasksCache || [])
+          .filter((task) => {
+            const status = String(task?.estado || "").trim().toLowerCase();
+            return allowedStatuses.has(status) && task?.assignee_persona_id;
+          })
+          .map((task) => String(task.assignee_persona_id))
+      );
+
+      const options = Array.from(assignedIds)
+        .map((id) => ({
+          id,
+          nombre: personaMap[id] || `Persona ${id}`,
+        }))
+        .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
+
+      filterAssignee.innerHTML = "";
+      if (!options.length) {
+        const empty = document.createElement("option");
+        empty.value = "";
+        empty.textContent = "Sin responsables asignados en tareas activas";
+        empty.disabled = true;
+        empty.selected = true;
+        filterAssignee.appendChild(empty);
+        state.tasksFilters = {
+          ...state.tasksFilters,
+          assignees: [],
+        };
+        saveTasksFiltersState();
+        return;
+      }
+      options.forEach((item) => {
+        const opt = document.createElement("option");
+        opt.value = item.id;
+        opt.textContent = item.nombre;
+        filterAssignee.appendChild(opt);
+      });
+
+      const currentSelected = Array.isArray(state.tasksFilters?.assignees)
+        ? state.tasksFilters.assignees.map((value) => String(value))
+        : [];
+      const validSelected = currentSelected.filter((value) => assignedIds.has(value));
+      if (currentSelected.length !== validSelected.length) {
+        state.tasksFilters = {
+          ...state.tasksFilters,
+          assignees: validSelected,
+        };
+        saveTasksFiltersState();
+      }
+
+      const selectedSet = new Set(validSelected);
+      Array.from(filterAssignee.options).forEach((option) => {
+        option.selected = selectedSet.has(String(option.value));
+      });
     };
 
     const loadColumnsConfig = () => {
@@ -9987,6 +10238,7 @@
     const sprintNameById = Object.fromEntries(
       (base.sprints || []).map((s) => [String(s.id), String(s.nombre || "").trim() || `Sprint ${s.id}`])
     );
+    const TASK_ASSIGNEE_FILTER_STATUSES = new Set(["backlog", "todo", "doing"]);
 
     const personaBelongsToCelula = (persona, celulaId) => {
       if (!celulaId) return true;
@@ -10138,7 +10390,7 @@
         ...cloneDefaultTasksAdvancedFilters(),
         ...savedTasksFiltersState.filters,
       };
-      state.tasksBacklogSort = savedTasksFiltersState.backlogSort;
+      state.tasksBacklogSort = { ...DEFAULT_TASKS_BACKLOG_SORT };
       saveTasksFiltersState();
     }
 
@@ -10262,20 +10514,6 @@
     const initBacklogDataTable = (table, visibleColumns) => {
       if (!hasBacklogDataTable || !table) return;
       const $table = window.jQuery(table);
-      if (backlogDataTableSearchFilter && window.jQuery?.fn?.dataTable?.ext?.search) {
-        const filters = window.jQuery.fn.dataTable.ext.search;
-        const idx = filters.indexOf(backlogDataTableSearchFilter);
-        if (idx >= 0) filters.splice(idx, 1);
-      }
-      backlogDataTableSearchFilter = (settings, _searchData, dataIndex) => {
-        if (settings?.nTable !== table) return true;
-        const query = normalizeText(settings?.oPreviousSearch?.sSearch || "");
-        if (!query) return true;
-        const rowNode = settings?.aoData?.[dataIndex]?.nTr;
-        const haystack = normalizeText(rowNode?.textContent || "");
-        return haystack.includes(query);
-      };
-      window.jQuery.fn.dataTable.ext.search.push(backlogDataTableSearchFilter);
       backlogDataTable = $table.DataTable({
         destroy: true,
         stateSave: true,
@@ -10293,6 +10531,14 @@
             if (!sameColumns) return null;
             const cols = Array.isArray(parsed?.columns) ? parsed.columns : [];
             if (cols.length !== visibleColumns.length) return null;
+            if (parsed.search && typeof parsed.search === "object") {
+              parsed.search.search = "";
+            }
+            cols.forEach((col) => {
+              if (col?.search && typeof col.search === "object") {
+                col.search.search = "";
+              }
+            });
             return parsed;
           } catch {
             return null;
@@ -10311,7 +10557,7 @@
           }
         },
         autoWidth: false,
-        searching: true,
+        searching: false,
         ordering: false,
         paging: true,
         info: true,
@@ -10763,7 +11009,7 @@
       if (filterHideSubtasks) filterHideSubtasks.checked = false;
       if (filterAssignee) Array.from(filterAssignee.options).forEach((o) => (o.selected = false));
       document.querySelectorAll("#tasks-filter-statuses input[type='checkbox']").forEach((cb) => {
-        cb.checked = cb.value !== "archived";
+        cb.checked = TASK_ACTIVE_STATUS_KEYS.includes(String(cb.value || "").toLowerCase());
       });
       document.querySelectorAll("#tasks-filter-priorities input[type='checkbox']").forEach((cb) => {
         cb.checked = true;
@@ -10871,6 +11117,45 @@
       input?.focus();
     };
 
+    const TOP_FILTER_TABS = ["segmentos", "prioridad", "estados", "asignados"];
+    const FILTER_PANEL_TABS = ["estado", "prioridad", "responsable", "vencimiento", "opciones"];
+    const normalizeTasksTopFilterTab = (value) => {
+      const key = String(value || "").trim().toLowerCase();
+      return TOP_FILTER_TABS.includes(key) ? key : "segmentos";
+    };
+    const setActiveTasksTopFilterTab = (value) => {
+      const activeKey = normalizeTasksTopFilterTab(value);
+      state.tasksTopFilterTab = activeKey;
+      topFilterTabs?.querySelectorAll(".tasks-top-filter-tab[data-top-filter-tab]").forEach((button) => {
+        const key = String(button.dataset.topFilterTab || "").trim().toLowerCase();
+        const isActive = key === activeKey;
+        button.classList.toggle("is-active", isActive);
+        button.setAttribute("aria-pressed", isActive ? "true" : "false");
+      });
+      root.querySelectorAll(".tasks-top-filter-section[data-top-filter-section]").forEach((section) => {
+        const key = String(section.dataset.topFilterSection || "").trim().toLowerCase();
+        section.classList.toggle("hidden", key !== activeKey);
+      });
+    };
+    const normalizeTasksFilterTab = (value) => {
+      const key = String(value || "").trim().toLowerCase();
+      return FILTER_PANEL_TABS.includes(key) ? key : "estado";
+    };
+    const setActiveTasksFilterTab = (value) => {
+      const activeKey = normalizeTasksFilterTab(value);
+      state.tasksFilterTab = activeKey;
+      filterTabs?.querySelectorAll(".tasks-filter-tab[data-filter-tab]").forEach((button) => {
+        const key = String(button.dataset.filterTab || "").trim().toLowerCase();
+        const isActive = key === activeKey;
+        button.classList.toggle("is-active", isActive);
+        button.setAttribute("aria-pressed", isActive ? "true" : "false");
+      });
+      filterPanel?.querySelectorAll(".tasks-filter-section[data-filter-section]").forEach((section) => {
+        const key = String(section.dataset.filterSection || "").trim().toLowerCase();
+        section.classList.toggle("hidden", key !== activeKey);
+      });
+    };
+
     const syncPriorityFilterCheckboxes = () => {
       const active = new Set((state.tasksFilters?.priorities || []).map((value) => String(value || "").toLowerCase()));
       document.querySelectorAll("#tasks-filter-priorities input[type='checkbox']").forEach((cb) => {
@@ -10911,6 +11196,131 @@
         if (el) el.textContent = String(counts[key] || 0);
       });
       syncPriorityKpiState();
+    };
+
+    const getActiveStatusKpiKey = () => {
+      const selected = Array.from(
+        new Set((state.tasksFilters?.statuses || []).map((value) => String(value || "").trim().toLowerCase()))
+      ).filter((value) => TASK_ACTIVE_STATUS_KEYS.includes(value));
+      if (selected.length === TASK_ACTIVE_STATUS_KEYS.length) return "total";
+      if (selected.length === 1) return selected[0];
+      return "";
+    };
+
+    const syncStatusKpiState = () => {
+      if (!statusKpis) return;
+      const activeKey = getActiveStatusKpiKey();
+      statusKpis.querySelectorAll(".tasks-status-kpi[data-status-filter]").forEach((button) => {
+        const key = String(button.dataset.statusFilter || "").trim().toLowerCase();
+        const isActive = Boolean(activeKey) && key === activeKey;
+        button.classList.toggle("is-active", isActive);
+        button.setAttribute("aria-pressed", isActive ? "true" : "false");
+      });
+    };
+
+    const syncStatusFilterCheckboxes = () => {
+      const active = new Set((state.tasksFilters?.statuses || []).map((value) => String(value || "").toLowerCase()));
+      document.querySelectorAll("#tasks-filter-statuses input[type='checkbox']").forEach((cb) => {
+        cb.checked = active.has(String(cb.value || "").toLowerCase());
+      });
+    };
+
+    const updateStatusSummaryButtons = (items = []) => {
+      if (!statusKpis) return;
+      const counts = { total: 0, backlog: 0, todo: 0, doing: 0 };
+      const scopedItems = applyFiltersWithOptions(Array.isArray(items) ? items : [], { ignoreStatuses: true });
+      scopedItems.forEach((task) => {
+        const key = String(task?.estado || "").trim().toLowerCase();
+        if (!TASK_ACTIVE_STATUS_KEYS.includes(key)) return;
+        counts.total += 1;
+        counts[key] += 1;
+      });
+      ["total", ...TASK_ACTIVE_STATUS_KEYS].forEach((key) => {
+        const el = statusKpis.querySelector(`[data-status-kpi="${key}"]`);
+        if (el) el.textContent = String(counts[key] || 0);
+      });
+      syncStatusKpiState();
+    };
+
+    const getActiveAssigneeKpiKeys = () =>
+      Array.from(new Set((state.tasksFilters?.assignees || []).map((value) => String(value || "").trim()).filter(Boolean)));
+
+    const syncAssigneeKpiState = () => {
+      if (!assigneeKpis) return;
+      const activeSet = new Set(getActiveAssigneeKpiKeys());
+      assigneeKpis.querySelectorAll(".tasks-assignee-kpi[data-assignee-filter]").forEach((button) => {
+        const key = String(button.dataset.assigneeFilter || "").trim();
+        const isActive = key === "total" ? !activeSet.size : activeSet.has(key);
+        button.classList.toggle("is-active", isActive);
+        button.setAttribute("aria-pressed", isActive ? "true" : "false");
+      });
+    };
+
+    const updateAssigneeSummaryButtons = (items = []) => {
+      if (!assigneeKpis) return;
+      const selectedStatuses = Array.isArray(state.tasksFilters?.statuses) && state.tasksFilters.statuses.length
+        ? state.tasksFilters.statuses
+        : DEFAULT_TASKS_ADVANCED_FILTERS.statuses;
+      const allowedStatuses = new Set(
+        selectedStatuses
+          .map((value) => String(value || "").trim().toLowerCase())
+          .filter((value) => TASK_ASSIGNEE_FILTER_STATUSES.has(value))
+      );
+      const scopedItems = applyFiltersWithOptions(Array.isArray(items) ? items : [], { ignoreAssignees: true }).filter(
+        (task) => {
+          const status = String(task?.estado || "").trim().toLowerCase();
+          return allowedStatuses.has(status) && task?.assignee_persona_id;
+        }
+      );
+
+      const countsByAssignee = new Map();
+      scopedItems.forEach((task) => {
+        const assigneeId = String(task.assignee_persona_id || "").trim();
+        if (!assigneeId) return;
+        const current = countsByAssignee.get(assigneeId) || {
+          id: assigneeId,
+          nombre: personaMap[assigneeId] || `Persona ${assigneeId}`,
+          count: 0,
+        };
+        current.count += 1;
+        countsByAssignee.set(assigneeId, current);
+      });
+
+      const rows = Array.from(countsByAssignee.values()).sort(
+        (a, b) => b.count - a.count || a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true })
+      );
+      if (!rows.length) {
+        assigneeKpis.innerHTML = `<span class="tasks-assignee-empty">Sin responsables asignados en tareas activas</span>`;
+        return;
+      }
+
+      const total = rows.reduce((sum, row) => sum + row.count, 0);
+      assigneeKpis.innerHTML = [
+        `<button class="tasks-assignee-kpi is-total" type="button" data-assignee-filter="total"><span class="tasks-assignee-kpi-name">Todas las personas</span><strong>${total}</strong></button>`,
+        ...rows.map(
+          (row) =>
+            `<button class="tasks-assignee-kpi" type="button" data-assignee-filter="${escapeHtml(row.id)}" title="${escapeHtml(row.nombre)}"><span class="tasks-assignee-kpi-name">${escapeHtml(row.nombre)}</span><strong>${row.count}</strong></button>`
+        ),
+      ].join("");
+      syncAssigneeKpiState();
+    };
+
+    const shouldShowDoneSubtasksInModal = () => {
+      const explicitStatus = String(state.tasksStatusFilter || "").trim().toLowerCase();
+      if (explicitStatus) return explicitStatus === "done";
+      const selectedStatuses =
+        Array.isArray(state.tasksFilters?.statuses) && state.tasksFilters.statuses.length
+          ? state.tasksFilters.statuses
+          : DEFAULT_TASKS_ADVANCED_FILTERS.statuses;
+      return selectedStatuses
+        .map((value) => String(value || "").trim().toLowerCase())
+        .includes("done");
+    };
+
+    const syncOpenTaskModalSubtasks = () => {
+      const taskForm = qs("#task-form");
+      if (!taskForm || typeof taskForm.__renderSubtasks !== "function") return;
+      taskForm.__renderSubtasks();
     };
 
     const setActiveView = (view) => {
@@ -10966,7 +11376,7 @@
                 <label class="form-label" for="task-descripcion">Descripcion</label>
                 <textarea class="form-control" id="task-descripcion" name="descripcion" rows="4"></textarea>
               </div>
-              <div class="small text-muted mb-2" id="task-parent-hint"></div>
+              <div class="tasks-parent-banner hidden mb-3" id="task-parent-hint"></div>
               <div class="card mb-0 hidden task-existing-only mt-2">
                 <div class="card-header border-0 py-2">
                   <div class="d-flex align-items-center justify-content-between gap-2">
@@ -11445,11 +11855,32 @@
       form.dataset.parentId = resolvedParentId ? String(resolvedParentId) : "";
 	      if (parentHint) {
         if (resolvedParentId) {
-          parentHint.textContent = resolvedParentTask
-            ? `Subtarea de: ${resolvedParentTask.titulo}`
-            : `Subtarea de: #${resolvedParentId}`;
+          parentHint.classList.remove("hidden");
+          parentHint.innerHTML = `
+            <span class="tasks-parent-banner-label">Tarea padre</span>
+            <button class="tasks-parent-banner-link" type="button" id="task-parent-link">
+              <i class="bi bi-diagram-2 me-1" aria-hidden="true"></i>
+              <span>${escapeHtml(
+                resolvedParentTask
+                  ? `${resolvedParentTask.titulo}`
+                  : `#${resolvedParentId}`
+              )}</span>
+            </button>
+          `;
+          const parentLink = parentHint.querySelector("#task-parent-link");
+          if (parentLink) {
+            parentLink.addEventListener("click", () => {
+              const parentTask =
+                resolvedParentTask ||
+                (state.tasksCache || []).find((t) => String(t.id) === String(resolvedParentId)) ||
+                null;
+              if (!parentTask) return;
+              root.__tasksApi?.openTaskModal?.({ task: parentTask });
+            });
+          }
         } else {
-          parentHint.textContent = "";
+          parentHint.classList.add("hidden");
+          parentHint.innerHTML = "";
         }
 	      }
 
@@ -11460,17 +11891,28 @@
 	          subtasksList.innerHTML = "";
 	          return;
 	        }
-	        const subtasks = sortTasks((state.tasksCache || []).filter((t) => Number(t.parent_id || 0) === taskId));
+	        const showDoneSubtasks = shouldShowDoneSubtasksInModal();
+	        const subtasks = sortTasks(
+	          (state.tasksCache || []).filter((t) => {
+	            if (Number(t.parent_id || 0) !== taskId) return false;
+	            const statusKey = String(t?.estado || "").trim().toLowerCase();
+	            if (statusKey === "done" && !showDoneSubtasks) return false;
+	            return true;
+	          })
+	        );
 	        if (!subtasks.length) {
 	          subtasksList.innerHTML = `<p class="empty small mb-0">No hay subtareas.</p>`;
 	          return;
 	        }
 	        subtasksList.innerHTML = subtasks
-	          .map((t) => `
-	              <div class="tasks-subtask-item" data-task-id="${t.id}">
+	          .map((t) => {
+              const statusKey = String(t?.estado || "").trim().toLowerCase();
+              return `
+	              <div class="tasks-subtask-item${statusKey === "done" ? " is-done" : ""}" data-task-id="${t.id}" data-task-status="${escapeHtml(statusKey)}">
 	                <button type="button" class="tasks-subtask-link" data-action="edit-subtask" data-role="subtask-title"></button>
 	              </div>
-	            `)
+	            `;
+            })
 	          .join("");
 	        Array.from(subtasksList.querySelectorAll("[data-role='subtask-title']")).forEach((node, idx) => {
 	          const title = String(subtasks[idx]?.titulo || `Task #${subtasks[idx]?.id || ""}`);
@@ -11478,6 +11920,7 @@
 	          node.title = title;
 	        });
 	      };
+        form.__renderSubtasks = renderSubtasks;
 
 	      const getDraftSubtasks = () => {
 	        if (!Array.isArray(form.__draftSubtasks)) {
@@ -11981,7 +12424,9 @@
       }
     };
 
-    const applyFilters = (items) => {
+    const applyFiltersWithOptions = (items, options = {}) => {
+      const ignoreStatuses = Boolean(options?.ignoreStatuses);
+      const ignoreAssignees = Boolean(options?.ignoreAssignees);
       const query = normalizeText(state.tasksSearch || "");
       const statusFilter = (state.tasksStatusFilter || "").trim().toLowerCase();
       const statusSet = new Set(
@@ -11999,12 +12444,41 @@
       const noDueDate = Boolean(state.tasksFilters?.noDueDate);
       const hideSubtasks = Boolean(state.tasksFilters?.hideSubtasks);
       const segmentKey = normalizeSegmentKey(state.tasksSegmentFilter || "");
+      const buildTaskSearchHaystack = (task) => {
+        const assigneeName = task?.assignee_persona_id
+          ? personaMap[String(task.assignee_persona_id)] || `Persona ${task.assignee_persona_id}`
+          : "Sin responsable";
+        const sprintName = task?.sprint_id
+          ? sprintNameById[String(task.sprint_id)] || `Sprint ${task.sprint_id}`
+          : "";
+        return normalizeText(
+          [
+            task?.titulo,
+            task?.descripcion,
+            task?.etiquetas,
+            task?.tipo,
+            task?.segmento,
+            task?.release_issue_key,
+            task?.estado,
+            STATUS_LABEL[String(task?.estado || "").toLowerCase()] || "",
+            task?.prioridad,
+            PRIORITY_LABEL[String(task?.prioridad || "").toLowerCase()] || "",
+            assigneeName,
+            sprintName,
+            task?.fecha_vencimiento,
+            task?.start_date,
+            task?.end_date,
+          ]
+            .filter(Boolean)
+            .join(" ")
+        );
+      };
       return items.filter((task) => {
         if (hideSubtasks && task.parent_id) return false;
-        if (statusAllowed && !statusAllowed.has(String(task.estado || "").toLowerCase())) return false;
+        if (!ignoreStatuses && statusAllowed && !statusAllowed.has(String(task.estado || "").toLowerCase())) return false;
         if (prioritySet.size && !prioritySet.has(String(task.prioridad || "").toLowerCase())) return false;
         if (segmentKey && normalizeSegmentKey(task?.segmento || "") !== segmentKey) return false;
-        if (assigneeSet.size) {
+        if (!ignoreAssignees && assigneeSet.size) {
           const key = task.assignee_persona_id ? String(task.assignee_persona_id) : "__none__";
           if (!assigneeSet.has(key)) return false;
         }
@@ -12019,11 +12493,11 @@
           if (dueTo && due > dueTo) return false;
         }
         if (!query) return true;
-        return (
-          normalizeText(task.titulo).includes(query) || normalizeText(task.descripcion || "").includes(query)
-        );
+        return buildTaskSearchHaystack(task).includes(query);
       });
     };
+
+    const applyFilters = (items) => applyFiltersWithOptions(items);
 
     const buildBacklogContext = (filtered, all) => {
       const byId = new Map((all || []).map((t) => [String(t.id), t]));
@@ -12209,10 +12683,10 @@
         (typeof value === "number" && !Number.isFinite(value));
       const statusRank = Object.fromEntries(STATUS_ORDER.map((key, idx) => [key, idx]));
       const priorityRank = {
-        baja: 1,
-        media: 2,
-        alta: 3,
-        urgente: 4,
+        urgente: 1,
+        alta: 2,
+        media: 3,
+        baja: 4,
       };
       const setCellOrder = (td, value) => {
         td.dataset.order = isMissingSortValue(value) ? "" : String(value);
@@ -12332,7 +12806,7 @@
         const select = document.createElement("select");
         select.className = "";
         select.dataset.field = "prioridad";
-        ["baja", "media", "alta", "urgente"].forEach((key) => {
+        ["urgente", "alta", "media", "baja"].forEach((key) => {
           const opt = document.createElement("option");
           opt.value = key;
           opt.textContent = PRIORITY_LABEL[key] || key;
@@ -12574,6 +13048,23 @@
       };
 
       const resolveBacklogSortValue = (task, key) => {
+        const resolveDateValue = (currentTask, field, visiting = new Set()) => {
+          if (!currentTask) return null;
+          const taskKey = String(currentTask.id || "");
+          if (taskKey && visiting.has(taskKey)) return null;
+          const nextVisiting = new Set(visiting);
+          if (taskKey) nextVisiting.add(taskKey);
+          const ownValue = parseDateSortKey(currentTask[field]);
+          if (ownValue !== null) return ownValue;
+          const children = childrenByParent.get(String(currentTask.id || "")) || [];
+          let best = null;
+          children.forEach((child) => {
+            const childValue = resolveDateValue(child, field, nextVisiting);
+            if (childValue === null) return;
+            if (best === null || childValue < best) best = childValue;
+          });
+          return best;
+        };
         if (key === "titulo") return normalizeText(task.titulo || "");
         if (key === "estado") return statusRank[String(task.estado || "backlog").toLowerCase()] ?? 0;
         if (key === "prioridad") return priorityRank[String(task.prioridad || "media").toLowerCase()] ?? 0;
@@ -12590,7 +13081,7 @@
           return normalizeText(name);
         }
         if (key === "start_date" || key === "end_date" || key === "fecha_vencimiento") {
-          return parseDateSortKey(task[key]);
+          return resolveDateValue(task, key);
         }
         if (key === "dias_habiles") {
           if (!task.start_date || !task.fecha_vencimiento) return null;
@@ -12621,7 +13112,7 @@
         if (cmp === 0 && sortState.key === "fecha_vencimiento") {
           const pa = priorityRank[String(a?.prioridad || "media").toLowerCase()] ?? 0;
           const pb = priorityRank[String(b?.prioridad || "media").toLowerCase()] ?? 0;
-          const priorityCmp = pb - pa; // urgente -> baja
+          const priorityCmp = pa - pb;
           if (priorityCmp !== 0) return priorityCmp;
         }
         if (cmp === 0) return compareTaskHierarchyOrder(a, b);
@@ -13516,12 +14007,29 @@
         (typeof value === "number" && !Number.isFinite(value));
       const statusRank = Object.fromEntries(STATUS_ORDER.map((key, idx) => [key, idx]));
       const priorityRank = {
-        baja: 1,
-        media: 2,
-        alta: 3,
-        urgente: 4,
+        urgente: 1,
+        alta: 2,
+        media: 3,
+        baja: 4,
       };
       const resolveBacklogSortValue = (task, key) => {
+        const resolveDateValue = (currentTask, field, visiting = new Set()) => {
+          if (!currentTask) return null;
+          const taskKey = String(currentTask.id || "");
+          if (taskKey && visiting.has(taskKey)) return null;
+          const nextVisiting = new Set(visiting);
+          if (taskKey) nextVisiting.add(taskKey);
+          const ownValue = parseDateSortKey(currentTask[field]);
+          if (ownValue !== null) return ownValue;
+          const children = childrenByParent.get(String(currentTask.id || "")) || [];
+          let best = null;
+          children.forEach((child) => {
+            const childValue = resolveDateValue(child, field, nextVisiting);
+            if (childValue === null) return;
+            if (best === null || childValue < best) best = childValue;
+          });
+          return best;
+        };
         if (key === "titulo") return normalizeText(task.titulo || "");
         if (key === "estado") return statusRank[String(task.estado || "backlog").toLowerCase()] ?? 0;
         if (key === "prioridad") return priorityRank[String(task.prioridad || "media").toLowerCase()] ?? 0;
@@ -13538,7 +14046,7 @@
           return normalizeText(name);
         }
         if (key === "start_date" || key === "end_date" || key === "fecha_vencimiento") {
-          return parseDateSortKey(task[key]);
+          return resolveDateValue(task, key);
         }
         if (key === "dias_habiles") {
           if (!task.start_date || !task.fecha_vencimiento) return null;
@@ -13569,7 +14077,7 @@
         if (cmp === 0 && sortState.key === "fecha_vencimiento") {
           const pa = priorityRank[String(a?.prioridad || "media").toLowerCase()] ?? 0;
           const pb = priorityRank[String(b?.prioridad || "media").toLowerCase()] ?? 0;
-          const priorityCmp = pb - pa;
+          const priorityCmp = pa - pb;
           if (priorityCmp !== 0) return priorityCmp;
         }
         if (cmp === 0) return compareTaskHierarchyOrder(a, b);
@@ -13762,13 +14270,23 @@
         captureBacklogColumnsFromDom();
       }
       const filtered = applyFilters(state.tasksCache || []);
+      syncTaskAssigneeFilterOptions();
+      renderTaskSegmentButtons();
       updatePrioritySummaryButton(filtered);
+      updateStatusSummaryButtons(state.tasksCache || []);
+      updateAssigneeSummaryButtons(state.tasksCache || []);
+      renderFilterChips();
+      syncOpenTaskModalSubtasks();
       if (normalized === "backlog") {
         renderBacklogPreservingViewport();
+        renderBoard(filtered, state.tasksCache || []);
+        renderReports(filtered);
         return;
       }
       if (normalized === "board") {
+        renderBacklogPreservingViewport();
         renderBoard(filtered, state.tasksCache || []);
+        renderReports(filtered);
         return;
       }
       if (state.tasksView === "backlog") {
@@ -13795,10 +14313,7 @@
         if (rerender === "all") {
           refreshTasksUi("all");
         } else if (rerender === "backlog") {
-          const filtered = applyFilters(state.tasksCache || []);
-          updatePrioritySummaryButton(filtered);
-          renderBacklogPreservingViewport();
-          renderReports(filtered);
+          refreshTasksUi("backlog");
         } else if (rerender === "none") {
           // Keep current DOM as-is (inline edit without redraw).
         } else {
@@ -13859,8 +14374,12 @@
 
     const renderAll = () => {
       const filtered = applyFilters(state.tasksCache || []);
+      syncTaskAssigneeFilterOptions();
       renderTaskSegmentButtons();
       updatePrioritySummaryButton(filtered);
+      updateStatusSummaryButtons(state.tasksCache || []);
+      updateAssigneeSummaryButtons(state.tasksCache || []);
+      syncOpenTaskModalSubtasks();
       renderBacklog(filtered, state.tasksCache || []);
       renderBoard(filtered, state.tasksCache || []);
       renderReports(filtered);
@@ -14107,6 +14626,7 @@
           }
         });
         queueTaskCommentCounts((state.tasksCache || []).map((t) => t.id));
+        syncTaskAssigneeFilterOptions();
         setTasksStatus(
           `Todas las celulas · ${state.tasksCache.length} tarea(s)${
             celula ? ` · Celula por defecto: ${celula.nombre}` : ""
@@ -14160,12 +14680,15 @@
       }
       if (searchInput && !searchInput.dataset.bound) {
         searchInput.dataset.bound = "true";
-        let timer = null;
+        let frameId = 0;
         searchInput.addEventListener("input", () => {
           state.tasksSearch = searchInput.value || "";
           saveTasksFiltersState();
-          if (timer) window.clearTimeout(timer);
-          timer = window.setTimeout(() => renderAll(), 120);
+          if (frameId) window.cancelAnimationFrame(frameId);
+          frameId = window.requestAnimationFrame(() => {
+            frameId = 0;
+            renderAll();
+          });
         });
       }
       if (createBtn && !createBtn.dataset.bound) {
@@ -14352,7 +14875,25 @@
           syncFiltersButtonState(false);
         });
       }
+      if (filterTabs && !filterTabs.dataset.bound) {
+        filterTabs.dataset.bound = "true";
+        filterTabs.addEventListener("click", (event) => {
+          const button = event.target.closest(".tasks-filter-tab[data-filter-tab]");
+          if (!button) return;
+          setActiveTasksFilterTab(button.dataset.filterTab || "");
+        });
+      }
       syncFiltersButtonState(filterPanel ? !filterPanel.classList.contains("hidden") : false);
+      if (topFilterTabs && !topFilterTabs.dataset.bound) {
+        topFilterTabs.dataset.bound = "true";
+        topFilterTabs.addEventListener("click", (event) => {
+          const button = event.target.closest(".tasks-top-filter-tab[data-top-filter-tab]");
+          if (!button) return;
+          setActiveTasksTopFilterTab(button.dataset.topFilterTab || "");
+        });
+      }
+      setActiveTasksTopFilterTab(state.tasksTopFilterTab);
+      setActiveTasksFilterTab(state.tasksFilterTab);
 
       const renderColumnsManager = () => {
         if (!columnsList) return;
@@ -14559,6 +15100,7 @@
           state.tasksDatePreset = "";
           syncDatePresetButtons();
         }
+        syncTaskAssigneeFilterOptions();
         saveTasksFiltersState();
       };
 
@@ -14639,6 +15181,54 @@
         });
       }
 
+      if (statusKpis && !statusKpis.dataset.bound) {
+        statusKpis.dataset.bound = "true";
+        statusKpis.addEventListener("click", (event) => {
+          const button = event.target.closest(".tasks-status-kpi[data-status-filter]");
+          if (!button) return;
+          const key = String(button.dataset.statusFilter || "").trim().toLowerCase();
+          if (!key) return;
+          const activeKey = getActiveStatusKpiKey();
+          const nextStatuses =
+            key === "total" || activeKey === key
+              ? [...TASK_ACTIVE_STATUS_KEYS]
+              : TASK_ACTIVE_STATUS_KEYS.filter((status) => status === key);
+          state.tasksStatusFilter = "";
+          state.tasksFilters = {
+            ...state.tasksFilters,
+            statuses: nextStatuses,
+          };
+          if (statusSelect) statusSelect.value = "";
+          syncStatusFilterCheckboxes();
+          saveTasksFiltersState();
+          renderAll();
+          renderFilterChips();
+          syncStatusKpiState();
+        });
+      }
+
+      if (assigneeKpis && !assigneeKpis.dataset.bound) {
+        assigneeKpis.dataset.bound = "true";
+        assigneeKpis.addEventListener("click", (event) => {
+          const button = event.target.closest(".tasks-assignee-kpi[data-assignee-filter]");
+          if (!button) return;
+          const key = String(button.dataset.assigneeFilter || "").trim();
+          if (!key) return;
+          const current = getActiveAssigneeKpiKeys();
+          const nextAssignees =
+            key === "total" || (current.length === 1 && current[0] === key)
+              ? []
+              : [key];
+          state.tasksFilters = {
+            ...state.tasksFilters,
+            assignees: nextAssignees,
+          };
+          saveTasksFiltersState();
+          renderAll();
+          renderFilterChips();
+        });
+      }
+
       if (filterPanel && !filterPanel.dataset.bound) {
         filterPanel.dataset.bound = "true";
         filterPanel.addEventListener("change", (event) => {
@@ -14664,7 +15254,7 @@
             renderTaskSegmentButtons();
           } else if (key === "statuses") {
             document.querySelectorAll("#tasks-filter-statuses input[type='checkbox']").forEach((cb) => {
-              cb.checked = cb.value !== "archived";
+              cb.checked = TASK_ACTIVE_STATUS_KEYS.includes(String(cb.value || "").toLowerCase());
             });
           } else if (key === "priorities") {
             document.querySelectorAll("#tasks-filter-priorities input[type='checkbox']").forEach((cb) => (cb.checked = true));
@@ -14913,9 +15503,8 @@
                 taskId,
                 { estado: String(el.value || "").trim().toLowerCase() },
                 "Actualizado.",
-                { rerender: "none" }
+                { rerender: "backlog" }
               );
-              renderBacklogPreservingViewport();
               return;
             }
             if (field === "prioridad") {
@@ -14924,9 +15513,8 @@
                 taskId,
                 { prioridad: String(el.value || "").trim().toLowerCase() },
                 "Actualizado.",
-                { rerender: "none" }
+                { rerender: "backlog" }
               );
-              renderBacklogPreservingViewport();
               return;
             }
             if (field === "tipo" || field === "segmento") {
@@ -14935,11 +15523,9 @@
                 taskId,
                 { segmento: nextSegment || null },
                 "Actualizado.",
-                { rerender: "none" }
+                { rerender: "backlog" }
               );
               ensureTaskSegmentCatalogEntry(updated?.segmento || nextSegment || "");
-              renderTaskSegmentButtons();
-              renderBacklogPreservingViewport();
               return;
             }
             if (field === "etiquetas") {
@@ -14947,7 +15533,7 @@
                 taskId,
                 { etiquetas: String(el.value || "").trim() || null },
                 "Actualizado.",
-                { rerender: "none" }
+                { rerender: "backlog" }
               );
               return;
             }
@@ -14957,52 +15543,49 @@
                 taskId,
                 { assignee_persona_id: v ? Number(v) : null },
                 "Actualizado.",
-                { rerender: "none" }
+                { rerender: "backlog" }
               );
               return;
             }
             if (field === "sprint_id") {
               const v = String(el.value || "");
               await updateTaskLocal(taskId, { sprint_id: v ? Number(v) : null }, "Actualizado.", {
-                rerender: "none",
+                rerender: "backlog",
               });
               return;
             }
             if (field === "start_date") {
               const v = String(el.value || "");
               const updated = await updateTaskLocal(taskId, { start_date: v || null }, "Actualizado.", {
-                rerender: "none",
+                rerender: "backlog",
               });
-              syncBacklogRowAfterStatusUpdate(row, updated);
               return;
             }
             if (field === "end_date") {
               const v = String(el.value || "");
               const updated = await updateTaskLocal(taskId, { end_date: v || null }, "Actualizado.", {
-                rerender: "none",
+                rerender: "backlog",
               });
-              syncBacklogRowAfterStatusUpdate(row, updated);
               return;
             }
             if (field === "fecha_vencimiento") {
               const v = String(el.value || "");
               const updated = await updateTaskLocal(taskId, { fecha_vencimiento: v || null }, "Actualizado.", {
-                rerender: "none",
+                rerender: "backlog",
               });
-              renderBacklogPreservingViewport();
               return;
             }
             if (field === "puntos" || field === "horas_estimadas") {
               const raw = String(el.value || "").trim();
               const value = raw ? Number(raw) : null;
               await updateTaskLocal(taskId, { [field]: Number.isNaN(value) ? null : value }, "Actualizado.", {
-                rerender: "none",
+                rerender: "backlog",
               });
               return;
             }
             if (field === "importante") {
               await updateTaskLocal(taskId, { importante: Boolean(el.checked) }, "Actualizado.", {
-                rerender: "none",
+                rerender: "backlog",
               });
               return;
             }
@@ -15171,23 +15754,9 @@
     };
     setCheckboxes("#tasks-filter-statuses", state.tasksFilters?.statuses || []);
     setCheckboxes("#tasks-filter-priorities", state.tasksFilters?.priorities || []);
+    syncStatusKpiState();
     syncPriorityKpiState();
-    if (filterAssignee) {
-      const opts = [
-        { id: "__none__", nombre: "Sin responsable" },
-        ...personasActivas
-          .map((p) => ({ id: String(p.id), nombre: `${p.nombre} ${p.apellido}`.trim() })),
-      ];
-      filterAssignee.innerHTML = "";
-      opts.forEach((o) => {
-        const opt = document.createElement("option");
-        opt.value = String(o.id);
-        opt.textContent = o.nombre;
-        filterAssignee.appendChild(opt);
-      });
-      const selected = new Set((state.tasksFilters?.assignees || []).map((v) => String(v)));
-      Array.from(filterAssignee.options).forEach((o) => (o.selected = selected.has(String(o.value))));
-    }
+    syncTaskAssigneeFilterOptions();
     if (filterDueFrom) filterDueFrom.value = state.tasksFilters?.dueFrom || "";
     if (filterDueTo) filterDueTo.value = state.tasksFilters?.dueTo || "";
     if (filterHideSubtasks) filterHideSubtasks.checked = Boolean(state.tasksFilters?.hideSubtasks);

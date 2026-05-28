@@ -968,15 +968,6 @@
 	                      </button>
 	                    </div>
 	                  </div>
-	                  <div class="tasks-segments-toolbar-wrap">
-	                    <label class="form-label mb-1">Segmentos</label>
-	                    <div class="tasks-segments-toolbar">
-	                      <div class="tasks-segment-buttons" id="tasks-segment-buttons" aria-label="Filtro por segmento"></div>
-	                      <button class="btn btn-outline-secondary btn-sm" id="tasks-segment-manage-btn" type="button">
-	                        <i class="bi bi-plus-lg me-1"></i>Nuevo segmento
-	                      </button>
-	                    </div>
-	                  </div>
 		                  <div class="d-flex align-items-end">
 		                    <button class="btn btn-outline-secondary btn-sm" id="tasks-filters-btn" type="button">
 		                      <i class="bi bi-funnel me-1"></i>Filtros
@@ -999,16 +990,47 @@
 	                  </div>
 	                  </div>
                   <div class="tasks-toolbar-row tasks-toolbar-row-kpis">
-	                  <div>
-	                    <label class="form-label mb-1">Resumen de tareas</label>
-	                    <div class="tasks-priority-kpis" id="tasks-priority-kpis" aria-label="Indicadores por prioridad">
-	                      <button class="tasks-priority-kpi is-total" type="button" data-priority-filter="total">Total tareas <strong data-priority-kpi="total">0</strong></button>
-	                      <button class="tasks-priority-kpi is-urgente" type="button" data-priority-filter="urgente">Urgente <strong data-priority-kpi="urgente">0</strong></button>
-	                      <button class="tasks-priority-kpi is-alta" type="button" data-priority-filter="alta">Alta <strong data-priority-kpi="alta">0</strong></button>
-	                      <button class="tasks-priority-kpi is-media" type="button" data-priority-filter="media">Media <strong data-priority-kpi="media">0</strong></button>
-	                      <button class="tasks-priority-kpi is-baja" type="button" data-priority-filter="baja">Baja <strong data-priority-kpi="baja">0</strong></button>
-	                    </div>
-	                  </div>
+                    <div class="tasks-top-filters">
+                      <div class="tasks-top-filter-tabs" id="tasks-top-filter-tabs" aria-label="Filtros rapidos principales">
+                        <button class="tasks-top-filter-tab is-active" type="button" data-top-filter-tab="segmentos">Segmentos</button>
+                        <button class="tasks-top-filter-tab" type="button" data-top-filter-tab="prioridad">Prioridad</button>
+                        <button class="tasks-top-filter-tab" type="button" data-top-filter-tab="estados">Estados</button>
+                        <button class="tasks-top-filter-tab" type="button" data-top-filter-tab="asignados">Asignados</button>
+                      </div>
+                      <div class="tasks-top-filter-body">
+                        <div class="tasks-top-filter-section" data-top-filter-section="segmentos">
+                          <div class="tasks-segments-toolbar">
+                            <div class="tasks-segment-buttons" id="tasks-segment-buttons" aria-label="Filtro por segmento"></div>
+                            <button class="btn btn-outline-secondary btn-sm" id="tasks-segment-manage-btn" type="button">
+                              <i class="bi bi-plus-lg me-1"></i>Nuevo segmento
+                            </button>
+                          </div>
+                        </div>
+                        <div class="tasks-top-filter-section hidden" data-top-filter-section="prioridad">
+                          <div class="tasks-priority-kpis" id="tasks-priority-kpis" aria-label="Indicadores por prioridad">
+                            <button class="tasks-priority-kpi is-total" type="button" data-priority-filter="total">Total tareas <strong data-priority-kpi="total">0</strong></button>
+                            <button class="tasks-priority-kpi is-urgente" type="button" data-priority-filter="urgente">Urgente <strong data-priority-kpi="urgente">0</strong></button>
+                            <button class="tasks-priority-kpi is-alta" type="button" data-priority-filter="alta">Alta <strong data-priority-kpi="alta">0</strong></button>
+                            <button class="tasks-priority-kpi is-media" type="button" data-priority-filter="media">Media <strong data-priority-kpi="media">0</strong></button>
+                            <button class="tasks-priority-kpi is-baja" type="button" data-priority-filter="baja">Baja <strong data-priority-kpi="baja">0</strong></button>
+                          </div>
+                        </div>
+                        <div class="tasks-top-filter-section hidden" data-top-filter-section="estados">
+                          <div class="tasks-status-kpis" id="tasks-status-kpis" aria-label="Filtros rapidos por estado">
+                            <button class="tasks-status-kpi is-total" type="button" data-status-filter="total">Total activas <strong data-status-kpi="total">0</strong></button>
+                            <button class="tasks-status-kpi is-backlog" type="button" data-status-filter="backlog">Backlog <strong data-status-kpi="backlog">0</strong></button>
+                            <button class="tasks-status-kpi is-todo" type="button" data-status-filter="todo">To Do <strong data-status-kpi="todo">0</strong></button>
+                            <button class="tasks-status-kpi is-doing" type="button" data-status-filter="doing">In Progress <strong data-status-kpi="doing">0</strong></button>
+                          </div>
+                        </div>
+                        <div class="tasks-top-filter-section hidden" data-top-filter-section="asignados">
+                          <div class="tasks-assignee-kpis" id="tasks-assignee-kpis" aria-label="Indicadores por responsable">
+                            <span class="tasks-assignee-empty">Cargando responsables activos...</span>
+                          </div>
+                          <div class="form-text">Solo incluye tareas en Backlog, To Do e In Progress.</div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
 	              </div>
@@ -1024,70 +1046,82 @@
 			          <div id="tasks-filter-panel" class="tasks-filter-panel hidden" aria-label="Filtros avanzados">
 	                <div class="card">
 	                  <div class="card-body">
-	                    <div class="row g-3">
-	                      <div class="col-12 col-lg-4">
-	                        <div class="mb-2 fw-bold">Estado</div>
-	                        <div class="d-flex flex-wrap gap-2" id="tasks-filter-statuses">
-	                          <div class="form-check">
-	                            <input class="form-check-input" type="checkbox" value="backlog" id="tasks-st-backlog" checked />
-	                            <label class="form-check-label" for="tasks-st-backlog">Backlog</label>
-	                          </div>
-	                          <div class="form-check">
-	                            <input class="form-check-input" type="checkbox" value="todo" id="tasks-st-todo" checked />
-	                            <label class="form-check-label" for="tasks-st-todo">To Do</label>
-	                          </div>
-	                          <div class="form-check">
-	                            <input class="form-check-input" type="checkbox" value="doing" id="tasks-st-doing" checked />
-		                        <label class="form-check-label" for="tasks-st-doing">In Progress</label>
-	                          </div>
-	                          <div class="form-check">
-	                            <input class="form-check-input" type="checkbox" value="done" id="tasks-st-done" checked />
-	                            <label class="form-check-label" for="tasks-st-done">Done</label>
-	                          </div>
-	                          <div class="form-check">
-	                            <input class="form-check-input" type="checkbox" value="archived" id="tasks-st-archived" />
-	                            <label class="form-check-label" for="tasks-st-archived">Archivado</label>
+	                    <div class="tasks-filter-switcher">
+	                      <div class="tasks-filter-switcher-tabs" id="tasks-filter-tabs" aria-label="Categorias de filtros">
+	                        <button class="tasks-filter-tab is-active" type="button" data-filter-tab="estado">Estado</button>
+	                        <button class="tasks-filter-tab" type="button" data-filter-tab="prioridad">Prioridad</button>
+	                        <button class="tasks-filter-tab" type="button" data-filter-tab="responsable">Responsable</button>
+	                        <button class="tasks-filter-tab" type="button" data-filter-tab="vencimiento">Vencimiento</button>
+	                        <button class="tasks-filter-tab" type="button" data-filter-tab="opciones">Opciones</button>
+	                      </div>
+	                      <div class="tasks-filter-switcher-body">
+	                        <div class="tasks-filter-section is-active" data-filter-section="estado">
+	                          <div class="mb-2 fw-bold">Estado</div>
+	                          <div class="d-flex flex-wrap gap-2" id="tasks-filter-statuses">
+	                            <div class="form-check">
+	                              <input class="form-check-input" type="checkbox" value="backlog" id="tasks-st-backlog" checked />
+	                              <label class="form-check-label" for="tasks-st-backlog">Backlog</label>
+	                            </div>
+	                            <div class="form-check">
+	                              <input class="form-check-input" type="checkbox" value="todo" id="tasks-st-todo" checked />
+	                              <label class="form-check-label" for="tasks-st-todo">To Do</label>
+	                            </div>
+	                            <div class="form-check">
+	                              <input class="form-check-input" type="checkbox" value="doing" id="tasks-st-doing" checked />
+		                          <label class="form-check-label" for="tasks-st-doing">In Progress</label>
+	                            </div>
+	                            <div class="form-check">
+	                              <input class="form-check-input" type="checkbox" value="done" id="tasks-st-done" />
+	                              <label class="form-check-label" for="tasks-st-done">Done</label>
+	                            </div>
+	                            <div class="form-check">
+	                              <input class="form-check-input" type="checkbox" value="archived" id="tasks-st-archived" />
+	                              <label class="form-check-label" for="tasks-st-archived">Archivado</label>
+	                            </div>
 	                          </div>
 	                        </div>
-	                      </div>
-	                      <div class="col-12 col-lg-4">
-	                        <div class="mb-2 fw-bold">Prioridad</div>
-	                        <div class="d-flex flex-wrap gap-2" id="tasks-filter-priorities">
-	                          <div class="form-check">
-	                            <input class="form-check-input" type="checkbox" value="baja" id="tasks-pr-baja" checked />
-	                            <label class="form-check-label" for="tasks-pr-baja">Baja</label>
-	                          </div>
-	                          <div class="form-check">
-	                            <input class="form-check-input" type="checkbox" value="media" id="tasks-pr-media" checked />
-	                            <label class="form-check-label" for="tasks-pr-media">Media</label>
-	                          </div>
-	                          <div class="form-check">
-	                            <input class="form-check-input" type="checkbox" value="alta" id="tasks-pr-alta" checked />
-	                            <label class="form-check-label" for="tasks-pr-alta">Alta</label>
-	                          </div>
-	                          <div class="form-check">
-	                            <input class="form-check-input" type="checkbox" value="urgente" id="tasks-pr-urgente" checked />
-	                            <label class="form-check-label" for="tasks-pr-urgente">Urgente</label>
+	                        <div class="tasks-filter-section hidden" data-filter-section="prioridad">
+	                          <div class="mb-2 fw-bold">Prioridad</div>
+	                          <div class="d-flex flex-wrap gap-2" id="tasks-filter-priorities">
+	                            <div class="form-check">
+	                              <input class="form-check-input" type="checkbox" value="urgente" id="tasks-pr-urgente" checked />
+	                              <label class="form-check-label" for="tasks-pr-urgente">Urgente</label>
+	                            </div>
+	                            <div class="form-check">
+	                              <input class="form-check-input" type="checkbox" value="alta" id="tasks-pr-alta" checked />
+	                              <label class="form-check-label" for="tasks-pr-alta">Alta</label>
+	                            </div>
+	                            <div class="form-check">
+	                              <input class="form-check-input" type="checkbox" value="media" id="tasks-pr-media" checked />
+	                              <label class="form-check-label" for="tasks-pr-media">Media</label>
+	                            </div>
+	                            <div class="form-check">
+	                              <input class="form-check-input" type="checkbox" value="baja" id="tasks-pr-baja" checked />
+	                              <label class="form-check-label" for="tasks-pr-baja">Baja</label>
+	                            </div>
 	                          </div>
 	                        </div>
-	                      </div>
-	                      <div class="col-12 col-lg-4">
-	                        <div class="mb-2 fw-bold">Responsable</div>
-	                        <select id="tasks-filter-assignee" class="form-select form-select-sm" multiple size="6"></select>
-	                      </div>
-	                      <div class="col-12 col-lg-6">
-	                        <div class="mb-2 fw-bold">Vencimiento</div>
-	                        <div class="d-flex gap-2">
-	                          <input id="tasks-filter-due-from" class="form-control form-control-sm" type="date" />
-	                          <input id="tasks-filter-due-to" class="form-control form-control-sm" type="date" />
+	                        <div class="tasks-filter-section hidden" data-filter-section="responsable">
+	                          <div class="mb-2 fw-bold">Responsable</div>
+	                          <select id="tasks-filter-assignee" class="form-select form-select-sm" multiple size="6">
+	                            <option value="" disabled selected>Cargando responsables activos...</option>
+	                          </select>
+	                          <div class="form-text">Solo incluye tareas en Backlog, To Do e In Progress.</div>
 	                        </div>
-	                        <div class="form-text">Rango opcional. Filtra por fecha de vencimiento.</div>
-	                      </div>
-	                      <div class="col-12 col-lg-6">
-	                        <div class="mb-2 fw-bold">Opciones</div>
-	                        <div class="form-check">
-	                          <input class="form-check-input" type="checkbox" id="tasks-filter-hide-subtasks" />
-	                          <label class="form-check-label" for="tasks-filter-hide-subtasks">Ocultar subtareas</label>
+	                        <div class="tasks-filter-section hidden" data-filter-section="vencimiento">
+	                          <div class="mb-2 fw-bold">Vencimiento</div>
+	                          <div class="d-flex gap-2">
+	                            <input id="tasks-filter-due-from" class="form-control form-control-sm" type="date" />
+	                            <input id="tasks-filter-due-to" class="form-control form-control-sm" type="date" />
+	                          </div>
+	                          <div class="form-text">Rango opcional. Filtra por fecha de vencimiento.</div>
+	                        </div>
+	                        <div class="tasks-filter-section hidden" data-filter-section="opciones">
+	                          <div class="mb-2 fw-bold">Opciones</div>
+	                          <div class="form-check">
+	                            <input class="form-check-input" type="checkbox" id="tasks-filter-hide-subtasks" />
+	                            <label class="form-check-label" for="tasks-filter-hide-subtasks">Ocultar subtareas</label>
+	                          </div>
 	                        </div>
 	                      </div>
 	                    </div>
@@ -1126,8 +1160,18 @@
 
 		              <div id="tasks-view-backlog-panel">
 		                <div class="card">
-		                  <div class="card-header border-0">
+		                  <div class="card-header border-0 d-flex flex-wrap align-items-center justify-content-between gap-2">
 		                    <h3 class="card-title mb-0">Backlog</h3>
+		                    <div class="input-group input-group-sm ms-auto" style="max-width: 320px">
+		                      <span class="input-group-text"><i class="bi bi-search"></i></span>
+		                      <input
+		                        class="form-control"
+		                        id="tasks-search"
+		                        type="search"
+		                        placeholder="Buscar en backlog..."
+		                        autocomplete="off"
+		                      />
+		                    </div>
 		                  </div>
 		                  <div class="card-body">
 		                    <div id="tasks-backlog-list" class="tasks-backlog"></div>
