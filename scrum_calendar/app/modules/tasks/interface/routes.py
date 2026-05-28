@@ -119,13 +119,6 @@ def crear_task(
     if etiquetas and len(etiquetas) > 2000:
         raise HTTPException(status_code=400, detail="Etiquetas demasiado largas")
     orden = payload.orden if payload.orden is not None else now_py().timestamp()
-    business_today = now_py().date()
-    start_date = payload.start_date
-    if start_date is None and estado == "doing":
-        start_date = business_today
-    end_date = payload.end_date
-    if end_date is None and estado == "done":
-        end_date = business_today
     task = Task(
         titulo=titulo,
         descripcion=payload.descripcion,
@@ -137,8 +130,8 @@ def crear_task(
         parent_id=payload.parent_id,
         assignee_persona_id=payload.assignee_persona_id,
         creado_por_usuario_id=user.id,
-        start_date=start_date,
-        end_date=end_date,
+        start_date=payload.start_date,
+        end_date=payload.end_date,
         fecha_vencimiento=payload.fecha_vencimiento,
         segmento=segmento,
         tipo=tipo,

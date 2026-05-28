@@ -21,21 +21,4 @@ def apply_status_date_transition(
     business_today: date,
     status_changed: bool,
 ) -> TaskDates:
-    if not status_changed:
-        return TaskDates(start_date=current_start_date, end_date=current_end_date)
-
-    previous = normalize_task_status(previous_status)
-    next_value = normalize_task_status(next_status)
-
-    if previous == "backlog" and next_value == "todo":
-        return TaskDates(start_date=current_start_date, end_date=current_end_date)
-    if next_value in {"backlog", "todo"}:
-        return TaskDates(start_date=None, end_date=None)
-    if next_value == "doing":
-        return TaskDates(start_date=business_today, end_date=None)
-    if next_value == "done":
-        start_date = business_today if previous in {"backlog", "todo"} else current_start_date
-        return TaskDates(start_date=start_date, end_date=business_today)
-
     return TaskDates(start_date=current_start_date, end_date=current_end_date)
-

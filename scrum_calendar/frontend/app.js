@@ -11864,19 +11864,6 @@
         : null;
       syncTaskReleaseIssueOptions(form);
       form.dataset.celulaId = resolvedCelulaId ? String(resolvedCelulaId) : "";
-      const applyModalStatusDateRules = (nextStatusRaw) => {
-        const nextStatus = String(nextStatusRaw || "").trim().toLowerCase();
-        if (!form.start_date || !form.end_date) return;
-        if (nextStatus === "backlog" || nextStatus === "todo") {
-          form.start_date.value = "";
-          form.end_date.value = "";
-          return;
-        }
-        if (nextStatus === "doing") {
-          if (!form.start_date.value) form.start_date.value = getTodayKey();
-          form.end_date.value = "";
-        }
-      };
       const personasFiltradas = personasActivas
         .map((p) => ({ id: p.id, nombre: `${p.nombre} ${p.apellido}`.trim() }))
         .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
@@ -12155,13 +12142,6 @@
         releaseIssueInput.dataset.boundNormalize = "true";
         releaseIssueInput.addEventListener("input", () => {
           releaseIssueInput.value = normalizeReleaseIssueKeyValue(releaseIssueInput.value);
-        });
-      }
-
-      if (form.estado && !form.estado.dataset.boundDateRules) {
-        form.estado.dataset.boundDateRules = "true";
-        form.estado.addEventListener("change", () => {
-          applyModalStatusDateRules(form.estado.value);
         });
       }
 
