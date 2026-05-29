@@ -27,10 +27,14 @@ def apply_status_date_transition(
     normalized_next = normalize_task_status(next_status)
     normalized_previous = normalize_task_status(previous_status)
     if normalized_next in {"backlog", "todo"}:
-        return TaskDates(start_date=None, end_date=current_end_date)
-    if normalized_next in {"doing", "managed"} and (
-        current_start_date is None or normalized_previous in {"backlog", "todo"}
-    ):
-        return TaskDates(start_date=business_today, end_date=current_end_date)
+        return TaskDates(start_date=None, end_date=None)
+    if normalized_next == "done":
+        return TaskDates(start_date=current_start_date or business_today, end_date=business_today)
+    if normalized_next in {"doing", "managed"}:
+        should_reset_start = current_start_date is None or normalized_previous in {"backlog", "todo", "done"}
+        return TaskDates(
+            start_date=business_today if should_reset_start else current_start_date,
+            end_date=None,
+        )
 
     return TaskDates(start_date=current_start_date, end_date=current_end_date)

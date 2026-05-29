@@ -336,15 +336,27 @@
       return {
         ...task,
         start_date: null,
+        end_date: null,
       };
     }
-    if (
-      ["doing", "managed"].includes(nextEstado) &&
-      (!currentStartDate || ["backlog", "todo"].includes(previousEstado))
-    ) {
+    if (nextEstado === "done") {
+      return {
+        ...task,
+        start_date: currentStartDate || getTodayKey(),
+        end_date: getTodayKey(),
+      };
+    }
+    if (["doing", "managed"].includes(nextEstado)) {
+      if (currentStartDate && !["backlog", "todo", "done"].includes(previousEstado)) {
+        return {
+          ...task,
+          end_date: null,
+        };
+      }
       return {
         ...task,
         start_date: getTodayKey(),
+        end_date: null,
       };
     }
     return task;
@@ -358,6 +370,12 @@
     const previousStartDate = String(task?.start_date || "").trim();
     if (["backlog", "todo"].includes(nextEstado)) {
       nextPayload.start_date = null;
+      nextPayload.end_date = null;
+      return nextPayload;
+    }
+    if (nextEstado === "done") {
+      nextPayload.start_date = previousStartDate || getTodayKey();
+      nextPayload.end_date = getTodayKey();
       return nextPayload;
     }
     if (["doing", "managed"].includes(nextEstado)) {
@@ -366,6 +384,7 @@
       } else if (!String(nextPayload.start_date || "").trim()) {
         nextPayload.start_date = previousStartDate;
       }
+      nextPayload.end_date = null;
     }
     return nextPayload;
   };
