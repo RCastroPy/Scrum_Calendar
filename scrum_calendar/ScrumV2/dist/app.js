@@ -350,6 +350,26 @@
     return task;
   };
 
+  const applyTaskStatusDatePayload = (task, payload = {}) => {
+    const nextPayload = { ...(payload || {}) };
+    if (!Object.prototype.hasOwnProperty.call(nextPayload, "estado")) return nextPayload;
+    const nextEstado = String(nextPayload.estado || "").trim().toLowerCase();
+    const previousEstado = String(task?.estado || "").trim().toLowerCase();
+    const previousStartDate = String(task?.start_date || "").trim();
+    if (["backlog", "todo"].includes(nextEstado)) {
+      nextPayload.start_date = null;
+      return nextPayload;
+    }
+    if (["doing", "managed"].includes(nextEstado)) {
+      if (["backlog", "todo"].includes(previousEstado) || !previousStartDate) {
+        nextPayload.start_date = getTodayKey();
+      } else if (!String(nextPayload.start_date || "").trim()) {
+        nextPayload.start_date = previousStartDate;
+      }
+    }
+    return nextPayload;
+  };
+
   const toggle = qs("#menu-toggle");
   if (toggle) {
     toggle.addEventListener("click", () => {
@@ -12194,7 +12214,10 @@
 	              assignee_persona_id: parent.assignee_persona_id || null,
 	              fecha_vencimiento: null,
 	            };
-	            const createdSubtask = normalizeTaskDatesForClient(await postJson("/tasks", subtaskPayload), subtaskPayload);
+	            const finalSubtaskPayload = applyTaskStatusDatePayload(parent, subtaskPayload);
+	            const createdSubtask = normalizeTaskDatesForClient(await postJson("/tasks", finalSubtaskPayload), finalSubtaskPayload, {
+                previousEstado: parent.estado,
+              });
 	            upsertTaskInCache(createdSubtask);
               expandBacklogAncestors(createdSubtask);
 	            if (subtaskTitle) subtaskTitle.value = "";
@@ -12391,19 +12414,21 @@
 	                if (editId) {
                     const previousTask =
                       (state.tasksCache || []).find((item) => Number(item?.id || 0) === Number(editId || 0)) || {};
+                    const finalPayload = applyTaskStatusDatePayload(previousTask, payload);
 	                  const updated = normalizeTaskDatesForClient(
-                      mergeTaskUpdatePayload(editId, await putJson(`/tasks/${editId}`, payload), payload),
-                      payload,
+                      mergeTaskUpdatePayload(editId, await putJson(`/tasks/${editId}`, finalPayload), finalPayload),
+                      finalPayload,
                       { previousEstado: previousTask.estado }
                     );
 	                  upsertTaskInCache(updated);
                     if (updated?.parent_id) expandBacklogAncestors(updated);
-                    ensureTaskSegmentCatalogEntry(updated?.segmento || payload.segmento || "");
+                    ensureTaskSegmentCatalogEntry(updated?.segmento || finalPayload.segmento || "");
 	                } else {
-	                  const created = normalizeTaskDatesForClient(await postJson("/tasks", payload), payload);
+                    const finalPayload = applyTaskStatusDatePayload({}, payload);
+	                  const created = normalizeTaskDatesForClient(await postJson("/tasks", finalPayload), finalPayload);
 	                  upsertTaskInCache(created);
                     if (created?.parent_id) expandBacklogAncestors(created);
-                    ensureTaskSegmentCatalogEntry(created?.segmento || payload.segmento || "");
+                    ensureTaskSegmentCatalogEntry(created?.segmento || finalPayload.segmento || "");
 	                  const createdId = Number(created?.id || 0);
 	                  if (createdId && draftSubtasks.length) {
 	                    for (const subTitle of draftSubtasks) {
@@ -12419,9 +12444,11 @@
 	                        assignee_persona_id: payload.assignee_persona_id || null,
 	                        fecha_vencimiento: null,
 	                      };
+                        const finalSubtaskPayload = applyTaskStatusDatePayload(created, subtaskPayload);
 	                      const createdSubtask = normalizeTaskDatesForClient(
-                          await postJson("/tasks", subtaskPayload),
-                          subtaskPayload
+                          await postJson("/tasks", finalSubtaskPayload),
+                          finalSubtaskPayload,
+                          { previousEstado: created.estado }
                         );
 	                      upsertTaskInCache(createdSubtask);
                         expandBacklogAncestors(createdSubtask);
@@ -13518,9 +13545,10 @@
           if (!task || task.estado === statusKey) return;
           try {
             const statusPayload = { estado: statusKey };
+            const finalStatusPayload = applyTaskStatusDatePayload(task, statusPayload);
             const updated = normalizeTaskDatesForClient(
-              mergeTaskUpdatePayload(taskId, await putJson(`/tasks/${taskId}`, statusPayload), statusPayload),
-              statusPayload,
+              mergeTaskUpdatePayload(taskId, await putJson(`/tasks/${taskId}`, finalStatusPayload), finalStatusPayload),
+              finalStatusPayload,
               { previousEstado: task.estado }
             );
             upsertTaskInCache(updated);
@@ -14346,8 +14374,9 @@
       try {
         const previousTask =
           (state.tasksCache || []).find((item) => Number(item?.id || 0) === Number(taskId || 0)) || {};
-        const updatedRaw = await putJson(`/tasks/${taskId}`, payload);
-        const updated = normalizeTaskDatesForClient(mergeTaskUpdatePayload(taskId, updatedRaw, payload), payload, {
+        const finalPayload = applyTaskStatusDatePayload(previousTask, payload);
+        const updatedRaw = await putJson(`/tasks/${taskId}`, finalPayload);
+        const updated = normalizeTaskDatesForClient(mergeTaskUpdatePayload(taskId, updatedRaw, finalPayload), finalPayload, {
           previousEstado: previousTask.estado,
         });
         upsertTaskInCache(updated);
@@ -14403,8 +14432,11 @@
           if (currentDue && currentDue < today) {
             payload.fecha_vencimiento = today;
           }
-          const updatedRaw = await putJson(`/tasks/${task.id}`, payload);
-          const updated = normalizeTaskDatesForClient(mergeTaskUpdatePayload(task.id, updatedRaw, payload), payload);
+          const finalPayload = applyTaskStatusDatePayload(task, payload);
+          const updatedRaw = await putJson(`/tasks/${task.id}`, finalPayload);
+          const updated = normalizeTaskDatesForClient(mergeTaskUpdatePayload(task.id, updatedRaw, finalPayload), finalPayload, {
+            previousEstado: task.estado,
+          });
           upsertTaskInCache(updated);
           updatedCount += 1;
         } catch {

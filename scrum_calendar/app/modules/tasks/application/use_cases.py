@@ -63,7 +63,7 @@ def apply_task_update(task, payload, fields_set: Set[str], business_today: date)
         dates = apply_status_date_transition(
             previous_status=prev_status_norm,
             next_status=next_status_norm,
-            current_start_date=getattr(task, "start_date", None),
+            current_start_date=prev_start_date,
             current_end_date=getattr(task, "end_date", None),
             business_today=business_today,
             status_changed=status_changed,
