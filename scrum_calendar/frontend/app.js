@@ -12178,7 +12178,7 @@
 	          if (!parent) return;
 	          try {
 	            subtaskCreate.disabled = true;
-	            const createdSubtask = await postJson("/tasks", {
+	            const subtaskPayload = {
 	              titulo: title,
 	              descripcion: null,
 	              release_issue_key: normalizeReleaseIssueKeyValue(parent.release_issue_key || "") || null,
@@ -12189,7 +12189,8 @@
 	              parent_id: taskId,
 	              assignee_persona_id: parent.assignee_persona_id || null,
 	              fecha_vencimiento: null,
-	            });
+	            };
+	            const createdSubtask = normalizeTaskDatesForClient(await postJson("/tasks", subtaskPayload), subtaskPayload);
 	            upsertTaskInCache(createdSubtask);
               expandBacklogAncestors(createdSubtask);
 	            if (subtaskTitle) subtaskTitle.value = "";
@@ -12384,19 +12385,22 @@
 	              async () => {
 	                const editId = form.dataset.editId;
 	                if (editId) {
-	                  const updated = await putJson(`/tasks/${editId}`, payload);
+	                  const updated = normalizeTaskDatesForClient(
+                      mergeTaskUpdatePayload(editId, await putJson(`/tasks/${editId}`, payload), payload),
+                      payload
+                    );
 	                  upsertTaskInCache(updated);
                     if (updated?.parent_id) expandBacklogAncestors(updated);
                     ensureTaskSegmentCatalogEntry(updated?.segmento || payload.segmento || "");
 	                } else {
-	                  const created = await postJson("/tasks", payload);
+	                  const created = normalizeTaskDatesForClient(await postJson("/tasks", payload), payload);
 	                  upsertTaskInCache(created);
                     if (created?.parent_id) expandBacklogAncestors(created);
                     ensureTaskSegmentCatalogEntry(created?.segmento || payload.segmento || "");
 	                  const createdId = Number(created?.id || 0);
 	                  if (createdId && draftSubtasks.length) {
 	                    for (const subTitle of draftSubtasks) {
-	                      const createdSubtask = await postJson("/tasks", {
+	                      const subtaskPayload = {
 	                        titulo: subTitle,
 	                        descripcion: null,
 	                        release_issue_key: payload.release_issue_key || null,
@@ -12407,7 +12411,11 @@
 	                        parent_id: createdId,
 	                        assignee_persona_id: payload.assignee_persona_id || null,
 	                        fecha_vencimiento: null,
-	                      });
+	                      };
+	                      const createdSubtask = normalizeTaskDatesForClient(
+                          await postJson("/tasks", subtaskPayload),
+                          subtaskPayload
+                        );
 	                      upsertTaskInCache(createdSubtask);
                         expandBacklogAncestors(createdSubtask);
 	                    }
@@ -13502,7 +13510,11 @@
           const task = (state.tasksCache || []).find((t) => t.id === taskId);
           if (!task || task.estado === statusKey) return;
           try {
-            const updated = await putJson(`/tasks/${taskId}`, { estado: statusKey });
+            const statusPayload = { estado: statusKey };
+            const updated = normalizeTaskDatesForClient(
+              mergeTaskUpdatePayload(taskId, await putJson(`/tasks/${taskId}`, statusPayload), statusPayload),
+              statusPayload
+            );
             upsertTaskInCache(updated);
             refreshTasksUi("all");
           } catch (err) {
