@@ -325,11 +325,12 @@
     return formatISO(getToday());
   };
 
-  const normalizeTaskDatesForClient = (task, payload = {}) => {
+  const normalizeTaskDatesForClient = (task, payload = {}, options = {}) => {
     if (!task || typeof task !== "object") return task;
     const hasEstado = Object.prototype.hasOwnProperty.call(payload || {}, "estado");
     if (!hasEstado) return task;
     const nextEstado = String(payload.estado || task.estado || "").trim().toLowerCase();
+    const previousEstado = String(options.previousEstado || task.__previous_estado || "").trim().toLowerCase();
     const currentStartDate = String(task.start_date || "").trim();
     if (["backlog", "todo"].includes(nextEstado)) {
       return {
@@ -337,7 +338,10 @@
         start_date: null,
       };
     }
-    if (["doing", "managed"].includes(nextEstado) && !currentStartDate) {
+    if (
+      ["doing", "managed"].includes(nextEstado) &&
+      (!currentStartDate || ["backlog", "todo"].includes(previousEstado))
+    ) {
       return {
         ...task,
         start_date: getTodayKey(),
@@ -12385,9 +12389,12 @@
 	              async () => {
 	                const editId = form.dataset.editId;
 	                if (editId) {
+                    const previousTask =
+                      (state.tasksCache || []).find((item) => Number(item?.id || 0) === Number(editId || 0)) || {};
 	                  const updated = normalizeTaskDatesForClient(
                       mergeTaskUpdatePayload(editId, await putJson(`/tasks/${editId}`, payload), payload),
-                      payload
+                      payload,
+                      { previousEstado: previousTask.estado }
                     );
 	                  upsertTaskInCache(updated);
                     if (updated?.parent_id) expandBacklogAncestors(updated);
@@ -13513,7 +13520,8 @@
             const statusPayload = { estado: statusKey };
             const updated = normalizeTaskDatesForClient(
               mergeTaskUpdatePayload(taskId, await putJson(`/tasks/${taskId}`, statusPayload), statusPayload),
-              statusPayload
+              statusPayload,
+              { previousEstado: task.estado }
             );
             upsertTaskInCache(updated);
             refreshTasksUi("all");
@@ -14336,8 +14344,12 @@
 
     const updateTaskLocal = async (taskId, payload, okMessage, options = {}) => {
       try {
+        const previousTask =
+          (state.tasksCache || []).find((item) => Number(item?.id || 0) === Number(taskId || 0)) || {};
         const updatedRaw = await putJson(`/tasks/${taskId}`, payload);
-        const updated = normalizeTaskDatesForClient(mergeTaskUpdatePayload(taskId, updatedRaw, payload), payload);
+        const updated = normalizeTaskDatesForClient(mergeTaskUpdatePayload(taskId, updatedRaw, payload), payload, {
+          previousEstado: previousTask.estado,
+        });
         upsertTaskInCache(updated);
         if (updated?.parent_id) expandBacklogAncestors(updated);
         if (okMessage) {
