@@ -331,6 +331,12 @@
     if (!hasEstado) return task;
     const nextEstado = String(payload.estado || task.estado || "").trim().toLowerCase();
     const currentStartDate = String(task.start_date || "").trim();
+    if (["backlog", "todo"].includes(nextEstado)) {
+      return {
+        ...task,
+        start_date: null,
+      };
+    }
     if (["doing", "managed"].includes(nextEstado) && !currentStartDate) {
       return {
         ...task,

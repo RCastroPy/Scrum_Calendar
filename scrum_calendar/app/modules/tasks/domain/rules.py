@@ -25,6 +25,8 @@ def apply_status_date_transition(
         return TaskDates(start_date=current_start_date, end_date=current_end_date)
 
     normalized_next = normalize_task_status(next_status)
+    if normalized_next in {"backlog", "todo"}:
+        return TaskDates(start_date=None, end_date=current_end_date)
     if normalized_next in {"doing", "managed"} and current_start_date is None:
         return TaskDates(start_date=business_today, end_date=current_end_date)
 
