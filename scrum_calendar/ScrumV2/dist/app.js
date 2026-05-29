@@ -126,7 +126,7 @@
 	    tasksDatePreset: "",
 	    tasksCache: [],
 	    tasksFilters: {
-	      statuses: ["backlog", "todo", "doing", "managed"],
+	      statuses: ["backlog", "todo", "doing"],
 	      priorities: ["urgente", "alta", "media", "baja"],
 	      assignees: [],
 	      dueFrom: "",
@@ -325,16 +325,29 @@
     return formatISO(getToday());
   };
 
+  const normalizeTaskStatusKey = (value) => {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (normalized === "managed" || normalized === "gestionado") return "todo";
+    return normalized;
+  };
+
+  const normalizeTaskForClient = (task) => {
+    if (!task || typeof task !== "object") return task;
+    const estado = normalizeTaskStatusKey(task.estado);
+    return estado && estado !== task.estado ? { ...task, estado } : task;
+  };
+
   const normalizeTaskDatesForClient = (task, payload = {}, options = {}) => {
     if (!task || typeof task !== "object") return task;
     const hasEstado = Object.prototype.hasOwnProperty.call(payload || {}, "estado");
     if (!hasEstado) return task;
-    const nextEstado = String(payload.estado || task.estado || "").trim().toLowerCase();
-    const previousEstado = String(options.previousEstado || task.__previous_estado || "").trim().toLowerCase();
+    const nextEstado = normalizeTaskStatusKey(payload.estado || task.estado || "");
+    const previousEstado = normalizeTaskStatusKey(options.previousEstado || task.__previous_estado || "");
     const currentStartDate = String(task.start_date || "").trim();
-    if (["backlog", "todo"].includes(nextEstado)) {
+    if (nextEstado === "backlog") {
       return {
         ...task,
+        estado: nextEstado,
         start_date: null,
         end_date: null,
       };
@@ -342,19 +355,22 @@
     if (nextEstado === "done") {
       return {
         ...task,
+        estado: nextEstado,
         start_date: currentStartDate || getTodayKey(),
         end_date: getTodayKey(),
       };
     }
-    if (["doing", "managed"].includes(nextEstado)) {
-      if (currentStartDate && !["backlog", "todo", "done"].includes(previousEstado)) {
+    if (["todo", "doing"].includes(nextEstado)) {
+      if (currentStartDate && !["backlog", "done"].includes(previousEstado)) {
         return {
           ...task,
+          estado: nextEstado,
           end_date: null,
         };
       }
       return {
         ...task,
+        estado: nextEstado,
         start_date: getTodayKey(),
         end_date: null,
       };
@@ -365,10 +381,11 @@
   const applyTaskStatusDatePayload = (task, payload = {}) => {
     const nextPayload = { ...(payload || {}) };
     if (!Object.prototype.hasOwnProperty.call(nextPayload, "estado")) return nextPayload;
-    const nextEstado = String(nextPayload.estado || "").trim().toLowerCase();
-    const previousEstado = String(task?.estado || "").trim().toLowerCase();
+    const nextEstado = normalizeTaskStatusKey(nextPayload.estado || "");
+    nextPayload.estado = nextEstado;
+    const previousEstado = normalizeTaskStatusKey(task?.estado || "");
     const previousStartDate = String(task?.start_date || "").trim();
-    if (["backlog", "todo"].includes(nextEstado)) {
+    if (nextEstado === "backlog") {
       nextPayload.start_date = null;
       nextPayload.end_date = null;
       return nextPayload;
@@ -378,8 +395,8 @@
       nextPayload.end_date = getTodayKey();
       return nextPayload;
     }
-    if (["doing", "managed"].includes(nextEstado)) {
-      if (["backlog", "todo"].includes(previousEstado) || !previousStartDate) {
+    if (["todo", "doing"].includes(nextEstado)) {
+      if (["backlog", "done"].includes(previousEstado) || !previousStartDate) {
         nextPayload.start_date = getTodayKey();
       } else if (!String(nextPayload.start_date || "").trim()) {
         nextPayload.start_date = previousStartDate;
@@ -1014,7 +1031,7 @@
     const normalized = normalizeText(status);
     if (!normalized) return "";
     if (normalized.includes("gestionado") || normalized.includes("managed")) {
-      return "Gestionado";
+      return "To Do";
     }
     if (normalized.includes("finalizada") || normalized.includes("finalizado")) {
       return "Finalizada";
@@ -9920,12 +9937,11 @@
       ? state.tasksCommentCounts
       : {};
 
-    const STATUS_ORDER = ["backlog", "todo", "doing", "managed", "done", "archived"];
+    const STATUS_ORDER = ["backlog", "todo", "doing", "done", "archived"];
     const STATUS_LABEL = {
       backlog: "Backlog",
       todo: "To Do",
       doing: "In Progress",
-      managed: "Gestionado",
       done: "Done",
       archived: "Archivado",
     };
@@ -9936,7 +9952,7 @@
       urgente: "Urgente",
     };
     const TASK_PRIORITY_KEYS = ["baja", "media", "alta", "urgente"];
-    const TASK_ACTIVE_STATUS_KEYS = ["backlog", "todo", "doing", "managed"];
+    const TASK_ACTIVE_STATUS_KEYS = ["backlog", "todo", "doing"];
     const normalizeSegmentName = (value) => String(value || "").replace(/\s+/g, " ").trim().slice(0, 80);
     const normalizeSegmentKey = (value) => normalizeText(normalizeSegmentName(value));
     const TASK_FAMILY_COLORS = [
@@ -9989,7 +10005,7 @@
     };
     const TASK_FILTERS_KEY = "scrum_calendar_tasks_filters_v2";
     const DEFAULT_TASKS_ADVANCED_FILTERS = {
-      statuses: ["backlog", "todo", "doing", "managed"],
+      statuses: ["backlog", "todo", "doing"],
       priorities: ["urgente", "alta", "media", "baja"],
       assignees: [],
       dueFrom: "",
@@ -10027,7 +10043,13 @@
       const defaults = cloneDefaultTasksAdvancedFilters();
       const filtersRaw = raw?.filters && typeof raw.filters === "object" ? raw.filters : {};
       const statuses = Array.isArray(filtersRaw.statuses)
-        ? filtersRaw.statuses.map((v) => String(v || "").trim().toLowerCase()).filter((v) => STATUS_ORDER.includes(v))
+        ? Array.from(
+            new Set(
+              filtersRaw.statuses
+                .map((v) => normalizeTaskStatusKey(v))
+                .filter((v) => STATUS_ORDER.includes(v))
+            )
+          )
         : [];
       const priorities = Array.isArray(filtersRaw.priorities)
         ? filtersRaw.priorities
@@ -10254,8 +10276,6 @@
           return "text-bg-primary";
         case "doing":
           return "text-bg-warning";
-        case "managed":
-          return "text-bg-info";
         case "done":
           return "text-bg-success";
         case "archived":
@@ -10286,7 +10306,7 @@
     const sprintNameById = Object.fromEntries(
       (base.sprints || []).map((s) => [String(s.id), String(s.nombre || "").trim() || `Sprint ${s.id}`])
     );
-    const TASK_ASSIGNEE_FILTER_STATUSES = new Set(["backlog", "todo", "doing", "managed"]);
+    const TASK_ASSIGNEE_FILTER_STATUSES = new Set(["backlog", "todo", "doing"]);
 
     const personaBelongsToCelula = (persona, celulaId) => {
       if (!celulaId) return true;
@@ -11301,10 +11321,10 @@
 
     const updateStatusSummaryButtons = (items = []) => {
       if (!statusKpis) return;
-      const counts = { total: 0, backlog: 0, todo: 0, doing: 0, managed: 0 };
+      const counts = { total: 0, backlog: 0, todo: 0, doing: 0 };
       const scopedItems = applyFiltersWithOptions(Array.isArray(items) ? items : [], { ignoreStatuses: true });
       scopedItems.forEach((task) => {
-        const key = String(task?.estado || "").trim().toLowerCase();
+        const key = normalizeTaskStatusKey(task?.estado || "");
         if (!TASK_ACTIVE_STATUS_KEYS.includes(key)) return;
         counts.total += 1;
         counts[key] += 1;
@@ -11501,7 +11521,6 @@
                   <option value="backlog">Backlog</option>
                   <option value="todo">To Do</option>
                   <option value="doing">In Progress</option>
-                  <option value="managed">Gestionado</option>
                   <option value="done">Done</option>
                   <option value="archived">Archivado</option>
                 </select>
@@ -12762,7 +12781,7 @@
 
       const applyEstadoPill = (pill, estado) => {
         const key = STATUS_ORDER.includes(estado) ? estado : "backlog";
-        pill.classList.remove("is-backlog", "is-todo", "is-doing", "is-managed", "is-done", "is-archived");
+        pill.classList.remove("is-backlog", "is-todo", "is-doing", "is-done", "is-archived");
         pill.classList.add(`is-${key}`);
       };
       const applyPrioridadPill = (pill, prioridad) => {
@@ -13571,7 +13590,11 @@
               { previousEstado: task.estado }
             );
             upsertTaskInCache(updated);
-            refreshTasksUi("all");
+            const filtered = refreshTasksDerivedUi();
+            renderBoard(filtered, state.tasksCache || []);
+            if (state.tasksView === "reports") {
+              renderReports(filtered);
+            }
           } catch (err) {
             setTasksStatus(err.message || "No se pudo mover la tarea.", "error");
           }
@@ -13896,7 +13919,7 @@
       const pill = selectEl?.closest?.(".tasks-notion-pill.pill-estado");
       if (!pill) return;
       const key = STATUS_ORDER.includes(selectEl.value) ? selectEl.value : "backlog";
-      pill.classList.remove("is-backlog", "is-todo", "is-doing", "is-managed", "is-done", "is-archived");
+      pill.classList.remove("is-backlog", "is-todo", "is-doing", "is-done", "is-archived");
       pill.classList.add(`is-${key}`);
     };
 
@@ -13917,22 +13940,45 @@
 
     const syncBacklogRowAfterStatusUpdate = (rowEl, updatedTask) => {
       if (!rowEl || !updatedTask) return;
+      const toDateOrder = (value) => {
+        const raw = String(value || "").trim();
+        const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        return match ? Number(`${match[1]}${match[2]}${match[3]}`) : "";
+      };
       const statusSelect = rowEl.querySelector("select[data-field='estado']");
       if (statusSelect) {
         statusSelect.value = String(updatedTask.estado || "backlog").toLowerCase();
         syncInlineEstadoPill(statusSelect);
       }
+      const statusCell = rowEl.querySelector("td[data-col-key='estado']");
+      if (statusCell) {
+        statusCell.dataset.order = String(
+          STATUS_ORDER.indexOf(String(updatedTask.estado || "backlog").toLowerCase()) + 1 || ""
+        );
+      }
       const startInput = rowEl.querySelector("input[data-field='start_date']");
       if (startInput) {
         startInput.value = updatedTask.start_date ? String(updatedTask.start_date) : "";
+      }
+      const startCell = rowEl.querySelector("td[data-col-key='start_date']");
+      if (startCell) {
+        startCell.dataset.order = String(toDateOrder(updatedTask.start_date) || "");
       }
       const endInput = rowEl.querySelector("input[data-field='end_date']");
       if (endInput) {
         endInput.value = updatedTask.end_date ? String(updatedTask.end_date) : "";
       }
+      const endCell = rowEl.querySelector("td[data-col-key='end_date']");
+      if (endCell) {
+        endCell.dataset.order = String(toDateOrder(updatedTask.end_date) || "");
+      }
       const dueInput = rowEl.querySelector("input[data-field='fecha_vencimiento']");
       if (dueInput) {
         dueInput.value = updatedTask.fecha_vencimiento ? String(updatedTask.fecha_vencimiento) : "";
+      }
+      const dueCell = rowEl.querySelector("td[data-col-key='fecha_vencimiento']");
+      if (dueCell) {
+        dueCell.dataset.order = String(toDateOrder(updatedTask.fecha_vencimiento) || "");
       }
       const daysCell = rowEl.querySelector("td[data-col-key='dias_habiles']");
       if (daysCell) {
@@ -13940,13 +13986,16 @@
         const due = String(updatedTask.fecha_vencimiento || "").trim();
         daysCell.innerHTML = "";
         if (!start || !due) {
+          daysCell.dataset.order = "";
           daysCell.textContent = "-";
         } else {
           const feriadosSet = new Set((state.base?.feriados || []).map((f) => f.fecha).filter(Boolean));
           const total = countWeekdays(start, due, feriadosSet);
           if (!Number.isFinite(total) || total <= 0) {
+            daysCell.dataset.order = "";
             daysCell.textContent = "-";
           } else {
+            daysCell.dataset.order = String(total);
             const todayKey = getTodayKey();
             const overdue = todayKey > due;
             let className = "is-green";
@@ -14297,6 +14346,7 @@
     };
 
     const upsertTaskInCache = (task) => {
+      task = normalizeTaskForClient(task);
       const taskId = Number(task?.id || 0);
       if (!taskId) return null;
       const idx = (state.tasksCache || []).findIndex((t) => Number(t?.id || 0) === taskId);
@@ -14338,11 +14388,7 @@
       return removeIds;
     };
 
-    const refreshTasksUi = (mode = "all") => {
-      const normalized = String(mode || "all").trim().toLowerCase();
-      if (normalized === "backlog" || state.tasksView === "backlog") {
-        captureBacklogColumnsFromDom();
-      }
+    const refreshTasksDerivedUi = () => {
       const filtered = applyFilters(state.tasksCache || []);
       syncTaskAssigneeFilterOptions();
       renderTaskSegmentButtons();
@@ -14351,6 +14397,15 @@
       updateAssigneeSummaryButtons(state.tasksCache || []);
       renderFilterChips();
       syncOpenTaskModalSubtasks();
+      return filtered;
+    };
+
+    const refreshTasksUi = (mode = "all") => {
+      const normalized = String(mode || "all").trim().toLowerCase();
+      if (normalized === "backlog" || state.tasksView === "backlog") {
+        captureBacklogColumnsFromDom();
+      }
+      const filtered = refreshTasksDerivedUi();
       if (normalized === "backlog") {
         renderBacklogPreservingViewport();
         renderBoard(filtered, state.tasksCache || []);
@@ -14372,6 +14427,14 @@
       renderBacklog(filtered, state.tasksCache || []);
       renderBoard(filtered, state.tasksCache || []);
       renderReports(filtered);
+    };
+
+    const canPatchBacklogStatusChangeInPlace = (rowEl, previousTask, updatedTask) => {
+      if (!rowEl || !updatedTask) return false;
+      if (!applyFilters([updatedTask]).length) return false;
+      const sortKey = String(getTasksBacklogSort()?.key || "").trim().toLowerCase();
+      if (["estado", "start_date", "end_date", "dias_habiles"].includes(sortKey)) return false;
+      return String(previousTask?.parent_id || "") === String(updatedTask?.parent_id || "");
     };
 
     const mergeTaskUpdatePayload = (taskId, updatedRaw, payload = {}) => {
@@ -14423,20 +14486,15 @@
     const updateOverdueInProgressToToday = async () => {
       const today = getTodayKey();
       const candidates = (state.tasksCache || []).filter((task) => {
-        const status = String(task.estado || "")
-          .trim()
-          .toLowerCase();
-        if (!["doing", "managed"].includes(status)) return false;
-        const due = String(task.fecha_vencimiento || "").trim();
-        if (status === "managed") return true;
-        return Boolean(due && due < today);
+        const status = normalizeTaskStatusKey(task.estado || "");
+        return status === "doing";
       });
       if (!candidates.length) {
-        setTasksStatus("No hay tareas activas para reiniciar hoy.", "info");
+        setTasksStatus("No hay tareas en In Progress para pasar a To Do.", "info");
         return;
       }
       const confirmed = confirm(
-        `Se reiniciaran ${candidates.length} tarea(s) activas para hoy. Las tareas gestionadas volveran a In Progress y las vencidas pasaran al dia ${today}. Deseas continuar?`
+        `Se actualizaran ${candidates.length} tarea(s) en In Progress a To Do. Las tareas vencidas moveran su fecha al dia ${today}. Deseas continuar?`
       );
       if (!confirmed) return;
 
@@ -14446,7 +14504,7 @@
         try {
           const currentDue = String(task.fecha_vencimiento || "").trim();
           const payload = {
-            estado: "doing",
+            estado: "todo",
           };
           if (currentDue && currentDue < today) {
             payload.fecha_vencimiento = today;
@@ -14464,14 +14522,14 @@
       }
       renderAll();
       if (updatedCount && !errorCount) {
-        setTasksStatus(`Se reiniciaron ${updatedCount} tarea(s) activas para hoy.`, "ok");
+        setTasksStatus(`Se actualizaron ${updatedCount} tarea(s) a To Do.`, "ok");
       } else if (updatedCount && errorCount) {
         setTasksStatus(
-          `Se reiniciaron ${updatedCount} tarea(s) y ${errorCount} fallaron. Reintenta para completar.`,
+          `Se actualizaron ${updatedCount} tarea(s) a To Do y ${errorCount} fallaron. Reintenta para completar.`,
           "warning"
         );
       } else {
-        setTasksStatus("No se pudo reiniciar ninguna tarea.", "error");
+        setTasksStatus("No se pudo actualizar ninguna tarea a To Do.", "error");
       }
     };
 
@@ -14715,7 +14773,7 @@
           fetchJson("/tasks"),
           fetchJson("/tasks/segments").catch(() => []),
         ]);
-        state.tasksCache = Array.isArray(items) ? items : [];
+        state.tasksCache = Array.isArray(items) ? items.map(normalizeTaskForClient) : [];
         state.tasksSegments = Array.isArray(segments) ? segments : [];
         sanitizeTaskSegmentFilter();
         if (state.tasksCache.length && !applyFilters(state.tasksCache).length && hasActivePersistedTaskFilters()) {
@@ -15606,8 +15664,14 @@
                 taskId,
                 { estado: String(el.value || "").trim().toLowerCase() },
                 "Actualizado.",
-                { rerender: "backlog" }
+                { rerender: "none" }
               );
+              if (canPatchBacklogStatusChangeInPlace(row, task, updated)) {
+                syncBacklogRowAfterStatusUpdate(row, updated);
+                refreshTasksDerivedUi();
+              } else {
+                refreshTasksUi("backlog");
+              }
               return;
             }
             if (field === "prioridad") {

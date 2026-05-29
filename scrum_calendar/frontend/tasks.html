@@ -1021,14 +1021,13 @@
                             <button class="tasks-status-kpi is-backlog" type="button" data-status-filter="backlog">Backlog <strong data-status-kpi="backlog">0</strong></button>
                             <button class="tasks-status-kpi is-todo" type="button" data-status-filter="todo">To Do <strong data-status-kpi="todo">0</strong></button>
                             <button class="tasks-status-kpi is-doing" type="button" data-status-filter="doing">In Progress <strong data-status-kpi="doing">0</strong></button>
-                            <button class="tasks-status-kpi is-managed" type="button" data-status-filter="managed">Gestionado <strong data-status-kpi="managed">0</strong></button>
                           </div>
                         </div>
                         <div class="tasks-top-filter-section hidden" data-top-filter-section="asignados">
                           <div class="tasks-assignee-kpis" id="tasks-assignee-kpis" aria-label="Indicadores por responsable">
                             <span class="tasks-assignee-empty">Cargando responsables activos...</span>
                           </div>
-                          <div class="form-text">Solo incluye tareas en Backlog, To Do, In Progress y Gestionado.</div>
+                          <div class="form-text">Solo incluye tareas en Backlog, To Do e In Progress.</div>
                         </div>
                       </div>
                     </div>
@@ -1072,10 +1071,6 @@
 		                          <label class="form-check-label" for="tasks-st-doing">In Progress</label>
 	                            </div>
 	                            <div class="form-check">
-	                              <input class="form-check-input" type="checkbox" value="managed" id="tasks-st-managed" checked />
-		                          <label class="form-check-label" for="tasks-st-managed">Gestionado</label>
-	                            </div>
-	                            <div class="form-check">
 	                              <input class="form-check-input" type="checkbox" value="done" id="tasks-st-done" />
 	                              <label class="form-check-label" for="tasks-st-done">Done</label>
 	                            </div>
@@ -1111,7 +1106,7 @@
 	                          <select id="tasks-filter-assignee" class="form-select form-select-sm" multiple size="6">
 	                            <option value="" disabled selected>Cargando responsables activos...</option>
 	                          </select>
-	                          <div class="form-text">Solo incluye tareas en Backlog, To Do, In Progress y Gestionado.</div>
+	                          <div class="form-text">Solo incluye tareas en Backlog, To Do e In Progress.</div>
 	                        </div>
 	                        <div class="tasks-filter-section hidden" data-filter-section="vencimiento">
 	                          <div class="mb-2 fw-bold">Vencimiento</div>
@@ -1393,7 +1388,7 @@
     <script src="https://cdn.jsdelivr.net/npm/pdfmake@0.2.7/build/vfs_fonts.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/datatables.net-buttons@2.4.2/js/buttons.html5.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/datatables.net-buttons@2.4.2/js/buttons.print.min.js"></script>
-<script src="./app.js?v=20260529managedstart1"></script>
+<script src="./app.js?v=20260529todoactive2"></script>
     <!--end::Script-->
   </body>
   <!--end::Body-->

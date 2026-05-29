@@ -19,7 +19,7 @@ class SubtreeInfo:
 
 def is_in_progress_family(status: str) -> bool:
     normalized = (status or "").strip().lower()
-    return normalized in {"doing", "managed"}
+    return normalized in {"todo", "doing"}
 
 
 def same_optional_int(a: Optional[int], b: Optional[int]) -> bool:

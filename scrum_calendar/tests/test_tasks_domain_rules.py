@@ -8,12 +8,14 @@ TODAY = date(2026, 5, 7)
 
 def test_normalize_task_status():
     assert normalize_task_status(" In Progress ") == "in progress"
+    assert normalize_task_status("managed") == "todo"
+    assert normalize_task_status("Gestionado") == "todo"
     assert normalize_task_status(None) == ""
 
 
-def test_backlog_to_todo_keeps_dates_empty():
+def test_backlog_to_todo_sets_start_date():
     result = apply_status_date_transition("backlog", "todo", None, None, TODAY, True)
-    assert result.start_date is None
+    assert result.start_date == TODAY
     assert result.end_date is None
 
 
@@ -41,32 +43,39 @@ def test_no_status_change_keeps_dates():
     assert result.end_date is None
 
 
-def test_backlog_to_managed_sets_start_date_and_clears_end_date():
-    result = apply_status_date_transition("backlog", "managed", None, None, TODAY, True)
-    assert result.start_date == TODAY
-    assert result.end_date is None
-
-
-def test_todo_to_managed_sets_start_date_and_clears_end_date():
-    result = apply_status_date_transition("todo", "managed", None, None, TODAY, True)
-    assert result.start_date == TODAY
-    assert result.end_date is None
-
-
-def test_doing_to_managed_keeps_existing_start_date_and_clears_end_date():
+def test_todo_to_doing_keeps_existing_start_date_and_clears_end_date():
     start_date = date(2026, 5, 1)
-    result = apply_status_date_transition("doing", "managed", start_date, None, TODAY, True)
+    result = apply_status_date_transition("todo", "doing", start_date, None, TODAY, True)
     assert result.start_date == start_date
     assert result.end_date is None
 
 
-def test_managed_to_backlog_clears_dates():
-    result = apply_status_date_transition("managed", "backlog", TODAY, TODAY, TODAY, True)
+def test_backlog_to_todo_sets_start_date_and_clears_end_date():
+    result = apply_status_date_transition("backlog", "todo", None, None, TODAY, True)
+    assert result.start_date == TODAY
+    assert result.end_date is None
+
+
+def test_done_to_todo_sets_start_date_and_clears_end_date():
+    result = apply_status_date_transition("done", "todo", date(2026, 5, 1), TODAY, TODAY, True)
+    assert result.start_date == TODAY
+    assert result.end_date is None
+
+
+def test_doing_to_todo_keeps_existing_start_date_and_clears_end_date():
+    start_date = date(2026, 5, 1)
+    result = apply_status_date_transition("doing", "todo", start_date, None, TODAY, True)
+    assert result.start_date == start_date
+    assert result.end_date is None
+
+
+def test_todo_to_backlog_clears_dates():
+    result = apply_status_date_transition("todo", "backlog", TODAY, TODAY, TODAY, True)
     assert result.start_date is None
     assert result.end_date is None
 
 
-def test_managed_to_todo_clears_dates():
-    result = apply_status_date_transition("managed", "todo", TODAY, TODAY, TODAY, True)
+def test_legacy_managed_to_backlog_clears_dates():
+    result = apply_status_date_transition("managed", "backlog", TODAY, TODAY, TODAY, True)
     assert result.start_date is None
     assert result.end_date is None
