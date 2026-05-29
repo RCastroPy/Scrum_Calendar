@@ -326,6 +326,17 @@
   };
 
   const normalizeTaskDatesForClient = (task, payload = {}) => {
+    if (!task || typeof task !== "object") return task;
+    const hasEstado = Object.prototype.hasOwnProperty.call(payload || {}, "estado");
+    if (!hasEstado) return task;
+    const nextEstado = String(payload.estado || task.estado || "").trim().toLowerCase();
+    const currentStartDate = String(task.start_date || "").trim();
+    if (["doing", "managed"].includes(nextEstado) && !currentStartDate) {
+      return {
+        ...task,
+        start_date: getTodayKey(),
+      };
+    }
     return task;
   };
 
