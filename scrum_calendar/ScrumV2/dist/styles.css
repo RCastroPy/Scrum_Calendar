@@ -6315,6 +6315,13 @@ body.theme-dark .tasks-toolbar label.form-label {
 .tasks-status-kpi.is-todo strong {
   color: inherit;
 }
+.tasks-status-kpi.is-doing {
+  --tasks-chip-accent: #d4a017;
+  --tasks-chip-border: rgba(212, 160, 23, 0.32);
+  --tasks-chip-bg: rgba(255, 193, 7, 0.14);
+  --tasks-chip-bg-active: rgba(255, 193, 7, 0.22);
+  --tasks-chip-shadow: rgba(212, 160, 23, 0.18);
+}
 .tasks-status-kpi.is-doing strong {
   color: inherit;
 }
@@ -7004,7 +7011,7 @@ body.theme-dark .tasks-notion-pill {
   vertical-align: -2px;
 }
 
-/* Estado colors (Backlog grey, ToDo light blue, In Progress cyan, Done green, Archived dark) */
+/* Estado colors (Backlog grey, ToDo light blue, In Progress yellow, Done green, Archived dark) */
 .tasks-notion-pill.pill-estado select {
   font-weight: 800;
   color: inherit;
@@ -7018,8 +7025,8 @@ body.theme-dark .tasks-notion-pill {
   color: #087990;
 }
 .tasks-notion-pill.pill-estado.is-doing {
-  background: rgba(13, 202, 240, 0.24);
-  color: #0b7285;
+  background: rgba(255, 193, 7, 0.22);
+  color: #8a5b00;
 }
 .tasks-notion-pill.pill-estado.is-done {
   background: rgba(25, 135, 84, 0.18);
