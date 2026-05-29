@@ -126,7 +126,7 @@
 	    tasksDatePreset: "",
 	    tasksCache: [],
 	    tasksFilters: {
-	      statuses: ["backlog", "todo", "doing"],
+	      statuses: ["backlog", "todo", "doing", "managed"],
 	      priorities: ["urgente", "alta", "media", "baja"],
 	      assignees: [],
 	      dueFrom: "",
@@ -326,24 +326,6 @@
   };
 
   const normalizeTaskDatesForClient = (task, payload = {}) => {
-    if (!task || typeof task !== "object") return task;
-    const hasEstado = Object.prototype.hasOwnProperty.call(payload || {}, "estado");
-    if (!hasEstado) return task;
-    const nextEstado = String(payload.estado || task.estado || "").trim().toLowerCase();
-    const todayKey = getTodayKey();
-    if (nextEstado === "backlog" || nextEstado === "todo") {
-      return { ...task, start_date: null, end_date: null };
-    }
-    if (nextEstado === "doing") {
-      return { ...task, start_date: todayKey, end_date: null };
-    }
-    if (nextEstado === "done") {
-      return {
-        ...task,
-        start_date: String(task.start_date || "").trim() || todayKey,
-        end_date: todayKey,
-      };
-    }
     return task;
   };
 
@@ -971,6 +953,9 @@
   function getStatusLabel(status) {
     const normalized = normalizeText(status);
     if (!normalized) return "";
+    if (normalized.includes("gestionado") || normalized.includes("managed")) {
+      return "Gestionado";
+    }
     if (normalized.includes("finalizada") || normalized.includes("finalizado")) {
       return "Finalizada";
     }
@@ -9875,11 +9860,12 @@
       ? state.tasksCommentCounts
       : {};
 
-    const STATUS_ORDER = ["backlog", "todo", "doing", "done", "archived"];
+    const STATUS_ORDER = ["backlog", "todo", "doing", "managed", "done", "archived"];
     const STATUS_LABEL = {
       backlog: "Backlog",
       todo: "To Do",
       doing: "In Progress",
+      managed: "Gestionado",
       done: "Done",
       archived: "Archivado",
     };
@@ -9890,7 +9876,7 @@
       urgente: "Urgente",
     };
     const TASK_PRIORITY_KEYS = ["baja", "media", "alta", "urgente"];
-    const TASK_ACTIVE_STATUS_KEYS = ["backlog", "todo", "doing"];
+    const TASK_ACTIVE_STATUS_KEYS = ["backlog", "todo", "doing", "managed"];
     const normalizeSegmentName = (value) => String(value || "").replace(/\s+/g, " ").trim().slice(0, 80);
     const normalizeSegmentKey = (value) => normalizeText(normalizeSegmentName(value));
     const TASK_FAMILY_COLORS = [
@@ -9943,7 +9929,7 @@
     };
     const TASK_FILTERS_KEY = "scrum_calendar_tasks_filters_v2";
     const DEFAULT_TASKS_ADVANCED_FILTERS = {
-      statuses: ["backlog", "todo", "doing"],
+      statuses: ["backlog", "todo", "doing", "managed"],
       priorities: ["urgente", "alta", "media", "baja"],
       assignees: [],
       dueFrom: "",
@@ -10208,6 +10194,8 @@
           return "text-bg-primary";
         case "doing":
           return "text-bg-warning";
+        case "managed":
+          return "text-bg-info";
         case "done":
           return "text-bg-success";
         case "archived":
@@ -10238,7 +10226,7 @@
     const sprintNameById = Object.fromEntries(
       (base.sprints || []).map((s) => [String(s.id), String(s.nombre || "").trim() || `Sprint ${s.id}`])
     );
-    const TASK_ASSIGNEE_FILTER_STATUSES = new Set(["backlog", "todo", "doing"]);
+    const TASK_ASSIGNEE_FILTER_STATUSES = new Set(["backlog", "todo", "doing", "managed"]);
 
     const personaBelongsToCelula = (persona, celulaId) => {
       if (!celulaId) return true;
@@ -11253,7 +11241,7 @@
 
     const updateStatusSummaryButtons = (items = []) => {
       if (!statusKpis) return;
-      const counts = { total: 0, backlog: 0, todo: 0, doing: 0 };
+      const counts = { total: 0, backlog: 0, todo: 0, doing: 0, managed: 0 };
       const scopedItems = applyFiltersWithOptions(Array.isArray(items) ? items : [], { ignoreStatuses: true });
       scopedItems.forEach((task) => {
         const key = String(task?.estado || "").trim().toLowerCase();
@@ -11453,6 +11441,7 @@
                   <option value="backlog">Backlog</option>
                   <option value="todo">To Do</option>
                   <option value="doing">In Progress</option>
+                  <option value="managed">Gestionado</option>
                   <option value="done">Done</option>
                   <option value="archived">Archivado</option>
                 </select>
@@ -12695,7 +12684,7 @@
 
       const applyEstadoPill = (pill, estado) => {
         const key = STATUS_ORDER.includes(estado) ? estado : "backlog";
-        pill.classList.remove("is-backlog", "is-todo", "is-doing", "is-done", "is-archived");
+        pill.classList.remove("is-backlog", "is-todo", "is-doing", "is-managed", "is-done", "is-archived");
         pill.classList.add(`is-${key}`);
       };
       const applyPrioridadPill = (pill, prioridad) => {
@@ -13823,7 +13812,7 @@
       const pill = selectEl?.closest?.(".tasks-notion-pill.pill-estado");
       if (!pill) return;
       const key = STATUS_ORDER.includes(selectEl.value) ? selectEl.value : "backlog";
-      pill.classList.remove("is-backlog", "is-todo", "is-doing", "is-done", "is-archived");
+      pill.classList.remove("is-backlog", "is-todo", "is-doing", "is-managed", "is-done", "is-archived");
       pill.classList.add(`is-${key}`);
     };
 
@@ -14301,10 +14290,25 @@
       renderReports(filtered);
     };
 
+    const mergeTaskUpdatePayload = (taskId, updatedRaw, payload = {}) => {
+      const current =
+        (state.tasksCache || []).find((item) => Number(item?.id || 0) === Number(taskId || 0)) || {};
+      const merged = {
+        ...current,
+        ...(updatedRaw && typeof updatedRaw === "object" ? updatedRaw : {}),
+      };
+      Object.entries(payload || {}).forEach(([key, value]) => {
+        if (value !== undefined) {
+          merged[key] = value;
+        }
+      });
+      return merged;
+    };
+
     const updateTaskLocal = async (taskId, payload, okMessage, options = {}) => {
       try {
         const updatedRaw = await putJson(`/tasks/${taskId}`, payload);
-        const updated = normalizeTaskDatesForClient(updatedRaw, payload);
+        const updated = normalizeTaskDatesForClient(mergeTaskUpdatePayload(taskId, updatedRaw, payload), payload);
         upsertTaskInCache(updated);
         if (updated?.parent_id) expandBacklogAncestors(updated);
         if (okMessage) {
@@ -14333,17 +14337,17 @@
         const status = String(task.estado || "")
           .trim()
           .toLowerCase();
-        if (status === "done" || status === "archived") return false;
+        if (!["doing", "managed"].includes(status)) return false;
         const due = String(task.fecha_vencimiento || "").trim();
-        if (!due) return false;
-        return due < today;
+        if (status === "managed") return true;
+        return Boolean(due && due < today);
       });
       if (!candidates.length) {
-        setTasksStatus("No hay tareas vencidas (anteriores a hoy) para actualizar.", "info");
+        setTasksStatus("No hay tareas activas para reiniciar hoy.", "info");
         return;
       }
       const confirmed = confirm(
-        `Se actualizaran ${candidates.length} tarea(s) vencidas (fecha menor a ${today}) al vencimiento ${today}. Deseas continuar?`
+        `Se reiniciaran ${candidates.length} tarea(s) activas para hoy. Las tareas gestionadas volveran a In Progress y las vencidas pasaran al dia ${today}. Deseas continuar?`
       );
       if (!confirmed) return;
 
@@ -14351,10 +14355,16 @@
       let errorCount = 0;
       for (const task of candidates) {
         try {
-          const updated = await putJson(`/tasks/${task.id}`, { fecha_vencimiento: today });
-          const idx = (state.tasksCache || []).findIndex((item) => item.id === task.id);
-          if (idx >= 0) state.tasksCache[idx] = updated;
-          else state.tasksCache = [...(state.tasksCache || []), updated];
+          const currentDue = String(task.fecha_vencimiento || "").trim();
+          const payload = {
+            estado: "doing",
+          };
+          if (currentDue && currentDue < today) {
+            payload.fecha_vencimiento = today;
+          }
+          const updatedRaw = await putJson(`/tasks/${task.id}`, payload);
+          const updated = normalizeTaskDatesForClient(mergeTaskUpdatePayload(task.id, updatedRaw, payload), payload);
+          upsertTaskInCache(updated);
           updatedCount += 1;
         } catch {
           errorCount += 1;
@@ -14362,14 +14372,14 @@
       }
       renderAll();
       if (updatedCount && !errorCount) {
-        setTasksStatus(`Se actualizaron ${updatedCount} tarea(s) al dia ${today}.`, "ok");
+        setTasksStatus(`Se reiniciaron ${updatedCount} tarea(s) activas para hoy.`, "ok");
       } else if (updatedCount && errorCount) {
         setTasksStatus(
-          `Se actualizaron ${updatedCount} tarea(s) y ${errorCount} fallaron. Reintenta para completar.`,
+          `Se reiniciaron ${updatedCount} tarea(s) y ${errorCount} fallaron. Reintenta para completar.`,
           "warning"
         );
       } else {
-        setTasksStatus("No se pudo actualizar ninguna tarea.", "error");
+        setTasksStatus("No se pudo reiniciar ninguna tarea.", "error");
       }
     };
 
@@ -15123,7 +15133,7 @@
         const s = state.tasksFilters?.statuses || [];
         const p = state.tasksFilters?.priorities || [];
         const a = state.tasksFilters?.assignees || [];
-        if (s.length && s.length < 5) {
+        if (s.length && s.length < STATUS_ORDER.length) {
           chips.push({ key: "statuses", label: `Estados: ${s.map((x) => STATUS_LABEL[x] || x).join(", ")}` });
         }
         if (p.length && p.length < 4) {

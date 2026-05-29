@@ -17,6 +17,11 @@ class SubtreeInfo:
     any_doing: bool
 
 
+def is_in_progress_family(status: str) -> bool:
+    normalized = (status or "").strip().lower()
+    return normalized in {"doing", "managed"}
+
+
 def same_optional_int(a: Optional[int], b: Optional[int]) -> bool:
     if a is None and b is None:
         return True
@@ -71,7 +76,7 @@ def subtree_info(
         return result
 
     min_date = node.start_date
-    any_doing = (node.status or "") == "doing"
+    any_doing = is_in_progress_family(node.status or "")
     for child_id in children.get(node_id, []):
         child_info = subtree_info(by_id, children, child_id, memo, visiting)
         if child_info.min_start_date is not None and (
@@ -105,4 +110,3 @@ def descendants_rollup(
         if info.any_doing:
             any_doing = True
     return SubtreeInfo(min_date, any_doing)
-
