@@ -1,8 +1,18 @@
 (() => {
-  const API_HOSTS = Array.from(
-    new Set([window.location.hostname, "localhost", "127.0.0.1"].filter(Boolean))
+  const CURRENT_PROTOCOL = window.location.protocol || "http:";
+  const CURRENT_HOSTNAME = window.location.hostname || "localhost";
+  const CURRENT_PORT = window.location.port || (CURRENT_PROTOCOL === "https:" ? "443" : "80");
+  const API_CANDIDATES = Array.from(
+    new Set(
+      [
+        `${CURRENT_PROTOCOL}//${CURRENT_HOSTNAME}:${CURRENT_PORT}`,
+        `${CURRENT_PROTOCOL}//${CURRENT_HOSTNAME}:8000`,
+        `${CURRENT_PROTOCOL}//localhost:8000`,
+        `${CURRENT_PROTOCOL}//127.0.0.1:8000`,
+      ].filter(Boolean)
+    )
   );
-  let API_BASE = `http://${API_HOSTS[0]}:8000`;
+  let API_BASE = API_CANDIDATES[0];
   const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 
   const xhrRequest = (url, options = {}) =>
@@ -31,11 +41,11 @@
 
   const fetchWithFallback = async (path, options) => {
     let lastError;
-    for (const host of API_HOSTS) {
-      const base = `http://${host}:8000`;
+    for (const base of API_CANDIDATES) {
       try {
         const mergedOptions = { credentials: "include", ...options };
-        const useFetch = !isSafari || (window.location.port === "8000" && host === window.location.hostname);
+        const isSameOriginTarget = base === `${CURRENT_PROTOCOL}//${CURRENT_HOSTNAME}:${CURRENT_PORT}`;
+        const useFetch = !isSafari || isSameOriginTarget;
         const res = useFetch
           ? await fetch(`${base}${path}`, mergedOptions)
           : await xhrRequest(`${base}${path}`, mergedOptions);
@@ -14487,14 +14497,16 @@
       const today = getTodayKey();
       const candidates = (state.tasksCache || []).filter((task) => {
         const status = normalizeTaskStatusKey(task.estado || "");
-        return status === "doing";
+        if (["done", "archived"].includes(status)) return false;
+        const due = String(task.fecha_vencimiento || "").trim();
+        return Boolean(due && due < today);
       });
       if (!candidates.length) {
-        setTasksStatus("No hay tareas en In Progress para pasar a To Do.", "info");
+        setTasksStatus("No hay tareas vencidas para actualizar a hoy.", "info");
         return;
       }
       const confirmed = confirm(
-        `Se actualizaran ${candidates.length} tarea(s) en In Progress a To Do. Las tareas vencidas moveran su fecha al dia ${today}. Deseas continuar?`
+        `Se actualizaran ${candidates.length} tarea(s) vencidas al dia ${today}. Deseas continuar?`
       );
       if (!confirmed) return;
 
@@ -14502,13 +14514,9 @@
       let errorCount = 0;
       for (const task of candidates) {
         try {
-          const currentDue = String(task.fecha_vencimiento || "").trim();
           const payload = {
-            estado: "todo",
+            fecha_vencimiento: today,
           };
-          if (currentDue && currentDue < today) {
-            payload.fecha_vencimiento = today;
-          }
           const finalPayload = applyTaskStatusDatePayload(task, payload);
           const updatedRaw = await putJson(`/tasks/${task.id}`, finalPayload);
           const updated = normalizeTaskDatesForClient(mergeTaskUpdatePayload(task.id, updatedRaw, finalPayload), finalPayload, {
@@ -14522,14 +14530,14 @@
       }
       renderAll();
       if (updatedCount && !errorCount) {
-        setTasksStatus(`Se actualizaron ${updatedCount} tarea(s) a To Do.`, "ok");
+        setTasksStatus(`Se actualizaron ${updatedCount} tarea(s) vencidas al dia de hoy.`, "ok");
       } else if (updatedCount && errorCount) {
         setTasksStatus(
-          `Se actualizaron ${updatedCount} tarea(s) a To Do y ${errorCount} fallaron. Reintenta para completar.`,
+          `Se actualizaron ${updatedCount} tarea(s) vencidas y ${errorCount} fallaron. Reintenta para completar.`,
           "warning"
         );
       } else {
-        setTasksStatus("No se pudo actualizar ninguna tarea a To Do.", "error");
+        setTasksStatus("No se pudo actualizar ninguna tarea vencida.", "error");
       }
     };
 
