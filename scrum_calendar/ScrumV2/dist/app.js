@@ -14515,9 +14515,13 @@
       let errorCount = 0;
       for (const task of candidates) {
         try {
+          const status = normalizeTaskStatusKey(task.estado || "");
           const payload = {
             fecha_vencimiento: today,
           };
+          if (status === "doing") {
+            payload.estado = "todo";
+          }
           const finalPayload = applyTaskStatusDatePayload(task, payload);
           const updatedRaw = await putJson(`/tasks/${task.id}`, finalPayload);
           const updated = normalizeTaskDatesForClient(mergeTaskUpdatePayload(task.id, updatedRaw, finalPayload), finalPayload, {
