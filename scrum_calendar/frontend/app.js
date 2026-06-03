@@ -11981,7 +11981,7 @@
 	        const subtasks = sortTasks(
             applyFiltersWithOptions(
               (state.tasksCache || []).filter((t) => Number(t.parent_id || 0) === taskId),
-              { ignoreHideSubtasks: true }
+              { ignoreHideSubtasks: true, ignoreDueFilters: true }
             )
           );
 	        if (!subtasks.length) {
@@ -12524,6 +12524,7 @@
       const ignoreAssignees = Boolean(options?.ignoreAssignees);
       const ignoreSegment = Boolean(options?.ignoreSegment);
       const ignoreHideSubtasks = Boolean(options?.ignoreHideSubtasks);
+      const ignoreDueFilters = Boolean(options?.ignoreDueFilters);
       const query = normalizeText(state.tasksSearch || "");
       const statusFilter = (state.tasksStatusFilter || "").trim().toLowerCase();
       const statusSet = new Set(
@@ -12579,11 +12580,11 @@
           const key = task.assignee_persona_id ? String(task.assignee_persona_id) : "__none__";
           if (!assigneeSet.has(key)) return false;
         }
-        if (noDueDate) {
+        if (!ignoreDueFilters && noDueDate) {
           const due = task.fecha_vencimiento ? String(task.fecha_vencimiento).trim() : "";
           if (due) return false;
         }
-        if (dueFrom || dueTo) {
+        if (!ignoreDueFilters && (dueFrom || dueTo)) {
           const due = task.fecha_vencimiento ? String(task.fecha_vencimiento) : "";
           if (!due) return false;
           if (dueFrom && due < dueFrom) return false;
