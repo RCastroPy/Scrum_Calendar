@@ -313,11 +313,9 @@
           <!--begin::Brand Link-->
           <a href="./index.html" class="brand-link">
             <!--begin::Brand Image-->
-            <img
-              src="./assets/img/AdminLTELogo.png"
-              alt="AdminLTE Logo"
-              class="brand-image opacity-75 shadow"
-            />
+            <span class="brand-image brand-mark shadow" aria-hidden="true">
+              <i class="bi bi-kanban-fill"></i>
+            </span>
             <!--end::Brand Image-->
             <!--begin::Brand Text-->
             <span class="brand-text fw-light">SCRUM MASTER</span>
@@ -950,54 +948,56 @@
                 </div>
 
                 <div class="section-block" data-section="personas" id="personas">
-                  <form class="entry-card" id="form-persona">
+                  <form class="entry-card entry-card-persona" id="form-persona">
                     <h3>2. Personas</h3>
-                    <label>
-                      Nombre
-                      <input type="text" name="nombre" required />
-                    </label>
-                    <label>
-                      Apellido
-                      <input type="text" name="apellido" required />
-                    </label>
-                    <label>
-                      Usuario JIRA
-                      <input type="text" name="jira_usuario" placeholder="rafael.castro" />
-                    </label>
-                    <label>
-                      Rol
-                      <input type="text" name="rol" placeholder="SM / PO / Dev" required />
-                    </label>
-                    <label>
-                      Activo
-                      <select name="activo">
-                        <option value="true" selected>Si</option>
-                        <option value="false">No</option>
-                      </select>
-                    </label>
-                    <label>
-                      Capacidad diaria (h)
-                      <input type="number" name="capacidad" min="0" step="0.5" required />
-                    </label>
-                    <label>
-                      Cumpleaños
-                      <div class="split-input">
-                        <select name="cumple_dia">
-                          <option value="">Dia</option>
+                    <div class="entry-card-grid entry-card-grid-persona">
+                      <label>
+                        Nombre
+                        <input type="text" name="nombre" required />
+                      </label>
+                      <label>
+                        Apellido
+                        <input type="text" name="apellido" required />
+                      </label>
+                      <label>
+                        Usuario JIRA
+                        <input type="text" name="jira_usuario" placeholder="rafael.castro" />
+                      </label>
+                      <label>
+                        Rol
+                        <input type="text" name="rol" placeholder="SM / PO / Dev" required />
+                      </label>
+                      <label>
+                        Activo
+                        <select name="activo">
+                          <option value="true" selected>Si</option>
+                          <option value="false">No</option>
                         </select>
-                        <select name="cumple_mes">
-                          <option value="">Mes</option>
-                        </select>
-                      </div>
-                    </label>
-                    <label class="toggle">
-                      <input type="checkbox" name="sin_celula" />
-                      Sin celula (externo)
-                    </label>
-                    <label>
-                      Celulas
-                      <select name="celulas" multiple required></select>
-                    </label>
+                      </label>
+                      <label>
+                        Capacidad diaria (h)
+                        <input type="number" name="capacidad" min="0" step="0.5" required />
+                      </label>
+                      <label>
+                        Cumpleaños
+                        <div class="split-input">
+                          <select name="cumple_dia">
+                            <option value="">Dia</option>
+                          </select>
+                          <select name="cumple_mes">
+                            <option value="">Mes</option>
+                          </select>
+                        </div>
+                      </label>
+                      <label class="toggle entry-card-span-2">
+                        <input type="checkbox" name="sin_celula" />
+                        Sin celula (externo)
+                      </label>
+                      <label class="entry-card-span-2">
+                        Celulas
+                        <select name="celulas" multiple required></select>
+                      </label>
+                    </div>
                     <button class="btn primary" type="submit">Crear persona</button>
                     <div class="form-status" id="status-persona"></div>
                   </form>

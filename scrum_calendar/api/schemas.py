@@ -776,15 +776,52 @@ class ReleaseItemOut(BaseModel):
     creado_en: datetime
 
 
+class ReleaseItemCreate(BaseModel):
+    celula_id: int
+    sprint_id: Optional[int] = None
+    persona_id: Optional[int] = None
+    issue_type: str
+    issue_key: str
+    release_issue_key: Optional[str] = None
+    summary: str
+    reporter: Optional[str] = None
+    reporter_id: Optional[str] = None
+    status: Optional[str] = None
+    story_points: Optional[float] = None
+    assignee_nombre: Optional[str] = None
+    assignee_id: Optional[str] = None
+    sprint_nombre: Optional[str] = None
+    release_tipo: str
+    tipo: Optional[str] = None
+    quarter: Optional[str] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    due_date: Optional[date] = None
+    raw_data: Optional[str] = None
+
+
 class ReleaseItemUpdate(BaseModel):
+    celula_id: Optional[int] = None
+    sprint_id: Optional[int] = None
+    persona_id: Optional[int] = None
+    issue_type: Optional[str] = None
+    issue_key: Optional[str] = None
     status: Optional[str] = None
     release_issue_key: Optional[str] = None
+    summary: Optional[str] = None
+    reporter: Optional[str] = None
+    reporter_id: Optional[str] = None
+    story_points: Optional[float] = None
+    assignee_nombre: Optional[str] = None
+    assignee_id: Optional[str] = None
+    sprint_nombre: Optional[str] = None
     release_tipo: Optional[str] = None
     tipo: Optional[str] = None
     quarter: Optional[str] = None
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     due_date: Optional[date] = None
+    raw_data: Optional[str] = None
 
 
 class ReleaseItemImportOut(BaseModel):

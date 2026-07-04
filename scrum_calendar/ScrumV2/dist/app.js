@@ -14448,6 +14448,17 @@
       return String(previousTask?.parent_id || "") === String(updatedTask?.parent_id || "");
     };
 
+    const syncBacklogTaskInline = (rowEl, updatedTask, { prune = true } = {}) => {
+      if (!rowEl || !updatedTask) return false;
+      syncBacklogRowAfterStatusUpdate(rowEl, updatedTask);
+      syncBacklogRowAfterSegmentUpdate(rowEl, updatedTask);
+      const filtered = refreshTasksDerivedUi();
+      const reordered = reorderBacklogRowsInPlace({ prune });
+      renderBoard(filtered, state.tasksCache || []);
+      renderReports(filtered);
+      return reordered;
+    };
+
     const mergeTaskUpdatePayload = (taskId, updatedRaw, payload = {}) => {
       const current =
         (state.tasksCache || []).find((item) => Number(item?.id || 0) === Number(taskId || 0)) || {};
@@ -15680,8 +15691,9 @@
                 { rerender: "none" }
               );
               if (canPatchBacklogStatusChangeInPlace(row, task, updated)) {
-                syncBacklogRowAfterStatusUpdate(row, updated);
-                refreshTasksDerivedUi();
+                if (!syncBacklogTaskInline(row, updated)) {
+                  refreshTasksUi("backlog");
+                }
               } else {
                 refreshTasksUi("backlog");
               }
@@ -15737,22 +15749,31 @@
             if (field === "start_date") {
               const v = String(el.value || "");
               const updated = await updateTaskLocal(taskId, { start_date: v || null }, "Actualizado.", {
-                rerender: "backlog",
+                rerender: "none",
               });
+              if (!syncBacklogTaskInline(row, updated)) {
+                refreshTasksUi("backlog");
+              }
               return;
             }
             if (field === "end_date") {
               const v = String(el.value || "");
               const updated = await updateTaskLocal(taskId, { end_date: v || null }, "Actualizado.", {
-                rerender: "backlog",
+                rerender: "none",
               });
+              if (!syncBacklogTaskInline(row, updated)) {
+                refreshTasksUi("backlog");
+              }
               return;
             }
             if (field === "fecha_vencimiento") {
               const v = String(el.value || "");
               const updated = await updateTaskLocal(taskId, { fecha_vencimiento: v || null }, "Actualizado.", {
-                rerender: "backlog",
+                rerender: "none",
               });
+              if (!syncBacklogTaskInline(row, updated)) {
+                refreshTasksUi("backlog");
+              }
               return;
             }
             if (field === "puntos" || field === "horas_estimadas") {
@@ -15994,6 +16015,10 @@
     const base = state.base;
     const statusOptions = ["Backlog", "To Do", "In Progress", "Finalizada", "Cancelada"];
     const typeOptions = ["ETEC", "Func", "MTEC", "New", "Prob"];
+    const releaseTypeOptions = [
+      { value: "comprometido", label: "Comprometido" },
+      { value: "nuevo", label: "Nuevo" },
+    ];
     const RELEASE_COLUMNS_KEY = "scrum_calendar_release_columns_v1";
     const RELEASE_COLUMNS_DEFAULT = [
       "issue_key",
@@ -16075,6 +16100,11 @@
                 <i class="bi bi-layout-three-columns me-1"></i>Columnas
               </button>
             </div>
+            <div class="ms-auto">
+              <button class="btn btn-primary btn-sm" type="button" id="release-create-btn">
+                <i class="bi bi-plus-lg me-1"></i>Nuevo release
+              </button>
+            </div>
           </div>
           <div id="release-columns-panel" class="release-columns-panel hidden" aria-label="Columnas release">
             <div class="card">
@@ -16112,6 +16142,20 @@
         return updated;
       } catch {
         setAdminStatus("No se pudo actualizar el release.", "error");
+        return null;
+      }
+    };
+    const createReleaseItem = async (payload, options = {}) => {
+      try {
+        const created = await postJson("/release-items", payload);
+        if (options.refresh !== false) {
+          await reloadAll();
+        } else {
+          state.base.releaseItems = [created, ...(state.base.releaseItems || [])];
+        }
+        return created;
+      } catch (err) {
+        setAdminStatus(err?.message || "No se pudo crear el release.", "error");
         return null;
       }
     };
@@ -16167,6 +16211,54 @@
       });
       return select;
     };
+    const getReleaseCellIssuePrefix = (celulaId) => {
+      const celula = (base.cells || []).find((item) => String(item.id) === String(celulaId || ""));
+      const raw = String(celula?.jira_codigo || celula?.nombre || "").trim().toUpperCase();
+      if (!raw) return "";
+      const normalized = raw.replace(/[^A-Z0-9]+/g, "");
+      return normalized ? `${normalized}-` : "";
+    };
+    const normalizeReleaseIssueInput = (input, forcedPrefix = "") => {
+      if (!input) return "";
+      const prefix = String(forcedPrefix || "").toUpperCase();
+      const raw = String(input.value || "");
+      const start = input.selectionStart;
+      const end = input.selectionEnd;
+      let nextValue = raw.toUpperCase().replace(/\s+/g, "");
+      if (prefix) {
+        const withoutPrefix = nextValue.startsWith(prefix)
+          ? nextValue.slice(prefix.length)
+          : nextValue.replace(/^[A-Z0-9]+-?/, "");
+        nextValue = `${prefix}${withoutPrefix}`;
+      }
+      if (input.value !== nextValue) {
+        input.value = nextValue;
+        if (typeof input.setSelectionRange === "function" && start != null && end != null) {
+          const nextPos = Math.max(prefix.length, Math.min(nextValue.length, end));
+          input.setSelectionRange(nextPos, nextPos);
+        }
+      }
+      return nextValue.trim();
+    };
+    const syncReleaseIssuePrefix = (form, { force = false } = {}) => {
+      if (!form) return "";
+      const cellSelect = form.querySelector('[name="celula_id"]');
+      const issueInput = form.querySelector('[name="issue_key"]');
+      if (!issueInput) return "";
+      const prefix = getReleaseCellIssuePrefix(cellSelect?.value || "");
+      const previousPrefix = String(form.dataset.issuePrefix || "").toUpperCase();
+      const currentValue = String(issueInput.value || "").trim().toUpperCase();
+      form.dataset.issuePrefix = prefix;
+      if (
+        force ||
+        !currentValue ||
+        currentValue === previousPrefix ||
+        currentValue === previousPrefix.replace(/-$/, "")
+      ) {
+        issueInput.value = prefix;
+      }
+      return normalizeReleaseIssueInput(issueInput, prefix);
+    };
     const ensureReleaseEditForm = () => {
       let form = qs("#release-edit-form");
       if (!form) {
@@ -16176,12 +16268,20 @@
         form.innerHTML = `
           <div class="row g-3">
             <div class="col-md-4">
+              <label class="form-label" for="release-edit-celula">Celula</label>
+              <select class="form-select" id="release-edit-celula" name="celula_id" required></select>
+            </div>
+            <div class="col-md-4">
               <label class="form-label" for="release-edit-issue-key">Issue</label>
               <input class="form-control" id="release-edit-issue-key" name="issue_key" type="text" required />
             </div>
             <div class="col-md-4">
               <label class="form-label" for="release-edit-issue-type">Tipo issue</label>
               <input class="form-control" id="release-edit-issue-type" name="issue_type" type="text" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label" for="release-edit-release-type">Release</label>
+              <select class="form-select" id="release-edit-release-type" name="release_tipo"></select>
             </div>
             <div class="col-md-4">
               <label class="form-label" for="release-edit-type">Type</label>
@@ -16235,8 +16335,21 @@
         `;
         document.body.appendChild(form);
         const cancelBtn = form.querySelector('#release-edit-cancel');
+        const cellSelect = form.querySelector('[name="celula_id"]');
+        const issueInput = form.querySelector('[name="issue_key"]');
         if (cancelBtn) {
           cancelBtn.addEventListener('click', () => closeAdminModal(true));
+        }
+        if (cellSelect) {
+          cellSelect.addEventListener("change", () => syncReleaseIssuePrefix(form));
+        }
+        if (issueInput) {
+          issueInput.addEventListener("input", () =>
+            normalizeReleaseIssueInput(issueInput, form.dataset.issuePrefix || "")
+          );
+          issueInput.addEventListener("blur", () =>
+            normalizeReleaseIssueInput(issueInput, form.dataset.issuePrefix || "")
+          );
         }
         const renderReleaseComments = (comments) => {
           const listEl = form.querySelector('[data-release-comments-list]');
@@ -16347,7 +16460,8 @@
         form.addEventListener('submit', async (event) => {
           event.preventDefault();
           const releaseId = Number(form.dataset.editId || 0);
-          if (!releaseId) return;
+          const mode = form.dataset.mode || "edit";
+          if (mode !== "create" && !releaseId) return;
           const statusMsg = form.querySelector('#release-edit-status-msg');
           if (statusMsg) {
             statusMsg.textContent = '';
@@ -16355,9 +16469,14 @@
           }
           const formData = new FormData(form);
           const payload = {
-            issue_key: String(formData.get('issue_key') || '').trim(),
+            celula_id: Number(formData.get('celula_id') || 0),
+            issue_key: normalizeReleaseIssueInput(
+              form.querySelector('[name="issue_key"]'),
+              form.dataset.issuePrefix || ""
+            ),
             issue_type: String(formData.get('issue_type') || '').trim() || null,
             summary: String(formData.get('summary') || '').trim(),
+            release_tipo: String(formData.get('release_tipo') || '').trim() || 'comprometido',
             quarter: String(formData.get('quarter') || '').trim() || null,
             status: String(formData.get('status') || '').trim() || null,
             start_date: String(formData.get('start_date') || '').trim() || null,
@@ -16365,25 +16484,45 @@
             due_date: String(formData.get('due_date') || '').trim() || null,
             tipo: String(formData.get('tipo') || '').trim() || null,
           };
-          if (!payload.issue_key || !payload.summary) {
+          if (!payload.celula_id || !payload.issue_key || !payload.summary) {
             if (statusMsg) {
-              statusMsg.textContent = 'Issue y Resumen son obligatorios.';
+              statusMsg.textContent = 'Celula, Issue y Resumen son obligatorios.';
               statusMsg.dataset.type = 'error';
             }
             return;
           }
-          const updated = await updateReleaseItem(releaseId, payload, { refresh: false });
-          if (!updated) {
+          const saved =
+            mode === "create"
+              ? await createReleaseItem(payload)
+              : await updateReleaseItem(releaseId, payload, { refresh: false });
+          if (!saved) {
             if (statusMsg) {
-              statusMsg.textContent = 'No se pudo actualizar el release.';
+              statusMsg.textContent =
+                mode === "create"
+                  ? 'No se pudo crear el release.'
+                  : 'No se pudo actualizar el release.';
               statusMsg.dataset.type = 'error';
             }
             return;
           }
           closeAdminModal(false);
-          setAdminStatus('Release actualizado.', 'ok');
+          setAdminStatus(mode === "create" ? 'Release creado.' : 'Release actualizado.', 'ok');
           initReleaseTable();
         });
+      }
+      const cellSelect = form.querySelector('[name="celula_id"]');
+      if (cellSelect) {
+        fillSelect(cellSelect, base.cells || [], {
+          includeEmpty: true,
+          emptyLabel: "Selecciona celula",
+          sortByLabel: true,
+        });
+      }
+      const releaseTypeSelect = form.querySelector('[name="release_tipo"]');
+      if (releaseTypeSelect) {
+        releaseTypeSelect.innerHTML = releaseTypeOptions
+          .map((option) => `<option value="${option.value}">${option.label}</option>`)
+          .join("");
       }
       const typeSelect = form.querySelector('[name="tipo"]');
       if (typeSelect) {
@@ -16402,10 +16541,13 @@
     };
     const openReleaseEditModal = (row) => {
       const form = ensureReleaseEditForm();
+      form.dataset.mode = "edit";
       form.dataset.editId = String(row.id || '');
+      form.querySelector('[name="celula_id"]').value = row.celula_id || state.selectedCelulaId || '';
       form.querySelector('[name="issue_key"]').value = row.issue_key || '';
       form.querySelector('[name="issue_type"]').value = row.issue_type || '';
       form.querySelector('[name="summary"]').value = row.summary || '';
+      form.querySelector('[name="release_tipo"]').value = row.release_tipo || 'comprometido';
       form.querySelector('[name="quarter"]').value = row.quarter || '';
       const statusSelect = form.querySelector('[name="status"]');
       if (statusSelect) {
@@ -16418,6 +16560,7 @@
       form.querySelector('[name="end_date"]').value = row.end_date || '';
       form.querySelector('[name="due_date"]').value = row.due_date || '';
       form.querySelector('[name="tipo"]').value = row.tipo || '';
+      form.dataset.issuePrefix = getReleaseCellIssuePrefix(row.celula_id || "");
       const statusMsg = form.querySelector('#release-edit-status-msg');
       if (statusMsg) {
         statusMsg.textContent = '';
@@ -16432,6 +16575,10 @@
       if (commentText) commentText.value = '';
       const commentsList = form.querySelector('[data-release-comments-list]');
       if (commentsList) commentsList.innerHTML = `<p class="empty small mb-0">Cargando...</p>`;
+      const commentsPanel = form.querySelector("#release-edit-comments-panel");
+      if (commentsPanel) commentsPanel.classList.remove("hidden");
+      const submitBtn = form.querySelector('button[type="submit"]');
+      if (submitBtn) submitBtn.textContent = "Guardar cambios";
       fetchJson(`/release-items/${row.id}/comments`)
         .then((comments) => {
           const listEl = form.querySelector('[data-release-comments-list]');
@@ -16468,6 +16615,36 @@
           if (listEl) listEl.innerHTML = `<p class="empty small mb-0">No se pudieron cargar comentarios.</p>`;
         });
       openAdminModal(form, `Editar release · ${row.issue_key || ''}`);
+    };
+    const openReleaseCreateModal = () => {
+      const form = ensureReleaseEditForm();
+      form.dataset.mode = "create";
+      delete form.dataset.editId;
+      form.reset();
+      form.querySelector('[name="celula_id"]').value = state.selectedCelulaId || '';
+      form.querySelector('[name="issue_type"]').value = 'Release';
+      form.querySelector('[name="release_tipo"]').value = 'comprometido';
+      form.querySelector('[name="status"]').value = 'Backlog';
+      const commentsPanel = form.querySelector("#release-edit-comments-panel");
+      if (commentsPanel) commentsPanel.classList.add("hidden");
+      const commentsList = form.querySelector('[data-release-comments-list]');
+      if (commentsList) commentsList.innerHTML = "";
+      const commentText = form.querySelector('#release-edit-comment-text');
+      if (commentText) commentText.value = '';
+      const commentStatus = form.querySelector('#release-edit-comment-status');
+      if (commentStatus) {
+        commentStatus.textContent = '';
+        commentStatus.dataset.type = 'info';
+      }
+      const statusMsg = form.querySelector('#release-edit-status-msg');
+      if (statusMsg) {
+        statusMsg.textContent = '';
+        statusMsg.dataset.type = 'info';
+      }
+      const submitBtn = form.querySelector('button[type="submit"]');
+      if (submitBtn) submitBtn.textContent = "Crear release";
+      syncReleaseIssuePrefix(form, { force: true });
+      openAdminModal(form, 'Nuevo release');
     };
     const deleteReleaseItem = async (row) => {
       if (!row?.id) return;
@@ -16707,6 +16884,11 @@
       wrapper.appendChild(trigger);
       wrapper.appendChild(panelFilter);
       releaseStatusFilterEl.appendChild(wrapper);
+    }
+    const createBtn = qs("#release-create-btn", toolbar);
+    if (createBtn && !createBtn.dataset.bound) {
+      createBtn.dataset.bound = "true";
+      createBtn.addEventListener("click", () => openReleaseCreateModal());
     }
 
     const toggleColumnsPanel = (open) => {
