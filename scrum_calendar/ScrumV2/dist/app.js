@@ -10667,21 +10667,6 @@
         },
       });
       const applyBacklogTableMinWidth = () => {
-        const layoutMode = String(table.dataset.layoutMode || "");
-        if (layoutMode === "adaptive-tablet" || layoutMode === "content-auto") {
-          const $wrapper = $table.closest(".dataTables_wrapper");
-          $table.css("width", "max-content");
-          $table.css("min-width", "100%");
-          $wrapper.find(".dataTables_scrollHeadInner").css("width", "max-content");
-          $wrapper.find(".dataTables_scrollHeadInner").css("min-width", "100%");
-          $wrapper.find(".dataTables_scrollHeadInner table").css("width", "max-content");
-          $wrapper.find(".dataTables_scrollHeadInner table").css("min-width", "100%");
-          $wrapper.find(".dataTables_scrollBody table").css("width", "max-content");
-          $wrapper.find(".dataTables_scrollBody table").css("min-width", "100%");
-          $wrapper.find(".dataTable").css("width", "max-content");
-          $wrapper.find(".dataTable").css("min-width", "100%");
-          return;
-        }
         const raw = Number(table.dataset.minWidth || 0);
         if (!Number.isFinite(raw) || raw <= 0) return;
         const width = `${Math.round(raw)}px`;
@@ -12742,7 +12727,7 @@
 
       const visibleColumns = getVisibleColumns();
       const widthPxDefaults = {
-        titulo: 360,
+        titulo: 450,
         estado: 150,
         prioridad: 150,
         tipo: 150,
@@ -12758,13 +12743,10 @@
         importante: 120,
       };
       const resolveWidthPx = (key) => {
-        if (isTabletBacklogAutoFit()) {
-          return 0;
-        }
-        if (key === "titulo") {
-          return 450;
-        }
-        return 0;
+        const stored = Number(getColumnWidth(key) || 0);
+        if (Number.isFinite(stored) && stored > 0) return Math.round(stored);
+        const fallback = Number(widthPxDefaults[key] || 150);
+        return Number.isFinite(fallback) && fallback > 0 ? Math.round(fallback) : 150;
       };
       const sortState = getTasksBacklogSort();
       const parseDateSortKey = (value) => {
@@ -12868,12 +12850,12 @@
         }
         colgroup.appendChild(col);
       });
-      // Fix table width to the sum of column widths so resizing doesn't force other columns to shrink.
-      // Enforce a minimum overflow room so horizontal scroll is always available in backlog.
-      table.style.width = "max-content";
-      table.style.minWidth = "100%";
-      table.dataset.minWidth = "";
-      table.dataset.layoutMode = "content-auto";
+      const totalMinWidth = visibleColumns.reduce((sum, key) => sum + resolveWidthPx(key), 0);
+      const effectiveMinWidth = Math.max(320, totalMinWidth);
+      table.style.width = `${effectiveMinWidth}px`;
+      table.style.minWidth = `${effectiveMinWidth}px`;
+      table.dataset.minWidth = String(effectiveMinWidth);
+      table.dataset.layoutMode = "fixed-columns";
 
       const buildStatusSelect = (task) => {
         const pill = document.createElement("span");

@@ -5992,8 +5992,7 @@ body.page-tasks .tasks-notion-scroll {
 #tasks-backlog-list .dataTables_scrollHeadInner,
 #tasks-backlog-list .dataTables_scrollHeadInner table,
 #tasks-backlog-list .dataTables_scrollBody table {
-  width: max-content !important;
-  min-width: 100% !important;
+  max-width: none !important;
 }
 #tasks-backlog-list col[data-col-key="titulo"],
 #tasks-backlog-list th[data-col-key="titulo"],
@@ -6092,7 +6091,7 @@ body.page-tasks .tasks-notion-scroll {
 #tasks-backlog-list table.tasks-notion-table,
 #tasks-backlog-list .dataTables_scrollHeadInner table,
 #tasks-backlog-list .dataTables_scrollBody table {
-  table-layout: auto !important;
+  table-layout: fixed !important;
 }
 /* Backlog: create button lives under the table (prevents drifting with horizontal scroll) */
 #task-create-btn-backlog {
@@ -6721,8 +6720,7 @@ body.theme-dark .tasks-chip {
 .tasks-notion-wrap .dataTables_scrollHeadInner,
 .tasks-notion-wrap .dataTables_scrollHeadInner table,
 .tasks-notion-wrap .dataTables_scrollBody table {
-  width: max-content !important;
-  min-width: max-content !important;
+  max-width: none !important;
 }
 .tasks-notion-wrap .dataTables_wrapper .row {
   row-gap: 8px;
@@ -6794,12 +6792,12 @@ body.theme-dark .tasks-notion-wrap .dataTables_scrollBody::-webkit-scrollbar-thu
 }
 
 .tasks-notion-table {
-  width: max-content;
+  width: 100%;
   min-width: 100%;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 13px;
-  table-layout: auto;
+  table-layout: fixed;
 }
 #tasks-backlog-table {
   min-width: 100% !important;
