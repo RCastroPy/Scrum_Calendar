@@ -11593,10 +11593,12 @@
       const key = String(taskId || "");
       if (!key) return;
       root.querySelectorAll(`[data-comment-count-task="${key}"]`).forEach((node) => {
-        node.textContent = String(count);
+        const hasComments = Number(count) > 0;
+        node.textContent = hasComments ? String(count) : "";
+        node.classList.toggle("d-none", !hasComments);
       });
       root.querySelectorAll(`[data-comment-btn-task="${key}"]`).forEach((node) => {
-        node.classList.toggle("d-none", Number(count) <= 0);
+        node.classList.remove("d-none");
       });
     };
 
@@ -13299,7 +13301,6 @@
           className: "btn btn-success btn-sm tasks-comments-trigger",
           iconClass: "bi bi-chat-left-text",
           commentCount,
-          hidden: commentCount <= 0,
         };
         const subtaskDef = {
           key: "subtask",
@@ -13350,9 +13351,9 @@
           }
           if (def.key === "comments") {
             const counter = document.createElement("span");
-            counter.className = "tasks-comment-count";
+            counter.className = `tasks-comment-count${def.commentCount > 0 ? "" : " d-none"}`;
             counter.dataset.commentCountTask = String(task.id);
-            counter.textContent = String(def.commentCount || 0);
+            counter.textContent = def.commentCount > 0 ? String(def.commentCount) : "";
             btn.appendChild(counter);
           }
           return btn;
