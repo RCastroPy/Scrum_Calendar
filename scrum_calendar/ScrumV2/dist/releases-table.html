@@ -39,7 +39,7 @@
       href="https://cdn.jsdelivr.net/npm/datatables.net-buttons-bs5@2.4.2/css/buttons.bootstrap5.min.css"
       crossorigin="anonymous"
     />
-    <link rel="stylesheet" href="./styles.css?v=20260622releasecreate2" />
+    <link rel="stylesheet" href="./styles.css?v=20260806releasecreate5" />
   </head>
   <body class="layout-fixed sidebar-expand-lg bg-body-tertiary adminlte-base" data-page="releases-table">
     <div class="app-wrapper">
@@ -367,6 +367,18 @@
               <div class="card-header">
                 <h3 class="card-title">Releases por celula seleccionada</h3>
               </div>
+              <div class="card-body border-bottom" id="release-upcoming-panel">
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                  <div>
+                    <h4 class="h6 mb-1">Próximos a implementar</h4>
+                    <p class="text-muted small mb-0">Releases abiertos con fecha más cercana.</p>
+                  </div>
+                  <span class="badge text-bg-light" id="release-upcoming-context">Sin datos</span>
+                </div>
+                <div id="release-upcoming-list" class="release-upcoming-list">
+                  <p class="empty mb-0">Sin releases próximos</p>
+                </div>
+              </div>
               <div class="card-body" id="release-table">
                 <p class="empty">Sin registros</p>
               </div>
@@ -487,6 +499,6 @@
     <script src="https://cdn.jsdelivr.net/npm/pdfmake@0.2.7/build/vfs_fonts.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/datatables.net-buttons@2.4.2/js/buttons.html5.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/datatables.net-buttons@2.4.2/js/buttons.print.min.js"></script>
-<script src="./app.js?v=20260622releasecreate2"></script>
+<script src="./app.js?v=20260806releasecreate5"></script>
   </body>
 </html>

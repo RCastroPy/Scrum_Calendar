@@ -16002,6 +16002,116 @@
       { value: "comprometido", label: "Comprometido" },
       { value: "nuevo", label: "Nuevo" },
     ];
+    const setReleaseStatus = (text, type = "info") => {
+      const statusEl = qs("#release-edit-status-msg");
+      if (!statusEl) return;
+      statusEl.textContent = text;
+      statusEl.dataset.type = type;
+    };
+    const isClosedReleaseStatus = (value) => {
+      const normalized = normalizeText(value);
+      return normalized.includes("finalizada") || normalized.includes("finalizado") || normalized.includes("cancelada");
+    };
+    const getReleasePlanningDate = (item) =>
+      parseDateOnly(item?.start_date || "") ||
+      parseDateOnly(item?.due_date || "") ||
+      parseDateOnly(item?.end_date || "");
+    const getReleaseHighlightMeta = (item) => {
+      if (!item || isClosedReleaseStatus(item.status)) return null;
+      const dateValue = getReleasePlanningDate(item);
+      if (!dateValue) {
+        return {
+          className: "is-upcoming",
+          label: "Sin fecha",
+          diffDays: Number.POSITIVE_INFINITY,
+          dateValue: new Date(8640000000000000),
+        };
+      }
+      const diffDays = Math.round((dateValue - getToday()) / 86400000);
+      if (diffDays < 0) {
+        return { className: "is-overdue", label: `Atrasado ${Math.abs(diffDays)}d`, diffDays, dateValue };
+      }
+      if (diffDays === 0) return { className: "is-today", label: "Hoy", diffDays, dateValue };
+      if (diffDays <= 7) {
+        return {
+          className: "is-soon",
+          label: diffDays === 1 ? "Mañana" : `En ${diffDays}d`,
+          diffDays,
+          dateValue,
+        };
+      }
+      if (diffDays <= 14) {
+        return { className: "is-upcoming", label: `Próx. ${diffDays}d`, diffDays, dateValue };
+      }
+      return { className: "is-upcoming", label: "Planificado", diffDays, dateValue };
+    };
+    const buildReleaseSummaryCell = (row) => {
+      const wrap = document.createElement("div");
+      wrap.className = "release-summary-cell";
+      const text = document.createElement("div");
+      text.className = "release-summary-text";
+      text.textContent = row.summary || "";
+      wrap.appendChild(text);
+      const meta = getReleaseHighlightMeta(row);
+      if (meta) {
+        const badge = document.createElement("span");
+        badge.className = `release-highlight-badge ${meta.className}`;
+        badge.textContent = meta.label;
+        wrap.appendChild(badge);
+      }
+      return wrap;
+    };
+    const renderUpcomingReleases = (rows) => {
+      const listEl = qs("#release-upcoming-list", panel);
+      const contextEl = qs("#release-upcoming-context", panel);
+      if (!listEl) return;
+      const cellMap = new Map((base.cells || []).map((cell) => [String(cell.id), cell.nombre || `Celula ${cell.id}`]));
+      const candidates = (rows || [])
+        .filter((item) => !isClosedReleaseStatus(item.status))
+        .map((item) => ({ item, meta: getReleaseHighlightMeta(item) }))
+        .filter((entry) => entry.meta)
+        .sort((a, b) => a.meta.dateValue - b.meta.dateValue)
+        .slice(0, 6);
+      if (contextEl) {
+        contextEl.textContent = candidates.length ? `${candidates.length} release(s)` : "Sin fechas próximas";
+      }
+      if (!candidates.length) {
+        listEl.innerHTML = '<p class="empty mb-0">Sin releases próximos para resaltar.</p>';
+        return;
+      }
+      listEl.innerHTML = candidates
+        .map(({ item, meta }) => {
+          const dateLabel = Number.isFinite(meta.diffDays) ? formatDate(formatISO(meta.dateValue)) : "Sin fecha";
+          const cellName = cellMap.get(String(item.celula_id || "")) || "Sin celula";
+          return `
+            <article class="release-upcoming-item">
+              <div class="release-upcoming-head">
+                <div>
+                  <div class="release-upcoming-issue">${escapeHtml(item.issue_key || "")}</div>
+                  <div class="release-upcoming-summary">${escapeHtml(item.summary || "")}</div>
+                </div>
+                <span class="release-highlight-badge ${meta.className}">${escapeHtml(meta.label)}</span>
+              </div>
+              <div class="release-upcoming-meta">${escapeHtml(cellName)} · ${escapeHtml(dateLabel)} · ${escapeHtml(item.status || "Backlog")}</div>
+            </article>
+          `;
+        })
+        .join("");
+    };
+    const getReleaseCreateErrorMessage = (error) => {
+      const rawMessage = String(error?.message || "").trim();
+      let detail = rawMessage;
+      try {
+        const parsed = JSON.parse(rawMessage);
+        detail = String(parsed?.detail || rawMessage).trim();
+      } catch {
+        // Keep the original message when the API response is not JSON.
+      }
+      if (normalizeText(detail).includes("ya existe un release con ese issue")) {
+        return "No se ha podido crear porque ya existe un release con el ISSUE.";
+      }
+      return detail || "No se pudo crear el release.";
+    };
     const RELEASE_COLUMNS_KEY = "scrum_calendar_release_columns_v1";
     const RELEASE_COLUMNS_DEFAULT = [
       "issue_key",
@@ -16124,21 +16234,20 @@
         if (options.refresh !== false) initReleaseTable();
         return updated;
       } catch {
-        setAdminStatus("No se pudo actualizar el release.", "error");
+        setReleaseStatus("No se pudo actualizar el release.", "error");
         return null;
       }
     };
     const createReleaseItem = async (payload, options = {}) => {
       try {
         const created = await postJson("/release-items", payload);
-        if (options.refresh !== false) {
-          await reloadAll();
-        } else {
-          state.base.releaseItems = [created, ...(state.base.releaseItems || [])];
-        }
+        state.base.releaseItems = [created, ...(state.base.releaseItems || [])];
+        if (options.refresh !== false) await reloadAll();
         return created;
-      } catch (err) {
-        setAdminStatus(err?.message || "No se pudo crear el release.", "error");
+      } catch (error) {
+        const message = getReleaseCreateErrorMessage(error);
+        setReleaseStatus(message, "error");
+        if (typeof options.onError === "function") options.onError(message);
         return null;
       }
     };
@@ -16248,6 +16357,7 @@
         form = document.createElement("form");
         form.id = "release-edit-form";
         form.className = "vstack gap-3";
+        form.noValidate = true;
         form.innerHTML = `
           <div class="row g-3">
             <div class="col-md-4">
@@ -16263,7 +16373,7 @@
               <input class="form-control" id="release-edit-issue-type" name="issue_type" type="text" />
             </div>
             <div class="col-md-4">
-              <label class="form-label" for="release-edit-release-type">Release</label>
+              <label class="form-label" for="release-edit-release-type">Clase</label>
               <select class="form-select" id="release-edit-release-type" name="release_tipo"></select>
             </div>
             <div class="col-md-4">
@@ -16474,22 +16584,54 @@
             }
             return;
           }
-          const saved =
-            mode === "create"
-              ? await createReleaseItem(payload)
-              : await updateReleaseItem(releaseId, payload, { refresh: false });
+          if (mode === "create") {
+            let createError = "";
+            const created = await createReleaseItem(payload, {
+              refresh: false,
+              onError: (message) => {
+                createError = message;
+              },
+            });
+            if (!created) {
+              if (statusMsg) {
+                statusMsg.textContent = createError || 'No se pudo crear el release.';
+                statusMsg.dataset.type = 'error';
+              }
+              return;
+            }
+            const cellValue = form.querySelector('[name="celula_id"]')?.value || '';
+            const releaseTypeValue = form.querySelector('[name="release_tipo"]')?.value || 'comprometido';
+            const typeValue = form.querySelector('[name="tipo"]')?.value || '';
+            const quarterValue = form.querySelector('[name="quarter"]')?.value || '';
+            const issuePrefix = getReleaseCellIssuePrefix(cellValue);
+            form.querySelector('[name="celula_id"]').value = cellValue;
+            form.querySelector('[name="issue_key"]').value = issuePrefix;
+            form.querySelector('[name="issue_type"]').value = 'Release';
+            form.querySelector('[name="summary"]').value = '';
+            form.querySelector('[name="release_tipo"]').value = releaseTypeValue;
+            form.querySelector('[name="tipo"]').value = typeValue;
+            form.querySelector('[name="quarter"]').value = quarterValue;
+            form.querySelector('[name="start_date"]').value = '';
+            form.querySelector('[name="end_date"]').value = '';
+            form.querySelector('[name="due_date"]').value = '';
+            const createStatusSelect = form.querySelector('[name="status"]');
+            if (createStatusSelect) createStatusSelect.value = 'Backlog';
+            form.dataset.issuePrefix = issuePrefix;
+            syncReleaseIssuePrefix(form, { force: true });
+            setReleaseStatus('Release creado con éxito.', 'ok');
+            initReleaseTable();
+            return;
+          }
+          const saved = await updateReleaseItem(releaseId, payload, { refresh: false });
           if (!saved) {
             if (statusMsg) {
-              statusMsg.textContent =
-                mode === "create"
-                  ? 'No se pudo crear el release.'
-                  : 'No se pudo actualizar el release.';
+              statusMsg.textContent = 'No se pudo actualizar el release.';
               statusMsg.dataset.type = 'error';
             }
             return;
           }
           closeAdminModal(false);
-          setAdminStatus(mode === "create" ? 'Release creado.' : 'Release actualizado.', 'ok');
+          setReleaseStatus('Release actualizado.', 'ok');
           initReleaseTable();
         });
       }
@@ -16636,10 +16778,10 @@
         const res = await fetchWithFallback(`/release-items/${row.id}`, { method: 'DELETE' });
         if (!res.ok) throw new Error('No se pudo eliminar');
         state.base.releaseItems = (state.base.releaseItems || []).filter((item) => item.id !== row.id);
-        setAdminStatus('Release eliminado.', 'ok');
+        setReleaseStatus('Release eliminado.', 'ok');
         initReleaseTable();
       } catch {
-        setAdminStatus('No se pudo eliminar el release.', 'error');
+        setReleaseStatus('No se pudo eliminar el release.', 'error');
       }
     };
     const buildDateInput = (row, field, options = {}) => {
@@ -16940,6 +17082,7 @@
       { total: 0, finalizadas: 0, progreso: 0, pendientes: 0 }
     );
     renderReleaseKpis(counts);
+    renderUpcomingReleases(quarterFiltered);
     const kpiCards = panel.querySelectorAll(".release-kpi");
     kpiCards.forEach((card) => {
       if (!card.dataset.bound) {
@@ -17067,7 +17210,7 @@
     const tableColumnsByKey = {
       issue_key: { key: "issue_key", label: "Issue" },
       issue_type: { key: "issue_type", label: "Tipo" },
-      summary: { key: "summary", label: "Resumen" },
+      summary: { key: "summary", label: "Resumen", render: (row) => buildReleaseSummaryCell(row) },
       quarter: { key: "quarter", label: "Quarter", render: (row) => buildQuarterSelect(row) },
       status: { key: "status", label: "Estado", render: (row) => buildStatusSelect(row) },
       start_date: { key: "start_date", label: "Start Date", render: (row) => buildDateInput(row, "start_date") },

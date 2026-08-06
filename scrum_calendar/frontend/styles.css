@@ -3499,6 +3499,97 @@ body.qr-zoomed::before {
   background: rgba(75, 163, 255, 0.12);
 }
 
+.release-upcoming-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.release-upcoming-item {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 250, 252, 0.98));
+}
+
+.release-upcoming-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.release-upcoming-issue {
+  font-weight: 700;
+}
+
+.release-upcoming-summary {
+  color: #334155;
+  font-size: 0.95rem;
+  line-height: 1.35;
+}
+
+.release-upcoming-meta {
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.release-highlight-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.release-highlight-badge.is-overdue {
+  background: rgba(220, 53, 69, 0.14);
+  color: #b42318;
+}
+
+.release-highlight-badge.is-today {
+  background: rgba(255, 193, 7, 0.18);
+  color: #8a5a00;
+}
+
+.release-highlight-badge.is-soon {
+  background: rgba(13, 202, 240, 0.16);
+  color: #0c6d84;
+}
+
+.release-highlight-badge.is-upcoming {
+  background: rgba(25, 135, 84, 0.14);
+  color: #146c43;
+}
+
+.release-summary-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.release-summary-text {
+  line-height: 1.35;
+}
+
+body.theme-dark .release-upcoming-item {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.98));
+}
+
+body.theme-dark .release-upcoming-summary {
+  color: #cbd5e1;
+}
+
+body.theme-dark .release-upcoming-meta {
+  color: #94a3b8;
+}
+
 .release-columns-panel {
   max-width: 420px;
 }
