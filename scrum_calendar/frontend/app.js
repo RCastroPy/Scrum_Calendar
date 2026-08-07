@@ -10493,9 +10493,6 @@
         ...cloneDefaultTasksAdvancedFilters(),
         ...savedTasksFiltersState.filters,
       };
-      state.tasksBacklogSort = { ...DEFAULT_TASKS_BACKLOG_SORT };
-      state.tasksBacklogSorts = [{ ...DEFAULT_TASKS_BACKLOG_SORT }];
-      saveTasksFiltersState();
     }
 
     const datePresetButtons = [
