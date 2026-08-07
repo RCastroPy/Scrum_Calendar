@@ -14449,15 +14449,15 @@
       return String(previousTask?.parent_id || "") === String(updatedTask?.parent_id || "");
     };
 
-    const syncBacklogTaskInline = (rowEl, updatedTask, { prune = true } = {}) => {
-      if (!rowEl || !updatedTask) return false;
-      syncBacklogRowAfterStatusUpdate(rowEl, updatedTask);
-      syncBacklogRowAfterSegmentUpdate(rowEl, updatedTask);
-      const filtered = refreshTasksDerivedUi();
-      const reordered = reorderBacklogRowsInPlace({ prune });
-      renderBoard(filtered, state.tasksCache || []);
-      renderReports(filtered);
-      return reordered;
+      const syncBacklogTaskInline = (rowEl, updatedTask, { prune = true } = {}) => {
+        if (!rowEl || !updatedTask) return false;
+        syncBacklogRowAfterStatusUpdate(rowEl, updatedTask);
+        syncBacklogRowAfterSegmentUpdate(rowEl, updatedTask);
+        const filtered = refreshTasksDerivedUi();
+        renderBacklogPreservingViewport();
+        renderBoard(filtered, state.tasksCache || []);
+        renderReports(filtered);
+        return true;
     };
 
     const mergeTaskUpdatePayload = (taskId, updatedRaw, payload = {}) => {
@@ -15188,7 +15188,7 @@
         state.tasksColumnsPanelDirty = true;
         state.tasksColumnsPanelNeedsRender = true;
         syncBacklogHeaderSortState();
-        reorderBacklogRowsInPlace({ prune: false });
+        renderBacklogPreservingViewport();
         if (rerender) renderColumnsManager();
       };
       if (columnsSortAdd && !columnsSortAdd.dataset.bound) {
@@ -15707,7 +15707,7 @@
             document.removeEventListener("pointerup", onUp, true);
             if (!isDragging) {
               toggleTasksBacklogSort(key);
-              reorderBacklogRowsInPlace({ prune: false });
+              renderBacklogPreservingViewport();
               return;
             }
             clearMarks();
