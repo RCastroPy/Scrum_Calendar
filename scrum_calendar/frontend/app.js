@@ -148,6 +148,7 @@
 	    tasksColumnsPanelDirty: false,
 	    tasksColumnsPanelNeedsRender: false,
 	    tasksBacklogSort: { key: "fecha_vencimiento", dir: "asc" },
+	    tasksBacklogSorts: [{ key: "fecha_vencimiento", dir: "asc" }],
 	    tasksCommentCounts: {},
 	    retroCommitmentFilter: "pendiente",
 	    retroPresence: { total: 0, personas: [] },
@@ -9932,6 +9933,8 @@
     const columnsList = qs("#tasks-columns-list");
     const columnsCloseBtn = qs("#tasks-columns-close");
     const columnsResetBtn = qs("#tasks-columns-reset");
+    const columnsSortList = qs("#tasks-columns-sort-list");
+    const columnsSortAdd = qs("#tasks-columns-sort-add");
     const searchInput = qs("#tasks-search");
     const createBtn = qs("#task-create-btn");
     const createBtnBacklog = qs("#task-create-btn-backlog");
@@ -10080,12 +10083,10 @@
         hideSubtasks: Boolean(filtersRaw.hideSubtasks),
       };
 
-      const sortKeyRaw = String(raw?.backlogSort?.key || "").trim();
-      const sortDirRaw = String(raw?.backlogSort?.dir || "").trim().toLowerCase();
-      const backlogSort = {
-        key: DEFAULT_COLUMNS.includes(sortKeyRaw) ? sortKeyRaw : "fecha_vencimiento",
-        dir: sortDirRaw === "asc" || sortDirRaw === "desc" ? sortDirRaw : "asc",
-      };
+      const backlogSort = normalizeTasksBacklogSort(raw?.backlogSort);
+      const backlogSorts = normalizeTasksBacklogSorts(
+        Array.isArray(raw?.backlogSorts) && raw.backlogSorts.length ? raw.backlogSorts : [backlogSort]
+      );
 
       return {
         view,
@@ -10095,6 +10096,7 @@
         datePreset,
         filters,
         backlogSort,
+        backlogSorts,
       };
     };
     const loadTasksFiltersState = () => {
@@ -10116,6 +10118,7 @@
           datePreset: state.tasksDatePreset,
           filters: state.tasksFilters,
           backlogSort: state.tasksBacklogSort,
+          backlogSorts: state.tasksBacklogSorts,
         });
         localStorage.setItem(TASK_FILTERS_KEY, JSON.stringify(normalized));
       } catch {
@@ -10438,22 +10441,42 @@
       state.tasksBacklogSort = normalizeTasksBacklogSort(state.tasksBacklogSort);
       return state.tasksBacklogSort;
     };
+    const normalizeTasksBacklogSorts = (raw) => {
+      const list = Array.isArray(raw) ? raw : [];
+      const normalized = list.map((entry) => normalizeTasksBacklogSort(entry));
+      return normalized.length ? normalized : [{ ...DEFAULT_TASKS_BACKLOG_SORT }];
+    };
+    const getTasksBacklogSorts = () => {
+      state.tasksBacklogSorts = normalizeTasksBacklogSorts(
+        Array.isArray(state.tasksBacklogSorts) && state.tasksBacklogSorts.length
+          ? state.tasksBacklogSorts
+          : [state.tasksBacklogSort]
+      );
+      state.tasksBacklogSort = { ...state.tasksBacklogSorts[0] };
+      return state.tasksBacklogSorts;
+    };
     const toggleTasksBacklogSort = (key) => {
       const normalizedKey = String(key || "").trim();
       if (!DEFAULT_COLUMNS.includes(normalizedKey)) return;
-      const current = getTasksBacklogSort();
+      const currentSorts = getTasksBacklogSorts();
+      const current = currentSorts[0] || { ...DEFAULT_TASKS_BACKLOG_SORT };
       if (current.key === normalizedKey) {
-        state.tasksBacklogSort = {
-          key: normalizedKey,
-          dir: current.dir === "asc" ? "desc" : "asc",
-        };
+        state.tasksBacklogSorts = [
+          { key: normalizedKey, dir: current.dir === "asc" ? "desc" : "asc" },
+          ...currentSorts.slice(1),
+        ];
+        state.tasksBacklogSort = { ...state.tasksBacklogSorts[0] };
         saveTasksFiltersState();
         return;
       }
-      state.tasksBacklogSort = {
-        key: normalizedKey,
-        dir: normalizedKey === DEFAULT_TASKS_BACKLOG_SORT.key ? DEFAULT_TASKS_BACKLOG_SORT.dir : "asc",
-      };
+      state.tasksBacklogSorts = [
+        {
+          key: normalizedKey,
+          dir: normalizedKey === DEFAULT_TASKS_BACKLOG_SORT.key ? DEFAULT_TASKS_BACKLOG_SORT.dir : "asc",
+        },
+        ...currentSorts.filter((entry) => entry.key !== normalizedKey),
+      ];
+      state.tasksBacklogSort = { ...state.tasksBacklogSorts[0] };
       saveTasksFiltersState();
     };
 
@@ -10464,11 +10487,14 @@
       state.tasksStatusFilter = savedTasksFiltersState.statusFilter;
       state.tasksSegmentFilter = savedTasksFiltersState.segmentFilter || "";
       state.tasksDatePreset = savedTasksFiltersState.datePreset || "";
+      state.tasksBacklogSort = savedTasksFiltersState.backlogSort || { ...DEFAULT_TASKS_BACKLOG_SORT };
+      state.tasksBacklogSorts = savedTasksFiltersState.backlogSorts || [state.tasksBacklogSort];
       state.tasksFilters = {
         ...cloneDefaultTasksAdvancedFilters(),
         ...savedTasksFiltersState.filters,
       };
       state.tasksBacklogSort = { ...DEFAULT_TASKS_BACKLOG_SORT };
+      state.tasksBacklogSorts = [{ ...DEFAULT_TASKS_BACKLOG_SORT }];
       saveTasksFiltersState();
     }
 
@@ -12751,6 +12777,7 @@
         return Number.isFinite(fallback) && fallback > 0 ? Math.round(fallback) : 150;
       };
       const sortState = getTasksBacklogSort();
+      const sortStates = getTasksBacklogSorts();
       const parseDateSortKey = (value) => {
         const raw = String(value || "").trim();
         if (!raw) return null;
@@ -13178,27 +13205,23 @@
         return normalizeText(task?.[key] ?? "");
       };
       const compareBacklogTasks = (a, b) => {
-        const av = resolveBacklogSortValue(a, sortState.key);
-        const bv = resolveBacklogSortValue(b, sortState.key);
-        const aMissing = isMissingSortValue(av);
-        const bMissing = isMissingSortValue(bv);
-        if (aMissing && bMissing) return compareTaskHierarchyOrder(a, b);
-        if (aMissing) return 1;
-        if (bMissing) return -1;
-        let cmp = 0;
-        if (typeof av === "number" && typeof bv === "number") {
-          cmp = av - bv;
-        } else {
-          cmp = String(av).localeCompare(String(bv), "es", { sensitivity: "base", numeric: true });
+        for (const entry of sortStates) {
+          const av = resolveBacklogSortValue(a, entry.key);
+          const bv = resolveBacklogSortValue(b, entry.key);
+          const aMissing = isMissingSortValue(av);
+          const bMissing = isMissingSortValue(bv);
+          if (aMissing && bMissing) continue;
+          if (aMissing) return 1;
+          if (bMissing) return -1;
+          let cmp = 0;
+          if (typeof av === "number" && typeof bv === "number") {
+            cmp = av - bv;
+          } else {
+            cmp = String(av).localeCompare(String(bv), "es", { sensitivity: "base", numeric: true });
+          }
+          if (cmp !== 0) return entry.dir === "desc" ? -cmp : cmp;
         }
-        if (cmp === 0 && sortState.key === "fecha_vencimiento") {
-          const pa = priorityRank[String(a?.prioridad || "media").toLowerCase()] ?? 0;
-          const pb = priorityRank[String(b?.prioridad || "media").toLowerCase()] ?? 0;
-          const priorityCmp = pa - pb;
-          if (priorityCmp !== 0) return priorityCmp;
-        }
-        if (cmp === 0) return compareTaskHierarchyOrder(a, b);
-        return sortState.dir === "desc" ? -cmp : cmp;
+        return compareTaskHierarchyOrder(a, b);
       };
       const sortBacklogTasks = (items) => [...items].sort(compareBacklogTasks);
 
@@ -14051,6 +14074,7 @@
 
     const syncBacklogHeaderSortState = () => {
       const sortState = getTasksBacklogSort();
+      const sortStates = getTasksBacklogSorts();
       backlogList?.querySelectorAll("th[data-col-key]").forEach((th) => {
         const key = String(th?.dataset?.colKey || "");
         th.classList.remove("sorting_asc", "sorting_desc");
@@ -14178,27 +14202,23 @@
         return normalizeText(task?.[key] ?? "");
       };
       const compareBacklogTasks = (a, b) => {
-        const av = resolveBacklogSortValue(a, sortState.key);
-        const bv = resolveBacklogSortValue(b, sortState.key);
-        const aMissing = isMissingSortValue(av);
-        const bMissing = isMissingSortValue(bv);
-        if (aMissing && bMissing) return compareTaskHierarchyOrder(a, b);
-        if (aMissing) return 1;
-        if (bMissing) return -1;
-        let cmp = 0;
-        if (typeof av === "number" && typeof bv === "number") {
-          cmp = av - bv;
-        } else {
-          cmp = String(av).localeCompare(String(bv), "es", { sensitivity: "base", numeric: true });
+        for (const entry of sortStates) {
+          const av = resolveBacklogSortValue(a, entry.key);
+          const bv = resolveBacklogSortValue(b, entry.key);
+          const aMissing = isMissingSortValue(av);
+          const bMissing = isMissingSortValue(bv);
+          if (aMissing && bMissing) continue;
+          if (aMissing) return 1;
+          if (bMissing) return -1;
+          let cmp = 0;
+          if (typeof av === "number" && typeof bv === "number") {
+            cmp = av - bv;
+          } else {
+            cmp = String(av).localeCompare(String(bv), "es", { sensitivity: "base", numeric: true });
+          }
+          if (cmp !== 0) return entry.dir === "desc" ? -cmp : cmp;
         }
-        if (cmp === 0 && sortState.key === "fecha_vencimiento") {
-          const pa = priorityRank[String(a?.prioridad || "media").toLowerCase()] ?? 0;
-          const pb = priorityRank[String(b?.prioridad || "media").toLowerCase()] ?? 0;
-          const priorityCmp = pa - pb;
-          if (priorityCmp !== 0) return priorityCmp;
-        }
-        if (cmp === 0) return compareTaskHierarchyOrder(a, b);
-        return sortState.dir === "desc" ? -cmp : cmp;
+        return compareTaskHierarchyOrder(a, b);
       };
       const sortBacklogTasks = (items) => [...items].sort(compareBacklogTasks);
       const hideSubtasks = Boolean(state.tasksFilters?.hideSubtasks);
@@ -15069,10 +15089,54 @@
         const order = Array.isArray(cfg.order) ? cfg.order.slice() : [...DEFAULT_COLUMNS];
         const hidden = cfg.hidden || {};
         const rows = order.filter((k) => DEFAULT_COLUMNS.includes(k));
+        const sortStates = getTasksBacklogSorts();
         // Add missing columns at the end (so user can "add" them).
         DEFAULT_COLUMNS.forEach((k) => {
           if (!rows.includes(k)) rows.push(k);
         });
+        if (columnsSortList) {
+          const sortOptions = rows.map((key) => `<option value="${key}">${COLUMN_LABEL[key] ?? key}</option>`).join("");
+          columnsSortList.innerHTML = sortStates
+            .map((entry, idx) => {
+              return `
+                <div class="tasks-columns-sort-row" data-sort-index="${idx}">
+                  <label class="form-label mb-0">
+                    <span class="d-block mb-1">Columna</span>
+                    <select class="form-select form-select-sm" data-sort-field="key">
+                      ${sortOptions}
+                    </select>
+                  </label>
+                  <label class="form-label mb-0">
+                    <span class="d-block mb-1">Dirección</span>
+                    <select class="form-select form-select-sm" data-sort-field="dir">
+                      <option value="asc">Ascendente</option>
+                      <option value="desc">Descendente</option>
+                    </select>
+                  </label>
+                  <div class="tasks-columns-sort-actions">
+                    <button class="btn btn-outline-secondary btn-sm" type="button" data-sort-action="up" ${
+                      idx === 0 ? "disabled" : ""
+                    }>↑</button>
+                    <button class="btn btn-outline-secondary btn-sm" type="button" data-sort-action="down" ${
+                      idx === sortStates.length - 1 ? "disabled" : ""
+                    }>↓</button>
+                    <button class="btn btn-outline-danger btn-sm" type="button" data-sort-action="remove" ${
+                      sortStates.length === 1 ? "disabled" : ""
+                    }><i class="bi bi-x-lg"></i></button>
+                  </div>
+                </div>
+              `;
+            })
+            .join("");
+          columnsSortList.querySelectorAll("[data-sort-index]").forEach((rowEl) => {
+            const idx = Number(rowEl.dataset.sortIndex);
+            const entry = sortStates[idx] || DEFAULT_TASKS_BACKLOG_SORT;
+            const keySelect = rowEl.querySelector("select[data-sort-field='key']");
+            const dirSelect = rowEl.querySelector("select[data-sort-field='dir']");
+            if (keySelect) keySelect.value = rows.includes(entry.key) ? entry.key : DEFAULT_TASKS_BACKLOG_SORT.key;
+            if (dirSelect) dirSelect.value = entry.dir === "desc" ? "desc" : "asc";
+          });
+        }
         columnsList.innerHTML = rows
           .map((key, idx) => {
             const label = COLUMN_LABEL[key] ?? key;
@@ -15110,10 +15174,69 @@
         columnsResetBtn.dataset.bound = "true";
         columnsResetBtn.addEventListener("click", () => {
           state.tasksColumnsConfig = { order: [...DEFAULT_COLUMNS], hidden: {}, widths: {} };
+          state.tasksBacklogSort = { ...DEFAULT_TASKS_BACKLOG_SORT };
+          state.tasksBacklogSorts = [{ ...DEFAULT_TASKS_BACKLOG_SORT }];
           saveColumnsConfig();
+          saveTasksFiltersState();
           state.tasksColumnsPanelDirty = true;
           state.tasksColumnsPanelNeedsRender = true;
           renderColumnsManager();
+        });
+      }
+      const updateBacklogSortConfig = (nextSorts, { rerender = false } = {}) => {
+        state.tasksBacklogSorts = normalizeTasksBacklogSorts(nextSorts);
+        state.tasksBacklogSort = { ...state.tasksBacklogSorts[0] };
+        saveTasksFiltersState();
+        state.tasksColumnsPanelDirty = true;
+        state.tasksColumnsPanelNeedsRender = true;
+        syncBacklogHeaderSortState();
+        reorderBacklogRowsInPlace({ prune: false });
+        if (rerender) renderColumnsManager();
+      };
+      if (columnsSortAdd && !columnsSortAdd.dataset.bound) {
+        columnsSortAdd.dataset.bound = "true";
+        columnsSortAdd.addEventListener("click", (event) => {
+          event.stopPropagation();
+          updateBacklogSortConfig([...getTasksBacklogSorts(), { ...DEFAULT_TASKS_BACKLOG_SORT }], { rerender: true });
+        });
+      }
+      if (columnsSortList && !columnsSortList.dataset.bound) {
+        columnsSortList.dataset.bound = "true";
+        columnsSortList.addEventListener("change", (event) => {
+          event.stopPropagation();
+          const field = event.target?.dataset?.sortField;
+          const row = event.target.closest("[data-sort-index]");
+          const idx = Number(row?.dataset?.sortIndex);
+          if (!field || !Number.isInteger(idx) || idx < 0) return;
+          const nextSorts = getTasksBacklogSorts().map((entry) => ({ ...entry }));
+          if (!nextSorts[idx]) return;
+          if (field === "key") {
+            nextSorts[idx].key = DEFAULT_COLUMNS.includes(String(event.target.value || ""))
+              ? String(event.target.value)
+              : DEFAULT_TASKS_BACKLOG_SORT.key;
+          } else if (field === "dir") {
+            nextSorts[idx].dir = String(event.target.value || "").toLowerCase() === "desc" ? "desc" : "asc";
+          } else return;
+          updateBacklogSortConfig(nextSorts);
+        });
+        columnsSortList.addEventListener("click", (event) => {
+          event.stopPropagation();
+          const btn = event.target.closest("button[data-sort-action]");
+          if (!btn) return;
+          const row = btn.closest("[data-sort-index]");
+          const idx = Number(row?.dataset?.sortIndex);
+          if (!Number.isInteger(idx) || idx < 0) return;
+          const action = String(btn.dataset.sortAction || "");
+          const nextSorts = getTasksBacklogSorts().map((entry) => ({ ...entry }));
+          if (!nextSorts[idx]) return;
+          if (action === "up" && idx > 0) {
+            [nextSorts[idx - 1], nextSorts[idx]] = [nextSorts[idx], nextSorts[idx - 1]];
+          } else if (action === "down" && idx < nextSorts.length - 1) {
+            [nextSorts[idx], nextSorts[idx + 1]] = [nextSorts[idx + 1], nextSorts[idx]];
+          } else if (action === "remove" && nextSorts.length > 1) {
+            nextSorts.splice(idx, 1);
+          } else return;
+          updateBacklogSortConfig(nextSorts, { rerender: true });
         });
       }
       if (columnsPanel && !columnsPanel.dataset.boundInside) {
