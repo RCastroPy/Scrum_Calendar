@@ -14131,10 +14131,11 @@
         )
         .map((p) => ({ id: p.id, nombre: `${p.nombre} ${p.apellido}`.trim() }))
         .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base", numeric: true }));
-      const personaMap = Object.fromEntries(personasFiltradas.map((p) => [String(p.id), p.nombre]));
+	  const personaMap = Object.fromEntries(personasFiltradas.map((p) => [String(p.id), p.nombre]));
 
-      const sortState = getTasksBacklogSort();
-      const parseDateSortKey = (value) => {
+	  const sortState = getTasksBacklogSort();
+	  const sortStates = getTasksBacklogSorts();
+	  const parseDateSortKey = (value) => {
         const raw = String(value || "").trim();
         if (!raw) return null;
         const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
