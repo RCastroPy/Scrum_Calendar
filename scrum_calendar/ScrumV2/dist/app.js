@@ -12639,6 +12639,13 @@
       const childrenByParent = new Map();
       const hideSubtasks = Boolean(state.tasksFilters?.hideSubtasks);
       const shouldExpandFilteredAncestors = !hideSubtasks && hasActivePersistedTaskFilters();
+      const statusFilter = String(state.tasksStatusFilter || "").trim().toLowerCase();
+      const selectedStatuses = new Set(
+        (state.tasksFilters?.statuses || []).map((value) => String(value || "").trim().toLowerCase()).filter(Boolean)
+      );
+      const statusAllowed = statusFilter ? new Set([statusFilter]) : selectedStatuses.size ? selectedStatuses : null;
+      const matchesStatusFilter = (task) =>
+        !statusAllowed || statusAllowed.has(String(task?.estado || "").trim().toLowerCase());
       (all || []).forEach((task) => {
         const parentId = task?.parent_id ? String(task.parent_id) : "";
         const taskId = task?.id != null ? String(task.id) : "";
@@ -12657,8 +12664,9 @@
         while (parentId) {
           const parent = byId.get(parentId);
           if (!parent) break;
-          if (keep.has(parentId)) break;
-          keep.set(parentId, parent);
+          if (!keep.has(parentId) && matchesStatusFilter(parent)) {
+            keep.set(parentId, parent);
+          }
           parentId = parent.parent_id ? String(parent.parent_id) : "";
         }
       });
@@ -12674,7 +12682,7 @@
         (childrenByParent.get(taskId) || []).forEach((child) => {
           const childId = String(child?.id || "");
           if (!childId) return;
-          keep.set(childId, child);
+          if (matchesStatusFilter(child)) keep.set(childId, child);
           pending.push(child);
         });
       }
