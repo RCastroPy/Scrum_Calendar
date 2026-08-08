@@ -14570,14 +14570,14 @@
         const status = normalizeTaskStatusKey(task.estado || "");
         if (["done", "archived"].includes(status)) return false;
         const due = String(task.fecha_vencimiento || "").trim();
-        return Boolean(due && due < today);
+        return status === "doing" || Boolean(due && due < today);
       });
       if (!candidates.length) {
-        setTasksStatus("No hay tareas vencidas para actualizar a hoy.", "info");
+        setTasksStatus("No hay tareas vencidas ni tareas en In Progress para actualizar.", "info");
         return;
       }
       const confirmed = confirm(
-        `Se actualizaran ${candidates.length} tarea(s) vencidas al dia ${today}. Deseas continuar?`
+        `Se actualizaran ${candidates.length} tarea(s): las vencidas pasan a hoy y las In Progress pasan a To Do. Deseas continuar?`
       );
       if (!confirmed) return;
 
@@ -14593,9 +14593,9 @@
       const updatedCount = updatedTasks.length;
       renderAll();
       if (updatedCount) {
-        setTasksStatus(`Se actualizaron ${updatedCount} tarea(s) vencidas al dia de hoy.`, "ok");
+        setTasksStatus(`Se actualizaron ${updatedCount} tarea(s): vencidas a hoy e In Progress a To Do.`, "ok");
       } else {
-        setTasksStatus("No hay tareas vencidas para actualizar a hoy.", "info");
+        setTasksStatus("No hay tareas vencidas ni tareas en In Progress para actualizar.", "info");
       }
     };
 

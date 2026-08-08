@@ -1,7 +1,7 @@
 from typing import List, Optional
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from api.schemas import (
@@ -256,9 +256,11 @@ def actualizar_tareas_vencidas_a_hoy(
     user = require_user(db, scrum_session)
     business_today = now_py().date()
     query = db.query(Task).filter(
-        Task.fecha_vencimiento.isnot(None),
-        Task.fecha_vencimiento < business_today,
         ~Task.estado.in_({"done", "archived"}),
+        or_(
+            Task.estado == "doing",
+            and_(Task.fecha_vencimiento.isnot(None), Task.fecha_vencimiento < business_today),
+        ),
     )
     if user.rol != "admin":
         query = query.filter(Task.creado_por_usuario_id == user.id)
@@ -267,7 +269,8 @@ def actualizar_tareas_vencidas_a_hoy(
     # This daily reset must be atomic. Cascading every individual update can
     # otherwise reapply "doing" to a parent before its overdue children reset.
     for task in tasks:
-        task.fecha_vencimiento = business_today
+        if task.fecha_vencimiento and task.fecha_vencimiento < business_today:
+            task.fecha_vencimiento = business_today
         if task.estado == "doing":
             task.estado = "todo"
             task.end_date = None

@@ -64,11 +64,22 @@ def test_overdue_reset_moves_parent_and_child_from_doing_to_todo(tmp_path):
             },
         )
         assert child.status_code == 201
+        current = client.post(
+            "/tasks",
+            json={
+                "titulo": "Task en progreso no vencida",
+                "celula_id": cell_id,
+                "estado": "doing",
+                "start_date": today,
+                "fecha_vencimiento": today,
+            },
+        )
+        assert current.status_code == 201
 
         reset = client.post("/tasks/overdue-to-today")
         assert reset.status_code == 200
         updated = {task["id"]: task for task in reset.json()}
-        for task_id in (parent.json()["id"], child.json()["id"]):
+        for task_id in (parent.json()["id"], child.json()["id"], current.json()["id"]):
             assert updated[task_id]["estado"] == "todo"
             assert updated[task_id]["fecha_vencimiento"] == today
     main_mod.app.dependency_overrides.clear()
