@@ -11484,6 +11484,16 @@
                 <label class="form-label" for="task-descripcion">Descripcion</label>
                 <textarea class="form-control" id="task-descripcion" name="descripcion" rows="4"></textarea>
               </div>
+              <div class="mb-3 task-create-only" id="task-initial-comment-wrap">
+                <label class="form-label" for="task-initial-comment">Comentario inicial</label>
+                <textarea
+                  class="form-control"
+                  id="task-initial-comment"
+                  name="comentario_inicial"
+                  rows="3"
+                  placeholder="Escribe un comentario para la tarea..."
+                ></textarea>
+              </div>
               <div class="tasks-parent-banner hidden mb-3" id="task-parent-hint"></div>
               <div class="card mb-0 hidden task-existing-only mt-2">
                 <div class="card-header border-0 py-2">
@@ -11932,6 +11942,8 @@
       const commentText = form.querySelector("#task-comment-text");
       const commentSubmit = form.querySelector("#task-comment-submit");
       const releaseIssueInput = form.querySelector("#task-release-issue-key");
+      const initialCommentInput = form.querySelector("#task-initial-comment");
+      const createOnlyBlocks = Array.from(form.querySelectorAll(".task-create-only"));
 
       const resolvedCelulaId = Number(task?.celula_id || celulaId || resolveCelulaId() || 0);
       const resolvedParentId = Number(task?.parent_id || parentId || 0);
@@ -12126,6 +12138,7 @@
         setFormMode(form, "edit", task.id, "Guardar");
         if (deleteBtn) deleteBtn.classList.remove("hidden");
         existingOnlyBlocks.forEach((node) => node.classList.remove("hidden"));
+	        createOnlyBlocks.forEach((node) => node.classList.add("hidden"));
 	        if (newSubtasksWrap) newSubtasksWrap.classList.add("hidden");
 	        if (newSubtaskPanel) newSubtaskPanel.classList.add("hidden");
 	        if (newSubtaskToggle) {
@@ -12150,6 +12163,8 @@
         form.end_date.value = "";
         if (deleteBtn) deleteBtn.classList.add("hidden");
         existingOnlyBlocks.forEach((node) => node.classList.add("hidden"));
+	      createOnlyBlocks.forEach((node) => node.classList.remove("hidden"));
+	      if (initialCommentInput) initialCommentInput.value = "";
         const canUseDraftSubtasks = !resolvedParentId;
 	        if (newSubtasksWrap) newSubtasksWrap.classList.toggle("hidden", !canUseDraftSubtasks);
 	        if (newSubtaskPanel) newSubtaskPanel.classList.add("hidden");
@@ -12443,6 +12458,7 @@
           event.preventDefault();
           const titulo = form.titulo.value.trim();
           if (!titulo) return;
+          const initialComment = String(initialCommentInput?.value || "").trim();
           const payload = {
             titulo,
             descripcion: form.descripcion.value || null,
@@ -12460,6 +12476,7 @@
 
 	          const submitBtn = form.querySelector("button[type='submit']");
 	          const formStatus = form.querySelector("#task-form-status");
+	          let initialCommentWarning = "";
 	          try {
 	            if (formStatus) formStatus.textContent = "";
 	            const draftSubtasks = getDraftSubtasks()
@@ -12488,6 +12505,14 @@
                     if (created?.parent_id) expandBacklogAncestors(created);
                     ensureTaskSegmentCatalogEntry(created?.segmento || finalPayload.segmento || "");
 	                  const createdId = Number(created?.id || 0);
+	                  if (createdId && initialComment) {
+	                    try {
+	                      await postJson(`/tasks/${createdId}/comments`, { texto: initialComment });
+	                      setTaskCommentCount(createdId, 1);
+	                    } catch {
+	                      initialCommentWarning = "La tarea fue creada, pero no se pudo guardar el comentario inicial.";
+	                    }
+	                  }
 	                  if (createdId && draftSubtasks.length) {
 	                    for (const subTitle of draftSubtasks) {
 	                      const subtaskPayload = {
@@ -12519,6 +12544,7 @@
 	            clearDraftSubtasks();
 	            closeAdminModal(true);
 	            refreshTasksUi("all");
+	            if (initialCommentWarning) setTasksStatus(initialCommentWarning, "warning");
           } catch (err) {
             if (formStatus) {
               formStatus.textContent = err.message || "No se pudo guardar.";
@@ -12610,8 +12636,16 @@
     const buildBacklogContext = (filtered, all) => {
       const byId = new Map((all || []).map((t) => [String(t.id), t]));
       const keep = new Map();
+      const childrenByParent = new Map();
       const hideSubtasks = Boolean(state.tasksFilters?.hideSubtasks);
       const shouldExpandFilteredAncestors = !hideSubtasks && hasActivePersistedTaskFilters();
+      (all || []).forEach((task) => {
+        const parentId = task?.parent_id ? String(task.parent_id) : "";
+        const taskId = task?.id != null ? String(task.id) : "";
+        if (!parentId || !taskId) return;
+        if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
+        childrenByParent.get(parentId).push(task);
+      });
       (filtered || []).forEach((t) => {
         keep.set(String(t.id), t);
       });
@@ -12628,6 +12662,22 @@
           parentId = parent.parent_id ? String(parent.parent_id) : "";
         }
       });
+      // A filtered parent must retain its complete visible branch, not only the
+      // first child level. This also makes grandchildren available in Backlog.
+      const pending = Array.from(filtered || []);
+      const processed = new Set();
+      while (pending.length) {
+        const task = pending.shift();
+        const taskId = String(task?.id || "");
+        if (!taskId || processed.has(taskId)) continue;
+        processed.add(taskId);
+        (childrenByParent.get(taskId) || []).forEach((child) => {
+          const childId = String(child?.id || "");
+          if (!childId) return;
+          keep.set(childId, child);
+          pending.push(child);
+        });
+      }
       return Array.from(keep.values());
     };
 
@@ -17432,6 +17482,8 @@
         renderPie(breakdown, { labels, values, colors }, "donut");
       }
     }
+    // Keep the embedded Gantt synchronized with the same Quarter and status filters.
+    initReleaseGantt();
   }
   function initReleaseGantt() {
     const panel = qs("#release-gantt-page");
@@ -17452,17 +17504,21 @@
       return issueType === "release" || (!!tipo && tipo !== "tarea");
     };
     const getDateRange = (row) => {
-      const start = parseDateOnly(row.start_date || row.due_date || row.end_date || "");
-      const end = parseDateOnly(row.end_date || row.due_date || row.start_date || "");
-      if (!start && !end) return null;
-      const resolvedStart = start || end;
-      const resolvedEnd = end || start;
-      if (!resolvedStart || !resolvedEnd) return null;
+      const start = parseDateOnly(row.start_date || "");
+      const end = parseDateOnly(row.end_date || "");
+      const due = parseDateOnly(row.due_date || "");
+      if (!start && !end && !due) return { noDates: true };
+      const today = getToday();
+      // A release without an end date is in progress through today, even when
+      // a due date is recorded separately as a planning reference.
+      const openEnded = Boolean(start && !end);
+      const resolvedStart = start || due || end;
+      const resolvedEnd = openEnded ? (start > today ? start : today) : end || due || start;
+      if (!resolvedStart || !resolvedEnd) return { noDates: true };
       return {
         start: resolvedStart <= resolvedEnd ? resolvedStart : resolvedEnd,
         end: resolvedEnd >= resolvedStart ? resolvedEnd : resolvedStart,
-        openEnded: Boolean(row.start_date && !row.end_date && !row.due_date),
-        pendingEndDate: Boolean(row.start_date && row.due_date && !row.end_date),
+        openEnded,
       };
     };
     const buildDateSpan = (start, end) => {
@@ -17497,11 +17553,37 @@
       if (state.selectedCelulaId) return String(item.celula_id) === String(state.selectedCelulaId);
       return true;
     });
-    state.releaseGanttQuarterFilter = "";
-    const filteredReleases = allReleases;
-    const datedRows = filteredReleases.map((item) => ({ item, range: getDateRange(item) })).filter((entry) => entry.range);
+    const getQuarterFilterValue = (item) => {
+      const explicitQuarter = String(item?.quarter || "").trim();
+      if (explicitQuarter) return explicitQuarter;
+      const date = parseDateOnly(item?.start_date || item?.due_date || "");
+      if (!date) return "__none__";
+      return `Q${Math.floor(date.getMonth() / 3) + 1} ${date.getFullYear()}`;
+    };
+    const selectedQuarter = String(state.releaseQuarterFilter || "").trim();
+    const selectedStatuses = (state.releaseStatusFilters || []).filter(Boolean);
+    const quarterFilteredReleases = selectedQuarter
+      ? allReleases.filter((item) => getQuarterFilterValue(item) === selectedQuarter)
+      : allReleases;
+    const filteredReleases = selectedStatuses.length
+      ? quarterFilteredReleases.filter((item) => selectedStatuses.includes(classifyReleaseStatus(item.status)))
+      : quarterFilteredReleases;
+    const ganttRows = filteredReleases.map((item) => ({ item, range: getDateRange(item) })).filter((entry) => entry.range);
+    const datedRows = ganttRows.filter((entry) => !entry.range.noDates);
+    const undatedRows = ganttRows.filter((entry) => entry.range.noDates);
     if (kpiQuarterEl) kpiQuarterEl.textContent = String(filteredReleases.length);
-    if (kpiQuarterContextEl) kpiQuarterContextEl.textContent = state.selectedCelulaId ? "Celula seleccionada" : "Todas las celulas";
+    if (kpiQuarterContextEl) {
+      const statusLabels = {
+        pendiente: "Pendiente",
+        progreso: "En progreso",
+        finalizada: "Finalizada",
+      };
+      const filterContext = [
+        selectedQuarter || "Todos los quarters",
+        selectedStatuses.length ? selectedStatuses.map((value) => statusLabels[value] || value).join(", ") : "Todos los estados",
+      ];
+      kpiQuarterContextEl.textContent = `${state.selectedCelulaId ? "Celula seleccionada" : "Todas las celulas"} · ${filterContext.join(" · ")}`;
+    }
     if (zoomEl) {
       zoomEl.value = String(state.releaseGanttZoom || 100);
       if (!zoomEl.dataset.bound) {
@@ -17527,13 +17609,21 @@
       });
     }
     if (zoomLabelEl) zoomLabelEl.textContent = `${Number(state.releaseGanttZoom || 100)}%`;
-    if (!datedRows.length) {
-      if (summaryEl) summaryEl.textContent = filteredReleases.length ? "Los releases filtrados no tienen fechas para mostrar en Gantt." : "Sin releases para visualizar.";
+    if (!ganttRows.length) {
+      if (summaryEl) summaryEl.textContent = "Sin releases para visualizar.";
       if (boardEl) boardEl.innerHTML = '<p class="empty">Sin releases para visualizar en Gantt.</p>';
       return;
     }
-    const minStart = datedRows.reduce((min, entry) => (!min || entry.range.start < min ? entry.range.start : min), datedRows[0].range.start);
-    const maxEnd = datedRows.reduce((max, entry) => (!max || entry.range.end > max ? entry.range.end : max), datedRows[0].range.end);
+    const fallbackStart = getToday();
+    fallbackStart.setDate(fallbackStart.getDate() - 7);
+    const fallbackEnd = getToday();
+    fallbackEnd.setDate(fallbackEnd.getDate() + 7);
+    const minStart = datedRows.length
+      ? datedRows.reduce((min, entry) => (!min || entry.range.start < min ? entry.range.start : min), datedRows[0].range.start)
+      : fallbackStart;
+    const maxEnd = datedRows.length
+      ? datedRows.reduce((max, entry) => (!max || entry.range.end > max ? entry.range.end : max), datedRows[0].range.end)
+      : fallbackEnd;
     const dates = buildDateSpan(minStart, maxEnd);
     const dateKeys = dates.map((date) => formatISO(date));
     const monthGroups = [];
@@ -17555,7 +17645,11 @@
     const gridColumns = `minmax(320px, 380px) repeat(${dates.length}, ${dayWidth}px)`;
     const todayKey = formatISO(getToday());
     const todayIndex = dateKeys.indexOf(todayKey);
-    if (summaryEl) summaryEl.textContent = `${filteredReleases.length} release(s) · ${datedRows.length} con fechas`;
+    if (summaryEl) {
+      summaryEl.textContent = `${filteredReleases.length} release(s) · ${datedRows.length} con fechas${
+        undatedRows.length ? ` · ${undatedRows.length} sin fechas` : ""
+      }`;
+    }
     if (boardEl) {
       boardEl.style.setProperty("--day-width", `${dayWidth}px`);
       boardEl.innerHTML = `
@@ -17573,14 +17667,15 @@
             if (holidayKeys.has(key)) classes.push("is-holiday");
             return `<div class="${classes.join(" ")}">${dayInitials[date.getDay()]}<br>${date.getDate()}</div>`;
           }).join("")}
-          ${datedRows.map(({ item, range }) => {
-            const startIndex = Math.max(0, dateKeys.indexOf(formatISO(range.start)));
-            const endIndex = Math.max(startIndex, dateKeys.indexOf(formatISO(range.end)));
-            const width = Math.max(1, endIndex - startIndex + 1);
+          ${ganttRows.map(({ item, range }) => {
+            const hasDates = !range.noDates;
+            const startIndex = hasDates ? Math.max(0, dateKeys.indexOf(formatISO(range.start))) : 0;
+            const endIndex = hasDates ? Math.max(startIndex, dateKeys.indexOf(formatISO(range.end))) : 0;
+            const width = hasDates ? Math.max(1, endIndex - startIndex + 1) : 0;
             const startDateText = item.start_date || item.due_date || "-";
-            const endDateText = item.end_date || item.due_date || "-";
+            const endDateText = range.openEnded ? "Hasta hoy (sin fecha fin)" : item.end_date || item.due_date || "-";
             return `
-              <div class="daily-gantt-task">
+              <div class="daily-gantt-task" data-gantt-date-state="${hasDates ? (range.openEnded ? "open" : "dated") : "undated"}">
                 <strong>${escapeHtml(item.issue_key || "Sin issue")}</strong>
                 <div>${escapeHtml(item.summary || "Sin resumen")}</div>
                 <span>${escapeHtml(item.status || "-")} · ${escapeHtml(startDateText)} -> ${escapeHtml(endDateText)}</span>
@@ -17594,7 +17689,9 @@
                   if (holidayKeys.has(key)) classes.push("is-holiday");
                   return `<div class="${classes.join(" ")}"></div>`;
                 }).join("")}
-                <div class="daily-gantt-bar ${getBarClass(item, range)}" style="left: calc(${startIndex} * var(--day-width, 36px)); width: calc(${width} * var(--day-width, 36px) - 8px);" title="${escapeHtml((item.issue_key || "") + " · " + (item.summary || ""))}">${escapeHtml(item.issue_key || "")}</div>
+                ${hasDates
+                  ? `<div class="daily-gantt-bar ${getBarClass(item, range)}" style="left: calc(${startIndex} * var(--day-width, 36px)); width: calc(${width} * var(--day-width, 36px) - 8px);" title="${escapeHtml((item.issue_key || "") + " · " + (item.summary || ""))}">${escapeHtml(item.issue_key || "")}</div>`
+                  : '<span class="daily-gantt-no-dates">Sin fechas de planificación</span>'}
               </div>
             `;
           }).join("")}
