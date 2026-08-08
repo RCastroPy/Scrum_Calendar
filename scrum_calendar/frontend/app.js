@@ -14581,38 +14581,21 @@
       );
       if (!confirmed) return;
 
-      let updatedCount = 0;
-      let errorCount = 0;
-      for (const task of candidates) {
-        try {
-          const status = normalizeTaskStatusKey(task.estado || "");
-          const payload = {
-            fecha_vencimiento: today,
-          };
-          if (status === "doing") {
-            payload.estado = "todo";
-          }
-          const finalPayload = applyTaskStatusDatePayload(task, payload);
-          const updatedRaw = await putJson(`/tasks/${task.id}`, finalPayload);
-          const updated = normalizeTaskDatesForClient(mergeTaskUpdatePayload(task.id, updatedRaw, finalPayload), finalPayload, {
-            previousEstado: task.estado,
-          });
-          upsertTaskInCache(updated);
-          updatedCount += 1;
-        } catch {
-          errorCount += 1;
-        }
+      let updatedRows;
+      try {
+        updatedRows = await postJson("/tasks/overdue-to-today", {});
+      } catch (err) {
+        setTasksStatus(err.message || "No se pudieron actualizar las tareas vencidas.", "error");
+        return;
       }
+      const updatedTasks = Array.isArray(updatedRows) ? updatedRows : [];
+      updatedTasks.forEach((task) => upsertTaskInCache(normalizeTaskForClient(task)));
+      const updatedCount = updatedTasks.length;
       renderAll();
-      if (updatedCount && !errorCount) {
+      if (updatedCount) {
         setTasksStatus(`Se actualizaron ${updatedCount} tarea(s) vencidas al dia de hoy.`, "ok");
-      } else if (updatedCount && errorCount) {
-        setTasksStatus(
-          `Se actualizaron ${updatedCount} tarea(s) vencidas y ${errorCount} fallaron. Reintenta para completar.`,
-          "warning"
-        );
       } else {
-        setTasksStatus("No se pudo actualizar ninguna tarea vencida.", "error");
+        setTasksStatus("No hay tareas vencidas para actualizar a hoy.", "info");
       }
     };
 

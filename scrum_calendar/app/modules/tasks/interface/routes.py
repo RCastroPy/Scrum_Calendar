@@ -248,6 +248,36 @@ def eliminar_task_segment(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.post("/tasks/overdue-to-today", response_model=List[TaskOut])
+def actualizar_tareas_vencidas_a_hoy(
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    user = require_user(db, scrum_session)
+    business_today = now_py().date()
+    query = db.query(Task).filter(
+        Task.fecha_vencimiento.isnot(None),
+        Task.fecha_vencimiento < business_today,
+        ~Task.estado.in_({"done", "archived"}),
+    )
+    if user.rol != "admin":
+        query = query.filter(Task.creado_por_usuario_id == user.id)
+    tasks = query.order_by(Task.parent_id.desc(), Task.id.desc()).all()
+
+    # This daily reset must be atomic. Cascading every individual update can
+    # otherwise reapply "doing" to a parent before its overdue children reset.
+    for task in tasks:
+        task.fecha_vencimiento = business_today
+        if task.estado == "doing":
+            task.estado = "todo"
+            task.end_date = None
+
+    db.commit()
+    for task in tasks:
+        db.refresh(task)
+    return tasks
+
+
 @router.put("/tasks/{task_id}", response_model=TaskOut)
 def actualizar_task(
     task_id: int,
