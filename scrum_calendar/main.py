@@ -107,12 +107,18 @@ def _csrf_exempt(path: str) -> bool:
     )
 
 
-def _csrf_response(response: Response, token: str):
+def _request_is_secure(request: Request) -> bool:
+    """Respect the external scheme when TLS is terminated by a proxy."""
+    forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",", 1)[0].strip().lower()
+    return forwarded_proto == "https" or request.url.scheme == "https"
+
+
+def _csrf_response(response: Response, token: str, request: Request):
     response.set_cookie(
         "csrf_token",
         token,
         httponly=False,
-        secure=settings.cookie_secure,
+        secure=settings.cookie_secure and _request_is_secure(request),
         samesite="lax",
         max_age=14 * 24 * 3600,
         path="/",
@@ -123,7 +129,7 @@ def _csrf_response(response: Response, token: str):
 @app.get("/auth/csrf")
 def csrf_token(request: Request, response: Response):
     token = request.cookies.get("csrf_token") or token_urlsafe(32)
-    _csrf_response(response, token)
+    _csrf_response(response, token, request)
     return {"csrf_token": token}
 
 
