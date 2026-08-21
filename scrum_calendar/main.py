@@ -1,10 +1,14 @@
-from fastapi import FastAPI, HTTPException, Request
+import time
+from contextlib import asynccontextmanager
+from secrets import compare_digest, token_urlsafe
+from uuid import uuid4
+
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from sqlalchemy.orm import joinedload
-from sqlalchemy import text
 
 from api.routes import router
 from config.settings import settings
@@ -12,10 +16,23 @@ from core.audit import log_security_event
 from data.db import SessionLocal, engine
 from data.models import Base, Sesion, now_py
 from app.modules.tasks.interface.routes import router as tasks_router
+from app.modules.daily.interface.routes import router as daily_router
+from app.modules.daily.interface.sprint_item_routes import router as daily_sprint_item_router
+from app.modules.daily.interface.import_routes import router as daily_import_router
+from app.modules.releases.interface.comment_routes import router as release_comment_router
+from app.modules.releases.interface.crud_routes import router as release_crud_router
+from app.modules.releases.interface.import_routes import router as release_import_router
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    startup()
+    yield
 
 app = FastAPI(
     title="Scrum Calendar",
     version="0.1.0",
+    lifespan=lifespan,
     docs_url="/docs" if settings.docs_enabled else None,
     redoc_url="/redoc" if settings.docs_enabled else None,
     openapi_url="/openapi.json" if settings.docs_enabled else None,
@@ -78,6 +95,36 @@ def _apply_security_headers(response):
         "object-src 'none'; base-uri 'self'; frame-ancestors 'self'",
     )
     return response
+
+
+def _csrf_exempt(path: str) -> bool:
+    return (
+        path.startswith("/auth/")
+        or path.startswith("/public/")
+        or path.startswith("/retros/public")
+        or path.startswith("/poker/public")
+        or path.startswith("/ws/")
+    )
+
+
+def _csrf_response(response: Response, token: str):
+    response.set_cookie(
+        "csrf_token",
+        token,
+        httponly=False,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        max_age=14 * 24 * 3600,
+        path="/",
+    )
+    return response
+
+
+@app.get("/auth/csrf")
+def csrf_token(request: Request, response: Response):
+    token = request.cookies.get("csrf_token") or token_urlsafe(32)
+    _csrf_response(response, token)
+    return {"csrf_token": token}
 
 
 @app.middleware("http")
@@ -170,7 +217,38 @@ async def auth_middleware(request: Request, call_next):
         response.delete_cookie("scrum_session", path="/")
         return _apply_security_headers(response)
     request.state.user = user
+    if settings.csrf_enabled and request.method in {"POST", "PUT", "PATCH", "DELETE"} and not _csrf_exempt(path):
+        expected = request.cookies.get("csrf_token") or ""
+        provided = request.headers.get("X-CSRF-Token") or ""
+        if not expected or not provided or not compare_digest(expected, provided):
+            return _apply_security_headers(JSONResponse(status_code=403, content={"detail": "CSRF token invalido"}))
     return _apply_security_headers(await call_next(request))
+
+
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next):
+    request_id = (request.headers.get("x-request-id") or "").strip() or uuid4().hex
+    request.state.request_id = request_id
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        log_security_event(
+            "http_unhandled_error",
+            "ERROR",
+            request_id=request_id,
+            path=request.url.path,
+            method=request.method,
+            ip=_request_ip(request),
+            duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        )
+        raise
+    response.headers.setdefault("X-Request-ID", request_id)
+    response.headers.setdefault(
+        "X-Response-Time-Ms",
+        f"{(time.perf_counter() - started) * 1000:.2f}",
+    )
+    return response
 
 
 @app.exception_handler(HTTPException)
@@ -197,120 +275,16 @@ def healthcheck():
     return {"status": "ok"}
 
 
-@app.on_event("startup")
 def startup():
     Base.metadata.create_all(bind=engine)
-    # Test suite uses SQLite; these lightweight "migrations" are Postgres-specific.
-    if getattr(engine.dialect, "name", "") != "postgresql":
-        return
-    with engine.begin() as conn:
-        columns = conn.execute(
-            text(
-                "select column_name from information_schema.columns "
-                "where table_name = 'release_items'"
-            )
-        ).fetchall()
-        column_names = {row[0] for row in columns}
-        if "tipo" not in column_names:
-            conn.execute(text("alter table release_items add column tipo varchar(20)"))
-        if "quarter" not in column_names:
-            conn.execute(text("alter table release_items add column quarter varchar(20)"))
-        if "release_issue_key" not in column_names:
-            conn.execute(text("alter table release_items add column release_issue_key varchar(60)"))
-        columns = conn.execute(
-            text(
-                "select column_name from information_schema.columns "
-                "where table_name = 'celulas'"
-            )
-        ).fetchall()
-        column_names = {row[0] for row in columns}
-        if "jira_codigo" not in column_names:
-            conn.execute(text("alter table celulas add column jira_codigo varchar(20)"))
-
-        # Tasks: add start_date for Kanban/backlog automation (Notion-like).
-        columns = conn.execute(
-            text(
-                "select column_name from information_schema.columns "
-                "where table_name = 'tasks'"
-            )
-        ).fetchall()
-        column_names = {row[0] for row in columns}
-        if "start_date" not in column_names:
-            conn.execute(text("alter table tasks add column start_date date"))
-        if "end_date" not in column_names:
-            conn.execute(text("alter table tasks add column end_date date"))
-        if "segmento" not in column_names:
-            conn.execute(text("alter table tasks add column segmento varchar(80)"))
-        tables = conn.execute(
-            text(
-                "select table_name from information_schema.tables "
-                "where table_name = 'poker_claims'"
-            )
-        ).fetchall()
-        if tables:
-            columns = conn.execute(
-                text(
-                    "select column_name from information_schema.columns "
-                    "where table_name = 'poker_claims'"
-                )
-            ).fetchall()
-            column_names = {row[0] for row in columns}
-            if "client_id" not in column_names:
-                conn.execute(text("alter table poker_claims add column client_id varchar(64)"))
-
-        # Tasks: add new columns if the table already exists (create_all doesn't alter).
-        tasks_cols = conn.execute(
-            text(
-                "select column_name from information_schema.columns "
-                "where table_name = 'tasks'"
-            )
-        ).fetchall()
-        if tasks_cols:
-            task_col_names = {row[0] for row in tasks_cols}
-            if "tipo" not in task_col_names:
-                conn.execute(text("alter table tasks add column tipo varchar(30)"))
-            if "etiquetas" not in task_col_names:
-                conn.execute(text("alter table tasks add column etiquetas text"))
-            if "puntos" not in task_col_names:
-                conn.execute(text("alter table tasks add column puntos double precision"))
-            if "horas_estimadas" not in task_col_names:
-                conn.execute(text("alter table tasks add column horas_estimadas double precision"))
-            if "importante" not in task_col_names:
-                conn.execute(text("alter table tasks add column importante boolean not null default false"))
-            if "segmento" not in task_col_names:
-                conn.execute(text("alter table tasks add column segmento varchar(80)"))
-            if "release_issue_key" not in task_col_names:
-                conn.execute(text("alter table tasks add column release_issue_key varchar(60)"))
-
-        # Compras: ensure item ticket-check column exists for cross-device validation.
-        compra_items_cols = conn.execute(
-            text(
-                "select column_name from information_schema.columns "
-                "where table_name = 'compra_items'"
-            )
-        ).fetchall()
-        if compra_items_cols:
-            compra_items_col_names = {row[0] for row in compra_items_cols}
-            if "ticket_validado" not in compra_items_col_names:
-                conn.execute(
-                    text("alter table compra_items add column ticket_validado boolean not null default false")
-                )
-            if "ticket_diferente" not in compra_items_col_names:
-                conn.execute(
-                    text("alter table compra_items add column ticket_diferente boolean not null default false")
-                )
-            if "precio_ticket_unitario" not in compra_items_col_names:
-                conn.execute(
-                    text("alter table compra_items add column precio_ticket_unitario integer null")
-                )
-            if "total_ticket_item" not in compra_items_col_names:
-                conn.execute(
-                    text("alter table compra_items add column total_ticket_item integer null")
-                )
-
-
 app.include_router(router)
 app.include_router(tasks_router)
+app.include_router(daily_router)
+app.include_router(daily_sprint_item_router)
+app.include_router(daily_import_router)
+app.include_router(release_comment_router)
+app.include_router(release_crud_router)
+app.include_router(release_import_router)
 
 frontend_dir = Path(__file__).resolve().parent / "frontend"
 adminlte_dir = Path(__file__).resolve().parent / "ScrumV2" / "dist"

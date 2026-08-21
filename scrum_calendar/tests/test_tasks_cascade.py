@@ -70,6 +70,15 @@ def test_tasks_doing_sets_start_date_and_cascades_to_parents(client: TestClient)
     assert parent["estado"] == "doing"
     assert parent["start_date"] == now_py().date().isoformat()
 
+    ancestors = client.get(f"/tasks/{child_id}/ancestors")
+    assert ancestors.status_code == 200
+    assert [task["id"] for task in ancestors.json()] == [parent_id]
+    assert ancestors.json()[0]["estado"] == "doing"
+
+    counts = client.get(f"/tasks/comments/counts?task_ids={parent_id},{child_id},999999")
+    assert counts.status_code == 200
+    assert counts.json() == {str(parent_id): 0, str(child_id): 0, "999999": 0}
+
 
 def test_tasks_start_date_is_min_of_descendants_and_recursive(client: TestClient):
     bootstrap_admin(client)
@@ -121,6 +130,54 @@ def test_tasks_start_date_is_min_of_descendants_and_recursive(client: TestClient
     assert parent["start_date"] == "2025-01-01"
 
 
+def test_tasks_listing_supports_optional_pagination_without_changing_default(client: TestClient):
+    bootstrap_admin(client)
+
+    response = client.post("/celulas", json={"nombre": "Celula Paginacion", "jira_codigo": "PAG", "activa": True})
+    assert response.status_code == 201
+    celula_id = response.json()["id"]
+    for title in ("Primera", "Segunda", "Tercera"):
+        response = client.post("/tasks", json={"titulo": title, "celula_id": celula_id})
+        assert response.status_code == 201
+
+    all_tasks = client.get(f"/tasks?celula_id={celula_id}")
+    first_page = client.get(f"/tasks?celula_id={celula_id}&limit=2&offset=0")
+    second_page = client.get(f"/tasks?celula_id={celula_id}&limit=2&offset=2")
+
+    assert all_tasks.status_code == 200
+    assert first_page.status_code == 200
+    assert second_page.status_code == 200
+    assert len(all_tasks.json()) == 3
+    assert len(first_page.json()) == 2
+    assert len(second_page.json()) == 1
+    assert {task["id"] for task in first_page.json()}.isdisjoint(
+        {task["id"] for task in second_page.json()}
+    )
+
+
+def test_tasks_listing_supports_backend_filters(client: TestClient):
+    bootstrap_admin(client)
+
+    response = client.post("/celulas", json={"nombre": "Celula Filtros", "jira_codigo": "FLT", "activa": True})
+    assert response.status_code == 201
+    celula_id = response.json()["id"]
+    tasks = (
+        {"titulo": "Pago urgente", "release_issue_key": "FLT-1", "prioridad": "urgente", "fecha_vencimiento": "2026-05-08"},
+        {"titulo": "Documentacion", "release_issue_key": "FLT-2", "prioridad": "baja", "fecha_vencimiento": "2026-05-20"},
+    )
+    for payload in tasks:
+        response = client.post("/tasks", json={**payload, "celula_id": celula_id})
+        assert response.status_code == 201
+
+    response = client.get(
+        f"/tasks?celula_id={celula_id}&texto=FLT-1&prioridad=URGENTE&"
+        "fecha_vencimiento_desde=2026-05-01&fecha_vencimiento_hasta=2026-05-10"
+    )
+
+    assert response.status_code == 200
+    assert [task["release_issue_key"] for task in response.json()] == ["FLT-1"]
+
+
 def test_tasks_done_sets_end_date_automatically(client: TestClient):
     bootstrap_admin(client)
 
@@ -151,12 +208,12 @@ def test_task_status_transitions_manage_start_and_end_dates(client: TestClient):
     assert resp.status_code == 201
     task_id = resp.json()["id"]
 
-    # Backlog -> ToDo: no auto update de fechas.
+    # Backlog -> ToDo: inicia la gestion de la tarea y completa start_date.
     resp = client.put(f"/tasks/{task_id}", json={"estado": "todo"})
     assert resp.status_code == 200
     task = resp.json()
     assert task["estado"] == "todo"
-    assert task["start_date"] is None
+    assert task["start_date"] == now_py().date().isoformat()
     assert task["end_date"] is None
 
     # ToDo -> Done: setea start_date y end_date.
@@ -193,14 +250,14 @@ def test_task_status_transitions_manage_start_and_end_dates(client: TestClient):
     assert task["start_date"] is None
     assert task["end_date"] is None
 
-    # Done -> ToDo: limpia start_date y end_date.
+    # Done -> ToDo: reinicia la gestion con start_date de hoy.
     resp = client.put(f"/tasks/{task_id}", json={"estado": "done"})
     assert resp.status_code == 200
     resp = client.put(f"/tasks/{task_id}", json={"estado": "todo"})
     assert resp.status_code == 200
     task = resp.json()
     assert task["estado"] == "todo"
-    assert task["start_date"] is None
+    assert task["start_date"] == now_py().date().isoformat()
     assert task["end_date"] is None
 
 

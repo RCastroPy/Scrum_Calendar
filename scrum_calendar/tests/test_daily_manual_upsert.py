@@ -130,25 +130,21 @@ def test_daily_manual_create_upserts_existing_issue_key(client: TestClient):
         "story_points": 8,
     }
     resp = client.post("/sprint-items", json=payload_2)
-    assert resp.status_code == 201
-    assert resp.json()["id"] == first_id
-    assert resp.json()["sprint_id"] == sprint_2
-    assert resp.json()["persona_id"] == persona_2
-    assert resp.json()["story_points"] == 8
+    assert resp.status_code == 409
 
     resp = client.get(f"/sprint-items?celula_id={celula_id}")
     assert resp.status_code == 200
     rows = [row for row in resp.json() if row["issue_key"] == "SMP-1234"]
     assert len(rows) == 1
     assert rows[0]["id"] == first_id
-    assert rows[0]["sprint_id"] == sprint_2
-    assert rows[0]["persona_id"] == persona_2
-    assert rows[0]["story_points"] == 8
+    assert rows[0]["sprint_id"] == sprint_1
+    assert rows[0]["persona_id"] == persona_1
+    assert rows[0]["story_points"] == 3
 
     resp = client.get(f"/import-sprint-items?celula_id={celula_id}")
     assert resp.status_code == 200
     import_rows = [row for row in resp.json() if row["issue_key"] == "SMP-1234"]
     assert len(import_rows) == 1
-    assert import_rows[0]["sprint_id"] == sprint_2
-    assert import_rows[0]["persona_id"] == persona_2
-    assert import_rows[0]["story_points"] == 8
+    assert import_rows[0]["sprint_id"] == sprint_1
+    assert import_rows[0]["persona_id"] == persona_1
+    assert import_rows[0]["story_points"] == 3

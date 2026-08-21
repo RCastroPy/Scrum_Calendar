@@ -21,6 +21,10 @@
 
 ## Tests
 - Ejecutar: `docker compose exec api python -m pytest /app/tests`
+- Suite resumida: `docker compose exec api python -m pytest -q`
+- Verificar copias frontend: `python scripts/check_frontend_sync.py`
+- Las páginas runtime cargan `app.js`; `app.bundle.js` se conserva como artefacto legacy y no debe referenciarse desde HTML.
+- Validar migraciones versionadas: `docker compose exec api alembic current`
 
 ## Rotacion de credenciales
 - Runbook: `documentos/SECURITY_ROTACION_CREDENCIALES.md`

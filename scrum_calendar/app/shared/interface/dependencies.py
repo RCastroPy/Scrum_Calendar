@@ -1,8 +1,9 @@
 from typing import Optional
 
-from fastapi import HTTPException
+from fastapi import Cookie, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
+from data.db import get_db
 from data.models import Sesion, Task, Usuario, now_py
 
 
@@ -33,9 +34,25 @@ def require_user(db: Session, token: Optional[str]) -> Usuario:
     return user
 
 
+def require_admin(user: Usuario) -> None:
+    if user.rol != "admin":
+        raise HTTPException(status_code=403, detail="Sin permisos")
+
+
+def get_current_user(
+    scrum_session: Optional[str] = Cookie(default=None),
+    db: Session = Depends(get_db),
+) -> Usuario:
+    return require_user(db, scrum_session)
+
+
+def get_current_admin(user: Usuario = Depends(get_current_user)) -> Usuario:
+    require_admin(user)
+    return user
+
+
 def require_task_write_access(user: Usuario, task: Task) -> None:
     if user.rol == "admin":
         return
     if task.creado_por_usuario_id != user.id:
         raise HTTPException(status_code=403, detail="Sin permisos")
-

@@ -45,10 +45,39 @@ URL: http://107.23.137.161:8000
 
 ## Precheck Local
 
+Antes de cualquier deploy, aplicar y validar las migraciones versionadas:
+
+```bash
+docker compose exec api alembic upgrade head
+python scripts/check_frontend_sync.py
+```
+
 Desde:
 
 ```bash
-cd "/Users/rafaelcastro/Library/CloudStorage/OneDrive-Personal/Desarrollos/SCRUM IA/scrum_calendar"
+cd "/Users/rafaelcastro/Desarrollos/Scrum_Calendar_tasks_sort/scrum_calendar"
+```
+
+La ruta activa está fuera de OneDrive para evitar bloqueos de `.git`, archivos
+no descargados y fallos durante commit, push o empaquetado de despliegue.
+
+## CI
+
+El workflow `.github/workflows/ci.yml` ejecuta en cada push o pull request:
+
+```text
+pytest, compileall, validación de JavaScript, sincronización frontend y git diff --check
+```
+
+La ejecución local equivalente es:
+
+```bash
+docker compose exec api python -m pytest -q
+python -m compileall -q app api config data main.py
+node --check frontend/app.js
+node --check ScrumV2/dist/app.js
+python scripts/check_frontend_sync.py
+git diff --check
 ```
 
 Ver estado:

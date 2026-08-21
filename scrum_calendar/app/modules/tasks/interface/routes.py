@@ -1,8 +1,9 @@
+from datetime import date
 from typing import List, Optional
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Response, status
 from sqlalchemy import and_, func, or_
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from api.schemas import (
     TaskCommentCreate,
@@ -15,10 +16,14 @@ from api.schemas import (
     TaskSegmentUpdate,
     TaskUpdate,
 )
-from app.modules.tasks.application.use_cases import apply_task_update, cascade_task_parents_for_inprogress
+from app.modules.tasks.application.use_cases import (
+    apply_task_update,
+    cascade_task_parents_for_inprogress,
+    reset_overdue_tasks,
+)
 from app.modules.tasks.domain.constants import TASK_PRIORITIES, TASK_STATUSES
 from app.modules.tasks.domain.hierarchy import same_optional_int
-from app.modules.tasks.infrastructure.repository import SqlAlchemyTaskRepository
+from app.modules.tasks.infrastructure.repository import SqlAlchemyTaskRepository, upsert_segment_name
 from app.shared.domain.text import clean_label, normalize_text
 from app.shared.interface.dependencies import require_task_write_access, require_user
 from data.db import get_db
@@ -40,43 +45,34 @@ def _would_create_parent_cycle(db: Session, child_id: int, new_parent_id: int) -
     return SqlAlchemyTaskRepository(db).would_create_parent_cycle(child_id, new_parent_id)
 
 
-def _upsert_task_segment_name(db: Session, usuario_id: int, nombre: str) -> str:
-    clean = clean_label(nombre)
-    if not clean:
-        raise HTTPException(status_code=400, detail="Nombre requerido")
-    key = normalize_text(clean)
-    row = (
-        db.query(TaskSegment)
-        .filter(TaskSegment.usuario_id == usuario_id, TaskSegment.nombre_key == key)
-        .first()
-    )
-    if row:
-        if row.nombre != clean:
-            row.nombre = clean
-            db.flush()
-        return row.nombre
-    row = TaskSegment(usuario_id=usuario_id, nombre=clean, nombre_key=key)
-    db.add(row)
-    db.flush()
-    return row.nombre
-
 @router.get("/tasks", response_model=List[TaskOut])
 def listar_tasks(
     celula_id: Optional[int] = None,
     sprint_id: Optional[int] = None,
     estado: Optional[str] = None,
+    texto: Optional[str] = None,
+    prioridad: Optional[str] = None,
+    assignee_persona_id: Optional[int] = None,
+    fecha_vencimiento_desde: Optional[date] = None,
+    fecha_vencimiento_hasta: Optional[date] = None,
+    limit: Optional[int] = Query(default=None, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     scrum_session: Optional[str] = Cookie(default=None),
 ):
     require_user(db, scrum_session)
-    q = db.query(Task)
-    if celula_id is not None:
-        q = q.filter(Task.celula_id == celula_id)
-    if sprint_id is not None:
-        q = q.filter(Task.sprint_id == sprint_id)
-    if estado is not None:
-        q = q.filter(Task.estado == estado)
-    return q.order_by(Task.orden.asc(), Task.actualizado_en.desc(), Task.id.desc()).all()
+    return SqlAlchemyTaskRepository(db).list_tasks(
+        celula_id=celula_id,
+        sprint_id=sprint_id,
+        estado=estado,
+        texto=texto,
+        prioridad=prioridad,
+        assignee_persona_id=assignee_persona_id,
+        fecha_vencimiento_desde=fecha_vencimiento_desde,
+        fecha_vencimiento_hasta=fecha_vencimiento_hasta,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.post("/tasks", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
@@ -86,6 +82,7 @@ def crear_task(
     scrum_session: Optional[str] = Cookie(default=None),
 ):
     user = require_user(db, scrum_session)
+    repository = SqlAlchemyTaskRepository(db)
     titulo = (payload.titulo or "").strip()
     if not titulo:
         raise HTTPException(status_code=400, detail="Titulo requerido")
@@ -103,15 +100,20 @@ def crear_task(
     if payload.assignee_persona_id is not None and not db.get(Persona, payload.assignee_persona_id):
         raise HTTPException(status_code=404, detail="Persona no encontrada")
     if payload.parent_id is not None:
-        parent = db.get(Task, payload.parent_id)
+        parent = repository.get(payload.parent_id)
         if not parent:
             raise HTTPException(status_code=404, detail="Task padre no encontrado")
+        if payload.celula_id is not None and payload.celula_id != parent.celula_id:
+            raise HTTPException(status_code=400, detail="La subtarea debe pertenecer a la misma celula del padre")
         resolved_celula_id = parent.celula_id
     segmento = (payload.segmento or "").strip() or None
     if segmento and len(segmento) > 80:
         raise HTTPException(status_code=400, detail="Segmento demasiado largo")
     if segmento:
-        segmento = _upsert_task_segment_name(db, user.id, segmento)
+        try:
+            segmento = upsert_segment_name(db, user.id, segmento)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     tipo = (payload.tipo or "").strip() or None
     if tipo and len(tipo) > 30:
         raise HTTPException(status_code=400, detail="Tipo demasiado largo")
@@ -153,12 +155,7 @@ def listar_task_segments(
     scrum_session: Optional[str] = Cookie(default=None),
 ):
     user = require_user(db, scrum_session)
-    return (
-        db.query(TaskSegment)
-        .filter(TaskSegment.usuario_id == user.id)
-        .order_by(func.lower(TaskSegment.nombre).asc(), TaskSegment.id.asc())
-        .all()
-    )
+    return SqlAlchemyTaskRepository(db).list_segments(usuario_id=user.id)
 
 
 @router.post("/tasks/segments", response_model=TaskSegmentOut, status_code=status.HTTP_201_CREATED)
@@ -168,7 +165,10 @@ def crear_task_segment(
     scrum_session: Optional[str] = Cookie(default=None),
 ):
     user = require_user(db, scrum_session)
-    nombre = _upsert_task_segment_name(db, user.id, payload.nombre)
+    try:
+        nombre = upsert_segment_name(db, user.id, payload.nombre)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     db.commit()
     created = (
         db.query(TaskSegment)
@@ -268,17 +268,37 @@ def actualizar_tareas_vencidas_a_hoy(
 
     # This daily reset must be atomic. Cascading every individual update can
     # otherwise reapply "doing" to a parent before its overdue children reset.
-    for task in tasks:
-        if task.fecha_vencimiento and task.fecha_vencimiento < business_today:
-            task.fecha_vencimiento = business_today
-        if task.estado == "doing":
-            task.estado = "todo"
-            task.end_date = None
+    reset_overdue_tasks(tasks, business_today)
 
     db.commit()
     for task in tasks:
         db.refresh(task)
     return tasks
+
+
+@router.get("/tasks/{task_id}/ancestors", response_model=List[TaskOut])
+def listar_ancestros_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    require_user(db, scrum_session)
+    repository = SqlAlchemyTaskRepository(db)
+    task = repository.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task no encontrada")
+
+    ancestors = []
+    seen = {int(task.id)}
+    parent_id = task.parent_id
+    while parent_id and len(ancestors) < 200:
+        parent = repository.get(parent_id)
+        if not parent or int(parent.id) in seen:
+            break
+        ancestors.append(parent)
+        seen.add(int(parent.id))
+        parent_id = parent.parent_id
+    return ancestors
 
 
 @router.put("/tasks/{task_id}", response_model=TaskOut)
@@ -289,7 +309,8 @@ def actualizar_task(
     scrum_session: Optional[str] = Cookie(default=None),
 ):
     user = require_user(db, scrum_session)
-    task = db.get(Task, task_id)
+    repository = SqlAlchemyTaskRepository(db)
+    task = repository.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task no encontrada")
     require_task_write_access(user, task)
@@ -322,7 +343,10 @@ def actualizar_task(
         if segmento and len(segmento) > 80:
             raise HTTPException(status_code=400, detail="Segmento demasiado largo")
         if segmento:
-            segmento = _upsert_task_segment_name(db, user.id, segmento)
+            try:
+                segmento = upsert_segment_name(db, user.id, segmento)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
         payload.segmento = segmento
     if payload.tipo is not None:
         tipo = (payload.tipo or "").strip() or None
@@ -347,7 +371,7 @@ def actualizar_task(
         if payload.parent_id == task.id:
             raise HTTPException(status_code=400, detail="Task padre invalido")
         if payload.parent_id is not None:
-            parent = db.get(Task, payload.parent_id)
+            parent = repository.get(payload.parent_id)
             if not parent:
                 raise HTTPException(status_code=404, detail="Task padre no encontrado")
             if _would_create_parent_cycle(db, int(task.id), int(payload.parent_id)):
@@ -357,7 +381,7 @@ def actualizar_task(
     next_parent_id = payload.parent_id if "parent_id" in fields_set else task.parent_id
     if ("celula_id" in fields_set or "parent_id" in fields_set) and next_parent_id is not None:
         next_celula_id = payload.celula_id if "celula_id" in fields_set else task.celula_id
-        parent = db.get(Task, next_parent_id)
+        parent = repository.get(next_parent_id)
         if parent and not _same_optional_int(next_celula_id, parent.celula_id):
             raise HTTPException(status_code=400, detail="La subtarea debe pertenecer a la misma celula del padre")
 
@@ -379,13 +403,30 @@ def eliminar_task(
     scrum_session: Optional[str] = Cookie(default=None),
 ):
     user = require_user(db, scrum_session)
-    task = db.get(Task, task_id)
+    task = SqlAlchemyTaskRepository(db).get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task no encontrada")
     require_task_write_access(user, task)
     db.delete(task)
     db.commit()
     return None
+
+
+@router.get("/tasks/comments/counts")
+def contar_task_comments(
+    task_ids: str = Query(default=""),
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    require_user(db, scrum_session)
+    ids = {
+        int(raw)
+        for raw in str(task_ids or "").split(",")
+        if raw.strip().isdigit() and int(raw) > 0
+    }
+    if not ids:
+        return {}
+    return SqlAlchemyTaskRepository(db).comment_counts(ids)
 
 
 @router.get("/tasks/{task_id}/comments", response_model=List[TaskCommentOut])
@@ -395,16 +436,10 @@ def listar_task_comments(
     scrum_session: Optional[str] = Cookie(default=None),
 ):
     require_user(db, scrum_session)
-    task = db.get(Task, task_id)
+    task = SqlAlchemyTaskRepository(db).get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task no encontrada")
-    return (
-        db.query(TaskComment)
-        .options(joinedload(TaskComment.usuario))
-        .filter(TaskComment.task_id == task_id)
-        .order_by(TaskComment.creado_en.asc(), TaskComment.id.asc())
-        .all()
-    )
+    return SqlAlchemyTaskRepository(db).list_comments(task_id=task_id)
 
 
 @router.post("/tasks/{task_id}/comments", response_model=TaskCommentOut, status_code=status.HTTP_201_CREATED)
@@ -415,7 +450,7 @@ def crear_task_comment(
     scrum_session: Optional[str] = Cookie(default=None),
 ):
     user = require_user(db, scrum_session)
-    task = db.get(Task, task_id)
+    task = SqlAlchemyTaskRepository(db).get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task no encontrada")
     texto = (payload.texto or "").strip()

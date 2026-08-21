@@ -1,7 +1,7 @@
 from datetime import date
 from types import SimpleNamespace
 
-from app.modules.tasks.application.use_cases import apply_task_update
+from app.modules.tasks.application.use_cases import apply_task_update, reset_overdue_tasks
 
 
 TODAY = date(2026, 5, 8)
@@ -93,3 +93,24 @@ def test_apply_task_update_keeps_explicit_fields():
     assert current.celula_id == 3
     assert current.orden == 7.0
 
+
+def test_reset_overdue_tasks_moves_doing_to_todo_and_updates_due_date():
+    current = task(estado="doing", fecha_vencimiento=date(2026, 5, 7), end_date=TODAY)
+    reset_overdue_tasks([current], TODAY)
+
+    assert current.estado == "todo"
+    assert current.fecha_vencimiento == TODAY
+    assert current.end_date is None
+
+
+def test_reset_overdue_tasks_keeps_done_and_archived_unchanged():
+    overdue = date(2026, 5, 7)
+    done = task(estado="done", fecha_vencimiento=overdue, end_date=overdue)
+    archived = task(estado="archived", fecha_vencimiento=overdue, end_date=overdue)
+
+    reset_overdue_tasks([done, archived], TODAY)
+
+    assert done.fecha_vencimiento == overdue
+    assert done.end_date == overdue
+    assert archived.fecha_vencimiento == overdue
+    assert archived.end_date == overdue
