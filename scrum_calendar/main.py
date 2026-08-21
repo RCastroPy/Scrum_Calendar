@@ -230,7 +230,19 @@ async def request_context_middleware(request: Request, call_next):
     request_id = (request.headers.get("x-request-id") or "").strip() or uuid4().hex
     request.state.request_id = request_id
     started = time.perf_counter()
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception:
+        log_security_event(
+            "http_unhandled_error",
+            "ERROR",
+            request_id=request_id,
+            path=request.url.path,
+            method=request.method,
+            ip=_request_ip(request),
+            duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        )
+        raise
     response.headers.setdefault("X-Request-ID", request_id)
     response.headers.setdefault(
         "X-Response-Time-Ms",
