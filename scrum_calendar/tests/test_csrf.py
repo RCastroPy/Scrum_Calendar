@@ -21,3 +21,19 @@ def test_csrf_blocks_mutation_without_token_and_allows_valid_token(
 
     response = client.post("/celulas", json=payload, headers={"X-CSRF-Token": token})
     assert response.status_code == 201
+
+
+def test_csrf_cookie_is_not_secure_when_production_is_served_over_http(client: TestClient, monkeypatch):
+    monkeypatch.setattr(main_mod.settings, "app_env", "production")
+    response = client.get("/auth/csrf")
+    assert response.status_code == 200
+    set_cookie = response.headers["set-cookie"]
+    assert "csrf_token=" in set_cookie
+    assert "Secure" not in set_cookie
+
+
+def test_csrf_cookie_is_secure_when_forwarded_request_is_https(client: TestClient, monkeypatch):
+    monkeypatch.setattr(main_mod.settings, "app_env", "production")
+    response = client.get("/auth/csrf", headers={"X-Forwarded-Proto": "https"})
+    assert response.status_code == 200
+    assert "Secure" in response.headers["set-cookie"]
