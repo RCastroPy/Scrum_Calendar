@@ -1,0 +1,48 @@
+name: ScrumIA CI
+
+on:
+  push:
+    branches: [main, "codex/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    env:
+      APP_ENV: development
+      CSRF_PROTECTION_ENABLED: "false"
+      DATABASE_URL: sqlite:///./ci.db
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run test suite
+        run: python -m pytest -q
+
+      - name: Compile Python
+        run: python -m compileall -q app api config data main.py
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Validate frontend sources
+        run: |
+          node --check frontend/app.js
+          node --check ScrumV2/dist/app.js
+          python scripts/check_frontend_sync.py
+
+      - name: Check whitespace errors
+        run: git diff --check

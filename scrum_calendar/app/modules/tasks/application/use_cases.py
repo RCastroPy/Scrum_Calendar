@@ -78,6 +78,24 @@ def apply_task_update(task, payload, fields_set: Set[str], business_today: date)
     )
 
 
+def reset_overdue_tasks(tasks, business_today: date):
+    """Reset active overdue work for the start of the business day."""
+    for task in tasks:
+        # Completed and archived tasks are historical records, not active work.
+        if (getattr(task, "estado", "") or "").strip().lower() in {
+            "done",
+            "archived",
+            "archivado",
+        }:
+            continue
+        if task.fecha_vencimiento and task.fecha_vencimiento < business_today:
+            task.fecha_vencimiento = business_today
+        if task.estado == "doing":
+            task.estado = "todo"
+            task.end_date = None
+    return tasks
+
+
 def cascade_task_parents_for_inprogress(repo, task) -> None:
     if not task or not task.parent_id:
         return

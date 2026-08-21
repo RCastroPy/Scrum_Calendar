@@ -14,6 +14,31 @@
   );
   let API_BASE = API_CANDIDATES[0];
   const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+  let csrfToken = "";
+
+  const csrfRequired = (path, method) =>
+    ["POST", "PUT", "PATCH", "DELETE"].includes(method) &&
+    !path.startsWith("/auth/") &&
+    !path.startsWith("/public/") &&
+    !path.startsWith("/retros/public") &&
+    !path.startsWith("/poker/public") &&
+    !path.startsWith("/ws/");
+
+  const loadCsrfToken = async () => {
+    if (csrfToken) return csrfToken;
+    for (const base of API_CANDIDATES) {
+      try {
+        const response = await fetch(`${base}/auth/csrf`, { credentials: "include", cache: "no-store" });
+        if (!response.ok) continue;
+        const payload = await response.json();
+        csrfToken = payload.csrf_token || "";
+        if (csrfToken) return csrfToken;
+      } catch (err) {
+        // Try the next API candidate.
+      }
+    }
+    throw new Error("No se pudo obtener el token CSRF");
+  };
 
   const xhrRequest = (url, options = {}) =>
     new Promise((resolve, reject) => {
@@ -41,9 +66,14 @@
 
   const fetchWithFallback = async (path, options) => {
     let lastError;
+    const method = String(options?.method || "GET").toUpperCase();
+    const token = csrfRequired(path, method) ? await loadCsrfToken() : "";
     for (const base of API_CANDIDATES) {
       try {
         const mergedOptions = { credentials: "include", ...options };
+        if (token) {
+          mergedOptions.headers = { ...(options?.headers || {}), "X-CSRF-Token": token };
+        }
         const isSameOriginTarget = base === `${CURRENT_PROTOCOL}//${CURRENT_HOSTNAME}:${CURRENT_PORT}`;
         const useFetch = !isSafari || isSameOriginTarget;
         const res = useFetch
@@ -11598,7 +11628,6 @@
 	            </div>
 	          </div>
 	          <div class="d-flex gap-2 align-items-center">
-	            <button class="btn btn-primary" type="submit">Guardar</button>
 	            <button class="btn btn-outline-secondary" type="button" id="task-cancel-btn">Cancelar</button>
 	            <button class="btn btn-danger ms-auto hidden" type="button" id="task-delete-btn">
 	              Eliminar
@@ -11607,7 +11636,7 @@
 	          <p class="form-status mt-2 mb-0" id="task-form-status"></p>
 	        `;
         host.appendChild(form);
-        resetFormMode(form, "Guardar");
+	        resetFormMode(form, "");
       }
       return form;
     };
@@ -11673,18 +11702,24 @@
       taskCommentCountQueueRunning = true;
       try {
         while (taskCommentCountQueue.size) {
-          const batch = Array.from(taskCommentCountQueue).slice(0, 6);
+          const batch = Array.from(taskCommentCountQueue).slice(0, 50);
           batch.forEach((id) => taskCommentCountQueue.delete(id));
-          await Promise.all(
-            batch.map(async (id) => {
-              try {
-                const items = await fetchTaskComments(id);
-                setTaskCommentCount(id, items.length);
-              } catch {
-                setTaskCommentCount(id, 0);
-              }
-            })
-          );
+          try {
+            const encodedIds = batch.map((id) => encodeURIComponent(id)).join(",");
+            const counts = await fetchJson(`/tasks/comments/counts?task_ids=${encodedIds}`);
+            batch.forEach((id) => setTaskCommentCount(id, Number(counts?.[String(id)] || 0)));
+          } catch {
+            await Promise.all(
+              batch.map(async (id) => {
+                try {
+                  const items = await fetchTaskComments(id);
+                  setTaskCommentCount(id, items.length);
+                } catch {
+                  setTaskCommentCount(id, 0);
+                }
+              })
+            );
+          }
         }
       } finally {
         taskCommentCountQueueRunning = false;
@@ -12135,7 +12170,7 @@
         form.fecha_vencimiento.value = task.fecha_vencimiento || "";
         form.start_date.value = task.start_date || "";
         form.end_date.value = task.end_date || "";
-        setFormMode(form, "edit", task.id, "Guardar");
+	        setFormMode(form, "edit", task.id, "");
         if (deleteBtn) deleteBtn.classList.remove("hidden");
         existingOnlyBlocks.forEach((node) => node.classList.remove("hidden"));
 	        createOnlyBlocks.forEach((node) => node.classList.add("hidden"));
@@ -12150,7 +12185,7 @@
 	      } else {
 	        form.dataset.currentTaskId = "";
         form.reset();
-        resetFormMode(form, "Guardar");
+	        resetFormMode(form, "");
         form.estado.value = status || "backlog";
         if (status) form.estado.value = status;
         populateTaskSegmentSelect(form.segmento, "");
@@ -12177,7 +12212,44 @@
 	      }
 
       if (formStatus) formStatus.textContent = "";
+      form.dataset.autoSave = "false";
+      form.dataset.autoSavePending = "false";
       openAdminModal(form, task ? "Editar tarea" : resolvedParentId ? "Nueva subtarea" : "Nueva tarea");
+
+      const triggerTaskAutosave = () => {
+        if (!String(form.titulo?.value || "").trim()) return;
+        form.dataset.autoSave = "true";
+        if (typeof form.requestSubmit === "function") {
+          form.requestSubmit();
+        } else {
+          form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+        }
+      };
+      const scheduleTaskAutosave = () => {
+        if (!String(form.titulo?.value || "").trim()) return;
+        window.clearTimeout(form.__autoSaveTimer);
+        form.__autoSaveTimer = window.setTimeout(triggerTaskAutosave, 600);
+      };
+      if (!form.dataset.boundAutosave) {
+        form.dataset.boundAutosave = "true";
+        [
+          form.titulo,
+          form.descripcion,
+          form.estado,
+          form.prioridad,
+          form.segmento,
+          form.assignee_persona_id,
+          releaseIssueInput,
+          form.fecha_vencimiento,
+          form.start_date,
+          form.end_date,
+        ]
+          .filter(Boolean)
+          .forEach((field) => {
+            field.addEventListener("input", scheduleTaskAutosave);
+            field.addEventListener("change", triggerTaskAutosave);
+          });
+      }
 
 	      if (!form.dataset.boundSubmitOnEnter) {
         form.dataset.boundSubmitOnEnter = "true";
@@ -12198,13 +12270,7 @@
             return;
           }
           event.preventDefault();
-          const submitBtn = form.querySelector("button[type='submit']");
-          if (submitBtn?.disabled) return;
-          if (typeof form.requestSubmit === "function") {
-            form.requestSubmit(submitBtn || undefined);
-          } else {
-            submitBtn?.click();
-          }
+          triggerTaskAutosave();
         });
       }
 
@@ -12216,13 +12282,7 @@
             return;
           }
           event.preventDefault();
-          const submitBtn = form.querySelector("button[type='submit']");
-          if (submitBtn?.disabled) return;
-          if (typeof form.requestSubmit === "function") {
-            form.requestSubmit(submitBtn || undefined);
-          } else {
-            submitBtn?.click();
-          }
+          triggerTaskAutosave();
         });
       }
 
@@ -12456,8 +12516,16 @@
         form.dataset.bound = "true";
         form.addEventListener("submit", async (event) => {
           event.preventDefault();
+          if (form.dataset.autoSaving === "true") {
+            form.dataset.autoSavePending = "true";
+            return;
+          }
+          form.dataset.autoSaving = "true";
           const titulo = form.titulo.value.trim();
-          if (!titulo) return;
+          if (!titulo) {
+            form.dataset.autoSaving = "false";
+            return;
+          }
           const initialComment = String(initialCommentInput?.value || "").trim();
           const payload = {
             titulo,
@@ -12484,7 +12552,7 @@
 	              .filter(Boolean);
 	            await withButtonBusy(
 	              submitBtn,
-	              async () => {
+	                async () => {
 	                const editId = form.dataset.editId;
 	                if (editId) {
                     const previousTask =
@@ -12505,6 +12573,13 @@
                     if (created?.parent_id) expandBacklogAncestors(created);
                     ensureTaskSegmentCatalogEntry(created?.segmento || finalPayload.segmento || "");
 	                  const createdId = Number(created?.id || 0);
+	                  if (createdId) {
+                    form.dataset.currentTaskId = String(createdId);
+                    setFormMode(form, "edit", createdId, "");
+                    existingOnlyBlocks.forEach((node) => node.classList.remove("hidden"));
+                    createOnlyBlocks.forEach((node) => node.classList.add("hidden"));
+                    if (newSubtasksWrap) newSubtasksWrap.classList.add("hidden");
+                  }
 	                  if (createdId && initialComment) {
 	                    try {
 	                      await postJson(`/tasks/${createdId}/comments`, { texto: initialComment });
@@ -12542,13 +12617,25 @@
 	              "Guardando..."
 	            );
 	            clearDraftSubtasks();
-	            closeAdminModal(true);
-	            refreshTasksUi("all");
-	            if (initialCommentWarning) setTasksStatus(initialCommentWarning, "warning");
+            const autoSave = form.dataset.autoSave === "true";
+            if (!autoSave) closeAdminModal(true);
+            refreshTasksUi("all");
+            if (autoSave && formStatus) {
+              formStatus.textContent = "Guardado automaticamente.";
+              formStatus.dataset.type = "ok";
+            }
+            if (initialCommentWarning) setTasksStatus(initialCommentWarning, "warning");
           } catch (err) {
             if (formStatus) {
               formStatus.textContent = err.message || "No se pudo guardar.";
               formStatus.dataset.type = "error";
+            }
+          } finally {
+            form.dataset.autoSaving = "false";
+            if (form.dataset.autoSavePending === "true") {
+              form.dataset.autoSavePending = "false";
+              form.dataset.autoSave = "true";
+              if (typeof form.requestSubmit === "function") form.requestSubmit();
             }
           }
         });
@@ -12646,6 +12733,18 @@
       const statusAllowed = statusFilter ? new Set([statusFilter]) : selectedStatuses.size ? selectedStatuses : null;
       const matchesStatusFilter = (task) =>
         !statusAllowed || statusAllowed.has(String(task?.estado || "").trim().toLowerCase());
+      const dueFrom = state.tasksFilters?.dueFrom ? String(state.tasksFilters.dueFrom) : "";
+      const dueTo = state.tasksFilters?.dueTo ? String(state.tasksFilters.dueTo) : "";
+      const noDueDate = Boolean(state.tasksFilters?.noDueDate);
+      const matchesDueFilter = (task) => {
+        if (noDueDate && String(task?.fecha_vencimiento || "").trim()) return false;
+        if (!dueFrom && !dueTo) return true;
+        const due = String(task?.fecha_vencimiento || "").trim();
+        if (!due) return false;
+        if (dueFrom && due < dueFrom) return false;
+        if (dueTo && due > dueTo) return false;
+        return true;
+      };
       (all || []).forEach((task) => {
         const parentId = task?.parent_id ? String(task.parent_id) : "";
         const taskId = task?.id != null ? String(task.id) : "";
@@ -12682,7 +12781,8 @@
         (childrenByParent.get(taskId) || []).forEach((child) => {
           const childId = String(child?.id || "");
           if (!childId) return;
-          if (matchesStatusFilter(child)) keep.set(childId, child);
+          if (!matchesStatusFilter(child) || !matchesDueFilter(child)) return;
+          keep.set(childId, child);
           pending.push(child);
         });
       }
@@ -14543,7 +14643,17 @@
           previousEstado: previousTask.estado,
         });
         upsertTaskInCache(updated);
-        if (updated?.parent_id) expandBacklogAncestors(updated);
+        const nextStatus = normalizeTaskStatusKey(updated?.estado || "");
+        const previousStatus = normalizeTaskStatusKey(previousTask?.estado || "");
+        if (updated?.parent_id) {
+          expandBacklogAncestors(updated);
+          if (nextStatus === "doing" && previousStatus !== "doing") {
+            const ancestors = await fetchJson(`/tasks/${taskId}/ancestors`);
+            (Array.isArray(ancestors) ? ancestors : []).forEach((ancestor) => {
+              upsertTaskInCache(normalizeTaskForClient(ancestor));
+            });
+          }
+        }
         if (okMessage) {
           setTasksStatus(okMessage, "ok");
         }

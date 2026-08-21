@@ -54,6 +54,30 @@ Responsabilidad:
 - CRUD de entidades.
 - Operaciones de Daily, Tareas, Releases, Compras, Retrospectiva y Poker.
 
+### Estado De Modularizacion (2026-08-21)
+
+Los siguientes módulos ya tienen separación inicial por capas:
+
+```text
+app/modules/tasks/
+app/modules/daily/
+app/modules/releases/
+```
+
+En estos módulos, las lecturas principales y reglas recientes ya no dependen
+directamente de `api/routes.py`. Las rutas HTTP delegan progresivamente en:
+
+```text
+domain/          reglas puras y constantes
+application/     casos de uso
+infrastructure/  repositorios SQLAlchemy
+interface/       rutas HTTP y schemas de entrada
+```
+
+La migración de escritura y los módulos históricos restantes sigue pendiente.
+No agregar nuevas lecturas directamente a `api/routes.py` si pertenecen a
+Tareas, Daily o Releases.
+
 Busqueda recomendada:
 
 ```bash
@@ -113,6 +137,8 @@ Responsabilidad actual:
 - Demasiadas secciones concentradas.
 - Se mantiene por compatibilidad.
 - Evitar seguir creciendo salvo ajustes puntuales.
+- La fuente editable es `frontend/app.js`; `ScrumV2/dist/app.js` debe mantenerse
+  sincronizado mediante `scripts/check_frontend_sync.py`.
 
 Busqueda recomendada:
 

@@ -2,6 +2,8 @@ services:
   db:
     image: postgres:15
     environment:
+      TZ: ${APP_TIMEZONE:-America/Asuncion}
+      PGTZ: ${APP_TIMEZONE:-America/Asuncion}
       POSTGRES_USER: ${DB_USER:-scrum_user}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-scrum_pass}
       POSTGRES_DB: ${DB_NAME:-scrum_calendar}
@@ -13,8 +15,10 @@ services:
   api:
     build: .
     environment:
+      TZ: ${APP_TIMEZONE:-America/Asuncion}
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://${DB_USER:-scrum_user}:${DB_PASSWORD:-scrum_pass}@db:5432/${DB_NAME:-scrum_calendar}}
       APP_ENV: ${APP_ENV:-development}
+      APP_TIMEZONE: ${APP_TIMEZONE:-America/Asuncion}
       CORS_ORIGINS_RAW: ${CORS_ORIGINS_RAW:-http://localhost:8000}
       CORS_ALLOW_CREDENTIALS: ${CORS_ALLOW_CREDENTIALS:-false}
       PBKDF2_ROUNDS: ${PBKDF2_ROUNDS:-600000}

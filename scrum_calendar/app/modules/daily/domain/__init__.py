@@ -1,0 +1,1 @@
+"""Pure Daily business rules."""

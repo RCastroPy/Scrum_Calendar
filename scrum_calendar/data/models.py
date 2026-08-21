@@ -9,15 +9,17 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    Index,
     String,
     Table,
     Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import declarative_base, relationship
+from config.settings import settings
 
 Base = declarative_base()
-TZ_PY = ZoneInfo("America/Asuncion")
+TZ_PY = ZoneInfo(settings.app_timezone)
 
 
 def now_py() -> datetime:
@@ -272,6 +274,8 @@ class SprintItem(Base):
 class ReleaseItem(Base):
     __tablename__ = "release_items"
     __table_args__ = (
+        Index("ix_release_items_issue_key", "issue_key"),
+        Index("ix_release_items_celula_sprint", "celula_id", "sprint_id"),
         UniqueConstraint("issue_key", name="uq_release_items_issue_key"),
     )
 
@@ -335,6 +339,14 @@ class ReleaseItemComment(Base):
 
 class Task(Base):
     __tablename__ = "tasks"
+    __table_args__ = (
+        Index("ix_tasks_parent_id", "parent_id"),
+        Index("ix_tasks_estado", "estado"),
+        Index("ix_tasks_fecha_vencimiento", "fecha_vencimiento"),
+        Index("ix_tasks_celula_sprint", "celula_id", "sprint_id"),
+        Index("ix_tasks_sprint_id", "sprint_id"),
+        Index("ix_tasks_assignee_persona_id", "assignee_persona_id"),
+    )
 
     id = Column(Integer, primary_key=True)
     celula_id = Column(Integer, ForeignKey("celulas.id"), nullable=True)

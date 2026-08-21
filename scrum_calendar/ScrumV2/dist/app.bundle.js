@@ -150,13 +150,38 @@
       window.location.href = "index.html";
     }
   }
+  const getDateTimeInTimezone = (timeZone, sourceDate = new Date()) => {
+    try {
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: timeZone || "America/Asuncion",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23",
+      }).formatToParts(sourceDate);
+      const value = (type, fallback) => parts.find((part) => part.type === type)?.value || fallback;
+      return new Date(
+        Number(value("year", "1970")),
+        Number(value("month", "01")) - 1,
+        Number(value("day", "01")),
+        Number(value("hour", "00")),
+        Number(value("minute", "00")),
+        Number(value("second", "00")),
+      );
+    } catch {
+      return new Date(sourceDate.getTime());
+    }
+  };
   const getToday = () => {
     if (state.serverToday instanceof Date && !Number.isNaN(state.serverToday.valueOf())) {
       const copy = new Date(state.serverToday.getTime());
       copy.setHours(0, 0, 0, 0);
       return copy;
     }
-    const today = new Date();
+    const today = getDateTimeInTimezone(state.serverTimezone || "America/Asuncion");
     today.setHours(0, 0, 0, 0);
     return today;
   };
@@ -165,7 +190,7 @@
     if (state.serverNow instanceof Date && !Number.isNaN(state.serverNow.valueOf())) {
       return new Date(state.serverNow.getTime());
     }
-    return new Date();
+    return getDateTimeInTimezone(state.serverTimezone || "America/Asuncion");
   };
 
   const toggle = qs("#menu-toggle");
