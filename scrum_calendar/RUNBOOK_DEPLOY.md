@@ -204,9 +204,10 @@ mkdir -p /tmp/scrum_runtime_deploy
 cp Dockerfile README.md requirements.txt docker-compose.yml main.py .env.example /tmp/scrum_runtime_deploy/
 cp -f Reportes_Celulas.md PROJECT_CONTEXT.md RUNBOOK_DEPLOY.md MODULE_MAP.md /tmp/scrum_runtime_deploy/ 2>/dev/null || true
 
-mkdir -p /tmp/scrum_runtime_deploy/api /tmp/scrum_runtime_deploy/config /tmp/scrum_runtime_deploy/core /tmp/scrum_runtime_deploy/data /tmp/scrum_runtime_deploy/scripts /tmp/scrum_runtime_deploy/tests /tmp/scrum_runtime_deploy/ScrumV2
+mkdir -p /tmp/scrum_runtime_deploy/api /tmp/scrum_runtime_deploy/app /tmp/scrum_runtime_deploy/config /tmp/scrum_runtime_deploy/core /tmp/scrum_runtime_deploy/data /tmp/scrum_runtime_deploy/scripts /tmp/scrum_runtime_deploy/tests /tmp/scrum_runtime_deploy/ScrumV2
 
 cp api/*.py /tmp/scrum_runtime_deploy/api/ 2>/dev/null || true
+cp -R app/* /tmp/scrum_runtime_deploy/app/
 cp config/*.py /tmp/scrum_runtime_deploy/config/ 2>/dev/null || true
 cp core/*.py /tmp/scrum_runtime_deploy/core/ 2>/dev/null || true
 cp data/*.py /tmp/scrum_runtime_deploy/data/ 2>/dev/null || true
