@@ -16284,38 +16284,28 @@
       const normalized = normalizeText(value);
       return normalized.includes("finalizada") || normalized.includes("finalizado") || normalized.includes("cancelada");
     };
-    const getReleasePlanningDate = (item) =>
-      parseDateOnly(item?.start_date || "") ||
-      parseDateOnly(item?.due_date || "") ||
-      parseDateOnly(item?.end_date || "");
+    const getReleasePlanningDate = (item) => parseDateOnly(item?.due_date || "");
     const getReleaseHighlightMeta = (item) => {
       if (!item || isClosedReleaseStatus(item.status)) return null;
       const dateValue = getReleasePlanningDate(item);
-      if (!dateValue) {
-        return {
-          className: "is-upcoming",
-          label: "Sin fecha",
-          diffDays: Number.POSITIVE_INFINITY,
-          dateValue: new Date(8640000000000000),
-        };
-      }
+      if (!dateValue) return null;
       const diffDays = Math.round((dateValue - getToday()) / 86400000);
       if (diffDays < 0) {
-        return { className: "is-overdue", label: `Atrasado ${Math.abs(diffDays)}d`, diffDays, dateValue };
-      }
-      if (diffDays === 0) return { className: "is-today", label: "Hoy", diffDays, dateValue };
-      if (diffDays <= 7) {
+        const days = Math.abs(diffDays);
         return {
-          className: "is-soon",
-          label: diffDays === 1 ? "Mañana" : `En ${diffDays}d`,
+          className: "is-overdue",
+          label: `Atrasado ${days} ${days === 1 ? "día" : "días"}`,
           diffDays,
           dateValue,
         };
       }
-      if (diffDays <= 14) {
-        return { className: "is-upcoming", label: `Próx. ${diffDays}d`, diffDays, dateValue };
-      }
-      return { className: "is-upcoming", label: "Planificado", diffDays, dateValue };
+      if (diffDays === 0) return { className: "is-today", label: "Implementación hoy", diffDays, dateValue };
+      return {
+        className: diffDays <= 7 ? "is-soon" : "is-upcoming",
+        label: `Faltan ${diffDays} ${diffDays === 1 ? "día" : "días"}`,
+        diffDays,
+        dateValue,
+      };
     };
     const buildReleaseSummaryCell = (row) => {
       const wrap = document.createElement("div");
