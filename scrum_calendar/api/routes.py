@@ -262,13 +262,18 @@ def _enforce_login_rate_limit(request: Request, username: str) -> str:
     )
 
 
-def set_session_cookie(response: Response, token: str) -> None:
+def _request_is_secure(request: Request) -> bool:
+    forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",", 1)[0].strip().lower()
+    return forwarded_proto == "https" or request.url.scheme == "https"
+
+
+def set_session_cookie(response: Response, token: str, request: Request) -> None:
     response.set_cookie(
         SESSION_COOKIE,
         token,
         httponly=True,
         samesite="lax",
-        secure=settings.cookie_secure,
+        secure=settings.cookie_secure and _request_is_secure(request),
         max_age=SESSION_DAYS * 24 * 3600,
         path="/",
     )
@@ -450,7 +455,7 @@ def login(payload: AuthRequest, response: Response, request: Request, db: Sessio
     db.add(session)
     db.commit()
     log_security_event("login_success", "INFO", username=username, user_id=user.id, ip=_request_ip(request))
-    set_session_cookie(response, token)
+    set_session_cookie(response, token, request)
     return user
 
 
@@ -505,7 +510,7 @@ def login_form(
     log_security_event("login_success", "INFO", username=normalized, user_id=user.id, ip=_request_ip(request))
 
     redirect = RedirectResponse(url="/ui/index.html", status_code=303)
-    set_session_cookie(redirect, token)
+    set_session_cookie(redirect, token, request)
     return redirect
 
 
@@ -563,7 +568,7 @@ def bootstrap(payload: AuthRequest, response: Response, request: Request, db: Se
     db.add(session)
     db.commit()
     log_security_event("bootstrap_success", "WARNING", username=username, user_id=user.id, ip=_request_ip(request))
-    set_session_cookie(response, token)
+    set_session_cookie(response, token, request)
     return user
 
 
