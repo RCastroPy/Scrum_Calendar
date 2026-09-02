@@ -13,6 +13,7 @@ Conectarme a Server
 
 # Local DB backups (never commit)
 scrum_calendar/db_backups/
+scrum_calendar/backups/
 
 # Environment files (never commit secrets)
 scrum_calendar/.env

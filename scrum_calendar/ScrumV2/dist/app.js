@@ -13,6 +13,7 @@
     )
   );
   let API_BASE = API_CANDIDATES[0];
+  const CONFIGURED_WS_BASE = String(window.SCRUMIA_WS_BASE || "").replace(/\/$/, "");
   const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
   let csrfToken = "";
 
@@ -604,7 +605,7 @@
         // ignore
       }
     }
-    const wsBase = API_BASE.replace(/^http/, "ws");
+    const wsBase = CONFIGURED_WS_BASE || API_BASE.replace(/^http/, "ws");
     const wsUrl = `${wsBase}/ws/retros/${encodeURIComponent(token)}`;
     const socket = new WebSocket(wsUrl);
     socket.addEventListener("open", () => {
@@ -678,7 +679,7 @@
         // ignore
       }
     }
-    const wsBase = API_BASE.replace(/^http/, "ws");
+    const wsBase = CONFIGURED_WS_BASE || API_BASE.replace(/^http/, "ws");
     const wsUrl = `${wsBase}/ws/poker/${encodeURIComponent(token)}`;
     const socket = new WebSocket(wsUrl);
     const pingTimer = window.setInterval(() => {

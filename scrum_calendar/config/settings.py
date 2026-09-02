@@ -6,6 +6,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     # Keep non-sensitive default in code; real credentials must come from env.
     database_url: str = "postgresql+psycopg2://localhost:5432/scrum_calendar"
+    database_auto_create: bool = True
+    database_ssl_require: bool = False
+    database_pool_size: int = 5
+    database_max_overflow: int = 5
+    database_pool_recycle_seconds: int = 300
     app_env: str = "development"
     app_timezone: str = "America/Asuncion"
     cors_origins_raw: str = "http://localhost:8000"
@@ -54,6 +59,10 @@ class Settings(BaseSettings):
     @property
     def csrf_enabled(self) -> bool:
         return bool(self.csrf_protection_enabled or self.app_env.strip().lower() == "production")
+
+    @property
+    def is_production(self) -> bool:
+        return self.app_env.strip().lower() == "production"
 
 
 settings = Settings()

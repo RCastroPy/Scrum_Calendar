@@ -37,3 +37,9 @@
   - Ejecutar `./refresh-ui.sh` y recargar el navegador (Cmd+Shift+R).
 - Para cambios backend o dependencias:
   - Ejecutar `docker compose up -d --build`.
+
+## Despliegue cloud
+- Arquitectura: GitHub -> Vercel (frontend) + Render (FastAPI/WebSockets) + Supabase (PostgreSQL).
+- Guia completa: `DEPLOY_VERCEL_RENDER_SUPABASE.md`.
+- Build local de Vercel: `python scripts/build_vercel_frontend.py`.
+- Preparar esquema remoto: `python scripts/prepare_database.py` con `DATABASE_URL` configurada.

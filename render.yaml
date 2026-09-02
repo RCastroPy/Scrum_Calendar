@@ -1,0 +1,47 @@
+services:
+  - type: web
+    name: scrumia-api-rcastropy
+    runtime: docker
+    plan: free
+    region: virginia
+    rootDir: scrum_calendar
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: >-
+      /bin/sh -c 'python scripts/prepare_database.py && exec uvicorn main:app
+      --host 0.0.0.0 --port ${PORT:-10000}'
+    healthCheckPath: /health
+    maxShutdownDelaySeconds: 30
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: APP_ENV
+        value: production
+      - key: APP_TIMEZONE
+        value: America/Asuncion
+      - key: DATABASE_AUTO_CREATE
+        value: "false"
+      - key: DATABASE_SSL_REQUIRE
+        value: "true"
+      - key: DATABASE_POOL_SIZE
+        value: "5"
+      - key: DATABASE_MAX_OVERFLOW
+        value: "5"
+      - key: DATABASE_POOL_RECYCLE_SECONDS
+        value: "300"
+      - key: CORS_ORIGINS_RAW
+        value: https://scrumia-rcastropy.vercel.app
+      - key: CORS_ALLOW_CREDENTIALS
+        value: "true"
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
+      - key: CSRF_PROTECTION_ENABLED
+        value: "true"
+      - key: DISABLE_DOCS_IN_PRODUCTION
+        value: "true"
+      - key: LOGIN_RATE_LIMIT_ENABLED
+        value: "true"
+      - key: SECURITY_AUDIT_LOG_ENABLED
+        value: "true"
+      - key: PYTHONUNBUFFERED
+        value: "1"
