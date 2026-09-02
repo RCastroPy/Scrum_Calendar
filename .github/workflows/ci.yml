@@ -48,6 +48,20 @@ jobs:
           node --check frontend/app.js
           node --check ScrumV2/dist/app.js
           python scripts/check_frontend_sync.py
+          python scripts/build_vercel_frontend.py
+          test -f .vercel-static/ui/runtime-config.js
+
+      - name: Validate cloud deployment configuration
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import yaml
+
+          json.loads(Path("vercel.json").read_text(encoding="utf-8"))
+          render = yaml.safe_load(Path("../render.yaml").read_text(encoding="utf-8"))
+          assert render.get("services"), "render.yaml must define at least one service"
+          PY
 
       - name: Check whitespace errors
         run: git diff --check

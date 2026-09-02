@@ -16,3 +16,5 @@ backups
 tmp_*
 .tmp_ref
 node_modules
+.vercel
+.vercel-static

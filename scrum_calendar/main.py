@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
+from sqlalchemy import text
 from sqlalchemy.orm import joinedload
 
 from api.routes import router
@@ -185,6 +186,7 @@ async def auth_middleware(request: Request, call_next):
         return _apply_security_headers(response)
     if (
         path == "/"
+        or path == "/health"
         or path.startswith("/auth")
         or path.startswith("/public/")
         or path.startswith("/docs")
@@ -281,8 +283,16 @@ def healthcheck():
     return {"status": "ok"}
 
 
+@app.get("/health")
+def readiness_check():
+    with engine.connect() as connection:
+        connection.execute(text("SELECT 1"))
+    return {"status": "ok", "database": "ok"}
+
+
 def startup():
-    Base.metadata.create_all(bind=engine)
+    if settings.database_auto_create:
+        Base.metadata.create_all(bind=engine)
 app.include_router(router)
 app.include_router(tasks_router)
 app.include_router(daily_router)

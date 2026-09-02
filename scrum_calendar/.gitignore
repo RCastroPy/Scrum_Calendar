@@ -6,3 +6,5 @@ Conectarme a Server
 .env
 .env.local
 .env.production
+.vercel-static/
+.vercel/

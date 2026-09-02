@@ -1,0 +1,39 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "python scripts/build_vercel_frontend.py",
+  "outputDirectory": ".vercel-static",
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/ui/index.html",
+      "permanent": false
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/((?!ui(?:/|$)).*)",
+      "destination": "https://scrumia-api-rcastropy.onrender.com/$1"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/ui/(.*).html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
+      "source": "/ui/app.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    }
+  ]
+}
