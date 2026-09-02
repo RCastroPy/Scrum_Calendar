@@ -19,6 +19,7 @@ scrum_calendar/backups/
 scrum_calendar/.env
 scrum_calendar/.env.local
 scrum_calendar/.env.production
+scrum_calendar/.env.supabase.local
 
 # Local debug artifacts
 scrum_calendar/.tmp_ref/
