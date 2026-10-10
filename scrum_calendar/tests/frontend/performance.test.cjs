@@ -87,3 +87,10 @@ test('Failed bulk date retains selection and cache for retry', async () => {
   assert.equal(selected.size, 2);
   assert.equal(saved.length, 0);
 });
+
+test('Task table no longer configures points, hours or importance as columns', () => {
+  const columns = section('    const DEFAULT_COLUMNS = [', '    const COLUMN_LABEL =');
+  for (const key of ['"puntos"', '"horas_estimadas"', '"importante"']) {
+    assert.equal(columns.includes(key), false, `${key} must not appear in the task-column configuration`);
+  }
+});
