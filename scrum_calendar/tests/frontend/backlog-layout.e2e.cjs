@@ -40,12 +40,25 @@ with SessionLocal() as db:
       const browser = await engine.launch({ headless: true });
       try {
         const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+        await context.addInitScript(() => {
+          localStorage.setItem('scrum_calendar_tasks_columns_v4', JSON.stringify({
+            order: ['puntos', 'titulo', 'horas_estimadas', 'estado', 'importante'],
+            hidden: {}, widths: {},
+          }));
+        });
         await context.addCookies([{name: 'scrum_session', value: token, domain: 'localhost', path: '/', httpOnly: true, sameSite: 'Lax'}]);
         const page = await context.newPage();
         const errors = [];
         page.on('pageerror', error => errors.push(error.message));
         await page.goto(url);
         await page.locator('#tasks-backlog-table tbody tr[data-task-id]').first().waitFor();
+        for (const key of ['puntos', 'horas_estimadas', 'importante']) {
+          assert.equal(await page.locator(`#tasks-backlog-table thead th[data-col-key="${key}"]`).count(), 0);
+        }
+        await page.locator('#tasks-columns-btn').click();
+        const configuredKeys = await page.locator('#tasks-columns-list [data-col]').evaluateAll(nodes => nodes.map(node => node.dataset.col));
+        assert.equal(configuredKeys.some(key => ['puntos', 'horas_estimadas', 'importante'].includes(key)), false);
+        await page.locator('#tasks-columns-close').click();
         await geometry(page, `${name}: desktop`);
         for (const width of [1024, 768, 1440]) {
           await page.setViewportSize({ width, height: 900 });

@@ -10146,9 +10146,6 @@
       "end_date",
       "fecha_vencimiento",
       "dias_habiles",
-      "puntos",
-      "horas_estimadas",
-      "importante",
     ];
     const COLUMN_LABEL = {
       titulo: "Tarea",
@@ -10162,9 +10159,6 @@
       end_date: "End Date",
       fecha_vencimiento: "Vencimiento",
       dias_habiles: "Dias",
-      puntos: "Puntos",
-      horas_estimadas: "Horas",
-      importante: "Importante",
     };
     const TASK_FILTERS_KEY = "scrum_calendar_tasks_filters_v2";
     const DEFAULT_TASKS_ADVANCED_FILTERS = {
@@ -13059,9 +13053,6 @@
         end_date: 150,
         fecha_vencimiento: 150,
         dias_habiles: 140,
-        puntos: 120,
-        horas_estimadas: 120,
-        importante: 120,
       };
       const resolveWidthPx = (key) => {
         const stored = Number(getColumnWidth(key) || 0);
