@@ -10818,7 +10818,9 @@
           [10, 20, 25, 50, 100, -1],
           [10, 20, 25, 50, 100, "Todos"],
         ],
-        scrollX: true,
+        // Keep header and rows in the same table so they share one column layout.
+        scrollX: false,
+        dom: '<"row"<"col-sm-12"l>><"tasks-notion-scroll"t><"row"<"col-sm-12 col-md-5"i><"col-sm-12 col-md-7"p>>',
         language: {
           decimal: ",",
           thousands: ".",
@@ -10843,17 +10845,8 @@
         const raw = Number(table.dataset.minWidth || 0);
         if (!Number.isFinite(raw) || raw <= 0) return;
         const width = `${Math.round(raw)}px`;
-        const $wrapper = $table.closest(".dataTables_wrapper");
         $table.css("width", width);
         $table.css("min-width", width);
-        $wrapper.find(".dataTables_scrollHeadInner").css("width", width);
-        $wrapper.find(".dataTables_scrollHeadInner").css("min-width", width);
-        $wrapper.find(".dataTables_scrollHeadInner table").css("width", width);
-        $wrapper.find(".dataTables_scrollHeadInner table").css("min-width", width);
-        $wrapper.find(".dataTables_scrollBody table").css("width", width);
-        $wrapper.find(".dataTables_scrollBody table").css("min-width", width);
-        $wrapper.find(".dataTable").css("width", width);
-        $wrapper.find(".dataTable").css("min-width", width);
       };
       $table.on("draw.dt column-sizing.dt", applyBacklogTableMinWidth);
       applyBacklogTableMinWidth();
@@ -10910,7 +10903,7 @@
       const getCandidates = () => {
         const list = [];
         if (useBacklogDataTable) {
-          const dtBody = wrap.querySelector(".dataTables_scrollBody");
+          const dtBody = wrap.querySelector(".tasks-notion-scroll, .dataTables_scrollBody");
           if (dtBody) list.push(dtBody);
         }
         list.push(baseScroll);
@@ -13826,7 +13819,7 @@
 	      updateTaskSelectionUi();
 	      if (useBacklogDataTable) {
 	        initBacklogDataTable(table, visibleColumns);
-          attachBacklogHorizontalBar(wrap, null, true);
+          attachBacklogHorizontalBar(wrap, wrap.querySelector(".tasks-notion-scroll"), true);
 	      } else {
 	        attachBacklogHorizontalBar(wrap, scroll, false);
 	      }
@@ -14957,7 +14950,7 @@
           return "";
         }
       })();
-      const dtBodyBefore = backlogList?.querySelector(".dataTables_scrollBody");
+      const dtBodyBefore = backlogList?.querySelector(".tasks-notion-scroll, .dataTables_scrollBody");
       const backlogScrollLeft = Number(dtBodyBefore?.scrollLeft || 0);
       const backlogScrollTop = Number(dtBodyBefore?.scrollTop || 0);
       const filtered = applyFilters(state.tasksCache || []);
@@ -14993,7 +14986,7 @@
             // ignore
           }
         });
-        const dtBodyAfter = backlogList?.querySelector(".dataTables_scrollBody");
+        const dtBodyAfter = backlogList?.querySelector(".tasks-notion-scroll, .dataTables_scrollBody");
         if (dtBodyAfter) {
           dtBodyAfter.scrollLeft = backlogScrollLeft;
           dtBodyAfter.scrollTop = backlogScrollTop;
@@ -16006,12 +15999,11 @@
               const dx = e.clientX - startX;
               const next = Math.max(min, Math.round(startW + dx));
               applyWidth(next);
-              if (!isDataTableActive) {
-                if (col) col.style.width = `${next}px`;
-                const nextTableW = Math.max(320, Math.round(startTableW + dx));
-                table.style.width = `${nextTableW}px`;
-                table.style.minWidth = `${nextTableW}px`;
-              }
+              if (col) col.style.width = `${next}px`;
+              const nextTableW = Math.max(320, Math.round(startTableW + next - startW));
+              table.style.width = `${nextTableW}px`;
+              table.style.minWidth = `${nextTableW}px`;
+              table.dataset.minWidth = String(nextTableW);
             };
             const onUp = (e) => {
               document.removeEventListener("pointermove", onMove, true);
