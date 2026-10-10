@@ -12947,11 +12947,10 @@
         value === "" ||
         (typeof value === "number" && !Number.isFinite(value));
       const statusRank = Object.fromEntries(STATUS_ORDER.map((key, idx) => [key, idx]));
-      const priorityRank = {
-        urgente: 1,
-        alta: 2,
-        media: 3,
-        baja: 4,
+      const priorityRank = { urgente: 1, alta: 2, media: 3, baja: 4 };
+      const resolvePriorityRank = (value) => {
+        const key = String(value ?? "").trim().toLocaleLowerCase("es");
+        return Object.prototype.hasOwnProperty.call(priorityRank, key) ? priorityRank[key] : null;
       };
       const setCellOrder = (td, value) => {
         td.dataset.order = isMissingSortValue(value) ? "" : String(value);
@@ -13332,7 +13331,7 @@
         };
         if (key === "titulo") return normalizeText(task.titulo || "");
         if (key === "estado") return statusRank[String(task.estado || "backlog").toLowerCase()] ?? 0;
-        if (key === "prioridad") return priorityRank[String(task.prioridad || "media").toLowerCase()] ?? 0;
+        if (key === "prioridad") return resolvePriorityRank(task.prioridad);
         if (key === "tipo") return normalizeText(task.segmento || "");
         if (key === "etiquetas") return normalizeText(task.etiquetas || "");
         if (key === "assignee_persona_id") {
@@ -13578,7 +13577,7 @@
           }
           if (key === "prioridad") {
             td.appendChild(buildPrioritySelect(task));
-            setCellOrder(td, priorityRank[String(task.prioridad || "media").toLowerCase()] ?? 0);
+            setCellOrder(td, resolvePriorityRank(task.prioridad));
             return td;
           }
           if (key === "tipo") {
@@ -14304,11 +14303,10 @@
         value === "" ||
         (typeof value === "number" && !Number.isFinite(value));
       const statusRank = Object.fromEntries(STATUS_ORDER.map((key, idx) => [key, idx]));
-      const priorityRank = {
-        urgente: 1,
-        alta: 2,
-        media: 3,
-        baja: 4,
+      const priorityRank = { urgente: 1, alta: 2, media: 3, baja: 4 };
+      const resolvePriorityRank = (value) => {
+        const key = String(value ?? "").trim().toLocaleLowerCase("es");
+        return Object.prototype.hasOwnProperty.call(priorityRank, key) ? priorityRank[key] : null;
       };
       const resolveBacklogSortValue = (task, key) => {
         const resolveDateValue = (currentTask, field, visiting = new Set()) => {
@@ -14330,7 +14328,7 @@
         };
         if (key === "titulo") return normalizeText(task.titulo || "");
         if (key === "estado") return statusRank[String(task.estado || "backlog").toLowerCase()] ?? 0;
-        if (key === "prioridad") return priorityRank[String(task.prioridad || "media").toLowerCase()] ?? 0;
+        if (key === "prioridad") return resolvePriorityRank(task.prioridad);
         if (key === "tipo") return normalizeText(task.tipo || "");
         if (key === "etiquetas") return normalizeText(task.etiquetas || "");
         if (key === "assignee_persona_id") {
