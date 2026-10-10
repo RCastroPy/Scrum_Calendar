@@ -479,6 +479,11 @@ class TaskUpdate(BaseModel):
     importante: Optional[bool] = None
 
 
+class TaskBulkDueDateUpdate(BaseModel):
+    task_ids: List[int] = Field(min_length=1, max_length=1000)
+    fecha_vencimiento: Optional[date]
+
+
 class TaskOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

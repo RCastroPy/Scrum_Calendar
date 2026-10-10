@@ -29,7 +29,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.websockets import WebSocketState
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from api.schemas import (
     AuthRequest,
@@ -2825,7 +2825,7 @@ def desactivar_celula(
 
 @router.get("/personas", response_model=List[PersonaOut])
 def listar_personas(db: Session = Depends(get_db)):
-    return db.query(Persona).order_by(Persona.id).all()
+    return db.query(Persona).options(selectinload(Persona.celulas)).order_by(Persona.id).all()
 
 
 @router.post("/personas", response_model=PersonaOut, status_code=status.HTTP_201_CREATED)
@@ -3876,17 +3876,22 @@ def compras_historico_delete_all(
     return None
 
 
-@router.get("/sprints/{sprint_id}/capacidad", response_model=CapacidadSprintOut)
-def obtener_capacidad(sprint_id: int, db: Session = Depends(get_db)):
-    sprint = db.get(Sprint, sprint_id)
-    if not sprint:
+def _cargar_capacidades_sprints(db: Session, sprint_ids: List[int]) -> list[dict]:
+    ids = list(dict.fromkeys(sprint_ids))
+    sprints = db.query(Sprint).filter(Sprint.id.in_(ids)).all()
+    by_id = {sprint.id: sprint for sprint in sprints}
+    if len(by_id) != len(ids):
         raise HTTPException(status_code=404, detail="Sprint no encontrado")
-
-    personas = (
-        db.query(Persona)
+    if not sprints:
+        return []
+    cell_ids = {sprint.celula_id for sprint in sprints}
+    start = min(sprint.fecha_inicio for sprint in sprints)
+    end = max(sprint.fecha_fin for sprint in sprints)
+    persona_rows = (
+        db.query(Persona, persona_celulas.c.celula_id)
         .join(persona_celulas, persona_celulas.c.persona_id == Persona.id)
         .filter(
-            persona_celulas.c.celula_id == sprint.celula_id,
+            persona_celulas.c.celula_id.in_(cell_ids),
             Persona.activo.is_(True),
         )
         .order_by(Persona.id)
@@ -3897,29 +3902,58 @@ def obtener_capacidad(sprint_id: int, db: Session = Depends(get_db)):
         db.query(Feriado)
         .filter(
             Feriado.activo.is_(True),
-            Feriado.fecha >= sprint.fecha_inicio,
-            Feriado.fecha <= sprint.fecha_fin,
-            ((Feriado.celula_id.is_(None)) | (Feriado.celula_id == sprint.celula_id)),
+            Feriado.fecha >= start,
+            Feriado.fecha <= end,
+            ((Feriado.celula_id.is_(None)) | Feriado.celula_id.in_(cell_ids)),
         )
         .all()
     )
-    feriados_set = {feriado.fecha for feriado in feriados}
-    dias_laborales = dias_habiles(sprint.fecha_inicio, sprint.fecha_fin, feriados_set)
-
-    persona_ids = [persona.id for persona in personas]
+    personas_by_cell = {}
+    for persona, cell_id in persona_rows:
+        personas_by_cell.setdefault(cell_id, []).append(persona)
+    persona_ids = {persona.id for persona, _ in persona_rows}
     eventos = (
         db.query(Evento)
         .options(joinedload(Evento.tipo_evento))
         .filter(
             Evento.persona_id.in_(persona_ids) if persona_ids else False,
-            Evento.fecha_inicio <= sprint.fecha_fin,
-            Evento.fecha_fin >= sprint.fecha_inicio,
+            Evento.fecha_inicio <= end,
+            Evento.fecha_fin >= start,
         )
         .all()
     )
+    return [
+        _calcular_capacidad_cargada(
+            by_id[sprint_id], personas_by_cell.get(by_id[sprint_id].celula_id, []), feriados, eventos
+        )
+        for sprint_id in ids
+    ]
+
+
+@router.get("/sprints/capacidades", response_model=List[CapacidadSprintOut])
+def obtener_capacidades(
+    sprint_ids: List[int] = Query(..., min_length=1, max_length=200),
+    db: Session = Depends(get_db),
+):
+    return _cargar_capacidades_sprints(db, sprint_ids)
+
+
+@router.get("/sprints/{sprint_id}/capacidad", response_model=CapacidadSprintOut)
+def obtener_capacidad(sprint_id: int, db: Session = Depends(get_db)):
+    return _cargar_capacidades_sprints(db, [sprint_id])[0]
+
+
+def _calcular_capacidad_cargada(sprint, personas, feriados, eventos):
+    feriados_set = {
+        feriado.fecha for feriado in feriados
+        if sprint.fecha_inicio <= feriado.fecha <= sprint.fecha_fin
+        and (feriado.celula_id is None or feriado.celula_id == sprint.celula_id)
+    }
+    dias_laborales = dias_habiles(sprint.fecha_inicio, sprint.fecha_fin, feriados_set)
     eventos_por_persona: Dict[int, List[Evento]] = {}
     for evento in eventos:
-        eventos_por_persona.setdefault(evento.persona_id, []).append(evento)
+        if evento.fecha_inicio <= sprint.fecha_fin and evento.fecha_fin >= sprint.fecha_inicio:
+            eventos_por_persona.setdefault(evento.persona_id, []).append(evento)
 
     detalle_por_persona = []
     capacidad_teorica_total = 0.0
@@ -3977,7 +4011,7 @@ def obtener_capacidad(sprint_id: int, db: Session = Depends(get_db)):
     estado = clasificar_estado(porcentaje_total)
 
     return {
-        "sprint_id": sprint_id,
+        "sprint_id": sprint.id,
         "capacidad_teorica": capacidad_teorica_total,
         "capacidad_real": capacidad_real_total,
         "capacidad_teorica_dias": capacidad_teorica_total / HORAS_POR_DIA,

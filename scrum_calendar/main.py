@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from pathlib import Path
 from sqlalchemy import text
 from sqlalchemy.orm import joinedload
@@ -166,7 +167,7 @@ async def auth_middleware(request: Request, call_next):
             response.headers["Cache-Control"] = "no-store"
             return _apply_security_headers(response)
         token = request.cookies.get("scrum_session")
-        user = _load_valid_session(token)
+        user = await run_in_threadpool(_load_valid_session, token)
         if not user:
             log_security_event(
                 "ui_auth_rejected",
@@ -211,7 +212,7 @@ async def auth_middleware(request: Request, call_next):
             reason="missing_token",
         )
         return _apply_security_headers(JSONResponse(status_code=401, content={"detail": "No autenticado"}))
-    user = _load_valid_session(token)
+    user = await run_in_threadpool(_load_valid_session, token)
     if not user:
         log_security_event(
             "api_auth_rejected",
