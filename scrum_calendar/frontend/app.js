@@ -20262,11 +20262,14 @@
             if (!confirm(`Eliminar sprint ${row.nombre}?`)) return;
             try {
               const res = await fetchWithFallback(`/sprints/${row.id}`, { method: "DELETE" });
-              if (!res.ok) throw new Error("No se pudo eliminar");
+              if (!res.ok) {
+                const error = await res.json().catch(() => ({}));
+                throw new Error(error.detail || "No se pudo eliminar el sprint.");
+              }
               setAdminStatus("Sprint eliminado.", "ok");
               await reloadAll();
-            } catch {
-              setAdminStatus("Error al eliminar sprint.", "error");
+            } catch (err) {
+              setAdminStatus(err.message || "Error al eliminar sprint.", "error");
             }
           },
         },

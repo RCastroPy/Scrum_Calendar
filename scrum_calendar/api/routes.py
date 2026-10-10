@@ -3053,18 +3053,31 @@ def eliminar_sprint(
     sprint = db.get(Sprint, sprint_id)
     if not sprint:
         raise HTTPException(status_code=404, detail="Sprint no encontrado")
-    db.query(ReleaseItem).filter(
-        ReleaseItem.sprint_id == sprint_id,
-        ReleaseItem.release_tipo == "tarea",
-    ).delete(synchronize_session=False)
-    db.query(ReleaseImportItem).filter(
-        ReleaseImportItem.sprint_id == sprint_id,
-        ReleaseImportItem.release_tipo == "tarea",
-    ).delete(synchronize_session=False)
-    db.query(Evento).filter(Evento.sprint_id == sprint_id).delete(synchronize_session=False)
-    db.delete(sprint)
+    if db.query(Retrospective.id).filter(Retrospective.sprint_id == sprint_id).first():
+        raise HTTPException(
+            status_code=409,
+            detail="No se puede eliminar este sprint porque tiene una retrospectiva vinculada.",
+        )
+    db.query(Task).filter(Task.sprint_id == sprint_id).update(
+        {Task.sprint_id: None}, synchronize_session=False
+    )
+    db.query(ReleaseItem).filter(ReleaseItem.sprint_id == sprint_id).update(
+        {ReleaseItem.sprint_id: None}, synchronize_session=False
+    )
+    db.query(ReleaseImportItem).filter(ReleaseImportItem.sprint_id == sprint_id).update(
+        {ReleaseImportItem.sprint_id: None}, synchronize_session=False
+    )
+    db.query(Evento).filter(Evento.sprint_id == sprint_id).update(
+        {Evento.sprint_id: None}, synchronize_session=False
+    )
+    db.query(SprintItem).filter(SprintItem.sprint_id == sprint_id).delete(synchronize_session=False)
+    db.query(SprintImportItem).filter(SprintImportItem.sprint_id == sprint_id).delete(
+        synchronize_session=False
+    )
+    deleted_sprint = SprintOut.model_validate(sprint)
+    db.query(Sprint).filter(Sprint.id == sprint_id).delete(synchronize_session=False)
     db.commit()
-    return sprint
+    return deleted_sprint
 
 
 @router.get("/quarters", response_model=List[QuarterOptionOut])
