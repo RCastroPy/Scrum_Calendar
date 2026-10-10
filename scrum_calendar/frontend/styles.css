@@ -6931,6 +6931,48 @@ body.theme-dark .tasks-notion-wrap .dataTables_scrollBody::-webkit-scrollbar-thu
   vertical-align: middle;
 }
 
+.tasks-bulk-due-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 0 0 10px;
+}
+.tasks-bulk-due-count {
+  margin-right: auto;
+  color: var(--bs-secondary-color, #6c757d);
+  font-weight: 600;
+}
+.tasks-bulk-due-bar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--bs-secondary-color, #6c757d);
+  font-size: 13px;
+}
+.tasks-bulk-due-bar input[type="date"] {
+  min-height: 31px;
+  padding: 3px 7px;
+  border: 1px solid var(--bs-border-color, #ced4da);
+  border-radius: 4px;
+  background: var(--bs-body-bg, #fff);
+  color: var(--bs-body-color, #212529);
+}
+.tasks-notion-table .tasks-select-column {
+  width: 42px;
+  min-width: 42px;
+  max-width: 42px;
+  text-align: center;
+}
+.tasks-notion-table .tasks-select-column input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
 .tasks-notion-table th {
   position: relative;
   user-select: none;
