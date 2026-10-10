@@ -6,6 +6,7 @@ from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from api.schemas import (
+    TaskBulkDueDateUpdate,
     TaskCommentCreate,
     TaskCommentOut,
     TaskCommentUpdate,
@@ -248,6 +249,27 @@ def eliminar_task_segment(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.post("/tasks/bulk-due-date", response_model=List[TaskOut])
+def actualizar_fechas_tareas(
+    payload: TaskBulkDueDateUpdate,
+    db: Session = Depends(get_db),
+    scrum_session: Optional[str] = Cookie(default=None),
+):
+    user = require_user(db, scrum_session)
+    ids = list(dict.fromkeys(payload.task_ids))
+    tasks = db.query(Task).filter(Task.id.in_(ids)).all()
+    if len(tasks) != len(ids):
+        raise HTTPException(status_code=404, detail="Una o mas tareas no existen")
+    for task in tasks:
+        require_task_write_access(user, task)
+    for task in tasks:
+        task.fecha_vencimiento = payload.fecha_vencimiento
+    db.flush()
+    result = [TaskOut.model_validate(task) for task in tasks]
+    db.commit()
+    return result
+
+
 @router.post("/tasks/overdue-to-today", response_model=List[TaskOut])
 def actualizar_tareas_vencidas_a_hoy(
     db: Session = Depends(get_db),
@@ -270,10 +292,10 @@ def actualizar_tareas_vencidas_a_hoy(
     # otherwise reapply "doing" to a parent before its overdue children reset.
     reset_overdue_tasks(tasks, business_today)
 
+    db.flush()
+    result = [TaskOut.model_validate(task) for task in tasks]
     db.commit()
-    for task in tasks:
-        db.refresh(task)
-    return tasks
+    return result
 
 
 @router.get("/tasks/{task_id}/ancestors", response_model=List[TaskOut])
