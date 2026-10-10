@@ -1743,36 +1743,37 @@
         prefetchedTaskSegments: taskSegments,
       };
     }
+    const dashboardOnly = Boolean(qs("#dashboard"));
     const usuariosPromise =
-      state.user?.rol === "admin" ? fetchJson("/usuarios").catch(() => []) : Promise.resolve([]);
+      !dashboardOnly && state.user?.rol === "admin" ? fetchJson("/usuarios").catch(() => []) : Promise.resolve([]);
     let releaseItems = [];
     let releaseImportItems = [];
     let releaseItemsSource = "api";
     let releaseItemsFetchError = "";
-    try {
-      const rows = await fetchJson("/release-items");
-      releaseItems = Array.isArray(rows) ? rows : [];
-      saveCachedRows(RELEASE_ITEMS_CACHE_KEY, releaseItems);
-    } catch (err) {
-      releaseItemsSource = "cache";
-      releaseItemsFetchError = err?.message || "No se pudo leer /release-items";
-      console.error("[loadBase] /release-items error:", err);
-      releaseItems = loadCachedRows(RELEASE_ITEMS_CACHE_KEY);
-    }
-    try {
-      const rows = await fetchJson("/import-release-items");
-      releaseImportItems = Array.isArray(rows) ? rows : [];
-      saveCachedRows(RELEASE_IMPORT_ITEMS_CACHE_KEY, releaseImportItems);
-    } catch (err) {
-      console.error("[loadBase] /import-release-items error:", err);
-      releaseImportItems = loadCachedRows(RELEASE_IMPORT_ITEMS_CACHE_KEY);
-    }
-    if (!releaseItems.length && releaseImportItems.length) {
-      releaseItems = normalizeReleaseRowsForUi(releaseImportItems);
-      releaseItemsSource = releaseItemsSource === "api" ? "import-fallback" : `${releaseItemsSource}+import`;
-    }
-    state.releaseItemsSource = releaseItemsSource;
-    state.releaseItemsFetchError = releaseItemsFetchError;
+    const releasesPromise = dashboardOnly ? Promise.resolve() : Promise.all([
+      (async () => {
+        try {
+          const rows = await fetchJson("/release-items");
+          releaseItems = Array.isArray(rows) ? rows : [];
+          saveCachedRows(RELEASE_ITEMS_CACHE_KEY, releaseItems);
+        } catch (err) {
+          releaseItemsSource = "cache";
+          releaseItemsFetchError = err?.message || "No se pudo leer /release-items";
+          console.error("[loadBase] /release-items error:", err);
+          releaseItems = loadCachedRows(RELEASE_ITEMS_CACHE_KEY);
+        }
+      })(),
+      (async () => {
+        try {
+          const rows = await fetchJson("/import-release-items");
+          releaseImportItems = Array.isArray(rows) ? rows : [];
+          saveCachedRows(RELEASE_IMPORT_ITEMS_CACHE_KEY, releaseImportItems);
+        } catch (err) {
+          console.error("[loadBase] /import-release-items error:", err);
+          releaseImportItems = loadCachedRows(RELEASE_IMPORT_ITEMS_CACHE_KEY);
+        }
+      })(),
+    ]);
     const [
       sprints,
       cells,
@@ -1792,12 +1793,19 @@
       fetchJson("/eventos"),
       fetchJson("/eventos-tipo"),
       fetchJson("/feriados"),
-      fetchJson("/sprint-items").catch(() => []),
-      fetchJson("/import-sprint-items").catch(() => []),
-      fetchJson("/quarters").catch(() => []),
+      dashboardOnly ? [] : fetchJson("/sprint-items").catch(() => []),
+      dashboardOnly ? [] : fetchJson("/import-sprint-items").catch(() => []),
+      dashboardOnly ? [] : fetchJson("/quarters").catch(() => []),
       fetchJson("/time").catch(() => null),
       usuariosPromise,
+      releasesPromise,
     ]);
+    if (!releaseItems.length && releaseImportItems.length) {
+      releaseItems = normalizeReleaseRowsForUi(releaseImportItems);
+      releaseItemsSource = releaseItemsSource === "api" ? "import-fallback" : `${releaseItemsSource}+import`;
+    }
+    state.releaseItemsSource = releaseItemsSource;
+    state.releaseItemsFetchError = releaseItemsFetchError;
     if (timeInfo?.today) {
       state.serverTodayKey = String(timeInfo.today || "").trim();
       const parsed = parseDateOnly(timeInfo.today);
@@ -2163,8 +2171,16 @@
       return aStart - bStart;
     });
     const capacidadSeries = [];
+    const capacityIds = [...new Set([...upcomingSorted, selectedSprint].map((sprint) => sprint.id))];
+    const capacities = new Map();
+    for (let offset = 0; offset < capacityIds.length; offset += 200) {
+      const params = new URLSearchParams();
+      capacityIds.slice(offset, offset + 200).forEach((id) => params.append("sprint_ids", id));
+      const rows = await fetchJson(`/sprints/capacidades?${params}`);
+      rows.forEach((row) => capacities.set(row.sprint_id, row));
+    }
     for (const sprint of upcomingSorted) {
-      const cap = await fetchJson(`/sprints/${sprint.id}/capacidad`);
+      const cap = capacities.get(sprint.id);
       const eventosSprint = base.eventos.filter((evento) =>
         eventBelongsToSprint(evento, sprint)
       );
@@ -2182,7 +2198,7 @@
         teoricaDias: cap.capacidad_teorica_dias,
       });
     }
-    const capacidad = await fetchJson(`/sprints/${selectedSprint.id}/capacidad`);
+    const capacidad = capacities.get(selectedSprint.id);
     const personaIds = celulaId
       ? new Set(
           personasActivas
@@ -14819,7 +14835,9 @@
       }
     };
 
+    let updatingSelectedDates = false;
     const updateSelectedTasksDueDate = async (dateValue) => {
+      if (updatingSelectedDates) return;
       const ids = [...selectedTaskIds].filter((id) =>
         (state.tasksCache || []).some((task) => String(task.id) === String(id))
       );
@@ -14828,22 +14846,22 @@
         return;
       }
       const date = String(dateValue || "").trim() || null;
-      let failed = 0;
-      for (const id of ids) {
-        try {
-          await updateTaskLocal(Number(id), { fecha_vencimiento: date }, "", { rerender: "none" });
-        } catch {
-          failed += 1;
-        }
+      updatingSelectedDates = true;
+      setTasksStatus(`Actualizando ${ids.length} tareas...`, "info");
+      try {
+        const rows = await postJson("/tasks/bulk-due-date", {
+          task_ids: ids.map(Number),
+          fecha_vencimiento: date,
+        });
+        rows.forEach((task) => upsertTaskInCache(normalizeTaskForClient(task)));
+        clearTaskSelection();
+        refreshTasksUi("backlog");
+        setTasksStatus(`Fecha de vencimiento actualizada en ${rows.length} tareas.`, "ok");
+      } catch (err) {
+        setTasksStatus(err.message || "No se pudieron actualizar las fechas. La seleccion se mantiene para reintentar.", "error");
+      } finally {
+        updatingSelectedDates = false;
       }
-      clearTaskSelection();
-      refreshTasksUi("backlog");
-      setTasksStatus(
-        failed
-          ? `Fecha actualizada en ${ids.length - failed} de ${ids.length} tareas; ${failed} fallaron.`
-          : `Fecha de vencimiento actualizada en ${ids.length} tareas.`,
-        failed ? "error" : "ok"
-      );
     };
 
     const updateOverdueInProgressToToday = async () => {
