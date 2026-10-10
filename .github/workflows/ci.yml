@@ -47,6 +47,7 @@ jobs:
         run: |
           node --check frontend/app.js
           node --check ScrumV2/dist/app.js
+          node --test tests/frontend/*.test.cjs
           python scripts/check_frontend_sync.py
           python scripts/build_vercel_frontend.py
           test -f .vercel-static/ui/runtime-config.js
