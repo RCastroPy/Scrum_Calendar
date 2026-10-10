@@ -1688,7 +1688,56 @@
       due_date: row?.due_date ?? null,
     }));
 
-  async function loadBase() {
+  async function loadBase({ tasksOnly = false } = {}) {
+    if (tasksOnly) {
+      const [sprints, cells, personas, feriados, releaseItemsResult, timeInfo] = await Promise.all([
+        fetchJson("/sprints"),
+        fetchJson("/celulas"),
+        fetchJson("/personas"),
+        fetchJson("/feriados"),
+        fetchJson("/release-items")
+          .then((rows) => {
+            const items = Array.isArray(rows) ? rows : [];
+            saveCachedRows(RELEASE_ITEMS_CACHE_KEY, items);
+            return { items, error: "" };
+          })
+          .catch((err) => ({
+            items: loadCachedRows(RELEASE_ITEMS_CACHE_KEY),
+            error: err?.message || "No se pudo leer /release-items",
+          })),
+        fetchJson("/time").catch(() => null),
+      ]);
+      state.releaseItemsSource = releaseItemsResult.error ? "cache" : "api";
+      state.releaseItemsFetchError = releaseItemsResult.error;
+      if (timeInfo?.today) {
+        state.serverTodayKey = String(timeInfo.today || "").trim();
+        state.serverToday = parseDateOnly(timeInfo.today) || state.serverToday;
+      }
+      if (timeInfo?.timezone) state.serverTimezone = timeInfo.timezone;
+      if (timeInfo?.now) {
+        const parsedNow = new Date(timeInfo.now);
+        if (!Number.isNaN(parsedNow.getTime())) {
+          state.serverNow = getDateTimeInTimezone(
+            timeInfo.timezone || state.serverTimezone || "America/Asuncion",
+            parsedNow
+          );
+        }
+      }
+      return {
+        sprints: [...sprints].sort((a, b) => new Date(b.fecha_inicio) - new Date(a.fecha_inicio)),
+        cells,
+        personas,
+        eventos: [],
+        tipos: [],
+        feriados,
+        sprintItems: [],
+        releaseItems: releaseItemsResult.items,
+        sprintImportItems: [],
+        releaseImportItems: [],
+        quarters: [],
+        usuarios: [],
+      };
+    }
     const usuariosPromise =
       state.user?.rol === "admin" ? fetchJson("/usuarios").catch(() => []) : Promise.resolve([]);
     let releaseItems = [];
@@ -9973,6 +10022,25 @@
     const hasBacklogDataTable = Boolean(window.jQuery && window.jQuery.fn && window.jQuery.fn.DataTable);
     let backlogDataTable = null;
     let cleanupBacklogHorizontalBar = null;
+    const selectedTaskIds = new Set();
+    const updateTaskSelectionUi = () => {
+      if (!backlogList) return;
+      const count = selectedTaskIds.size;
+      const countEl = backlogList.querySelector(".tasks-bulk-due-count");
+      const applyBtn = backlogList.querySelector("[data-action='apply-bulk-due']");
+      const clearBtn = backlogList.querySelector("[data-action='clear-task-selection']");
+      if (countEl) countEl.textContent = `${count} ${count === 1 ? "tarea seleccionada" : "tareas seleccionadas"}`;
+      if (applyBtn) applyBtn.disabled = count === 0;
+      if (clearBtn) clearBtn.disabled = count === 0;
+    };
+    const clearTaskSelection = () => {
+      selectedTaskIds.clear();
+      backlogList?.querySelectorAll("[data-action='select-task'], [data-action='select-visible-tasks']")
+        .forEach((checkbox) => { checkbox.checked = false; });
+      const dateInput = backlogList?.querySelector("[data-action='bulk-due-date']");
+      if (dateInput) dateInput.value = "";
+      updateTaskSelectionUi();
+    };
     let backlogDataTableSearchFilter = null;
     state.tasksFilterTab = String(state.tasksFilterTab || "estado").trim().toLowerCase() || "estado";
     state.tasksTopFilterTab = String(state.tasksTopFilterTab || "segmentos").trim().toLowerCase() || "segmentos";
@@ -11710,16 +11778,7 @@
             const counts = await fetchJson(`/tasks/comments/counts?task_ids=${encodedIds}`);
             batch.forEach((id) => setTaskCommentCount(id, Number(counts?.[String(id)] || 0)));
           } catch {
-            await Promise.all(
-              batch.map(async (id) => {
-                try {
-                  const items = await fetchTaskComments(id);
-                  setTaskCommentCount(id, items.length);
-                } catch {
-                  setTaskCommentCount(id, 0);
-                }
-              })
-            );
+            // Keep comment badges empty until a later batch retry; avoid a burst of per-task requests.
           }
         }
       } finally {
@@ -11981,11 +12040,13 @@
       const initialCommentInput = form.querySelector("#task-initial-comment");
       const createOnlyBlocks = Array.from(form.querySelectorAll(".task-create-only"));
 
-      const resolvedCelulaId = Number(task?.celula_id || celulaId || resolveCelulaId() || 0);
       const resolvedParentId = Number(task?.parent_id || parentId || 0);
       const resolvedParentTask = resolvedParentId
         ? (state.tasksCache || []).find((t) => String(t.id) === String(resolvedParentId)) || null
         : null;
+      const resolvedCelulaId = Number(
+        task?.celula_id ?? resolvedParentTask?.celula_id ?? celulaId ?? resolveCelulaId() ?? 0
+      );
       syncTaskReleaseIssueOptions(form);
       form.dataset.celulaId = resolvedCelulaId ? String(resolvedCelulaId) : "";
       const personasFiltradas = personasActivas
@@ -12187,8 +12248,7 @@
 	        form.dataset.currentTaskId = "";
         form.reset();
 	        resetFormMode(form, "");
-        form.estado.value = status || "backlog";
-        if (status) form.estado.value = status;
+        form.estado.value = resolvedParentId ? "backlog" : (status || "backlog");
         populateTaskSegmentSelect(form.segmento, "");
         if (releaseIssueInput) {
           releaseIssueInput.value = normalizeReleaseIssueKeyValue(
@@ -12250,6 +12310,33 @@
             field.addEventListener("input", scheduleTaskAutosave);
             field.addEventListener("change", triggerTaskAutosave);
           });
+      }
+      if (!form.dataset.boundDueDateAutosave) {
+        form.dataset.boundDueDateAutosave = "true";
+        form.addEventListener("change", async (event) => {
+          if (event.target !== form.fecha_vencimiento) return;
+          const taskId = Number(form.dataset.editId || 0);
+          if (!taskId || form.dataset.autoSaving === "true") return;
+          event.stopPropagation();
+          window.clearTimeout(form.__autoSaveTimer);
+          try {
+            await updateTaskLocal(
+              taskId,
+              { fecha_vencimiento: form.fecha_vencimiento.value || null },
+              "",
+              { rerender: "backlog" }
+            );
+            if (formStatus) {
+              formStatus.textContent = "Vencimiento guardado automaticamente.";
+              formStatus.dataset.type = "ok";
+            }
+          } catch (err) {
+            if (formStatus) {
+              formStatus.textContent = err.message || "No se pudo guardar el vencimiento.";
+              formStatus.dataset.type = "error";
+            }
+          }
+        }, true);
       }
 
 	      if (!form.dataset.boundSubmitOnEnter) {
@@ -12340,18 +12427,17 @@
 	              titulo: title,
 	              descripcion: null,
 	              release_issue_key: normalizeReleaseIssueKeyValue(parent.release_issue_key || "") || null,
-	              estado: parent.estado || "backlog",
+	              estado: "backlog",
 	              prioridad: parent.prioridad || "media",
                 segmento: parent.segmento || null,
 	              celula_id: parent.celula_id || resolveCelulaId() || null,
 	              parent_id: taskId,
 	              assignee_persona_id: parent.assignee_persona_id || null,
+	              start_date: null,
+	              end_date: null,
 	              fecha_vencimiento: null,
 	            };
-	            const finalSubtaskPayload = applyTaskStatusDatePayload(parent, subtaskPayload);
-	            const createdSubtask = normalizeTaskDatesForClient(await postJson("/tasks", finalSubtaskPayload), finalSubtaskPayload, {
-                previousEstado: parent.estado,
-              });
+	            const createdSubtask = normalizeTaskDatesForClient(await postJson("/tasks", subtaskPayload), subtaskPayload);
 	            upsertTaskInCache(createdSubtask);
               expandBacklogAncestors(createdSubtask);
 	            if (subtaskTitle) subtaskTitle.value = "";
@@ -12595,20 +12681,20 @@
 	                        titulo: subTitle,
 	                        descripcion: null,
 	                        release_issue_key: payload.release_issue_key || null,
-	                        estado: payload.estado || "backlog",
+	                        estado: "backlog",
 	                        prioridad: payload.prioridad || "media",
                           segmento: normalizeSegmentName(payload.segmento || "") || null,
 	                        celula_id: payload.celula_id,
 	                        parent_id: createdId,
 	                        assignee_persona_id: payload.assignee_persona_id || null,
+	                        start_date: null,
+	                        end_date: null,
 	                        fecha_vencimiento: null,
 	                      };
-                        const finalSubtaskPayload = applyTaskStatusDatePayload(created, subtaskPayload);
 	                      const createdSubtask = normalizeTaskDatesForClient(
-                          await postJson("/tasks", finalSubtaskPayload),
-                          finalSubtaskPayload,
-                          { previousEstado: created.estado }
-                        );
+	                          await postJson("/tasks", subtaskPayload),
+	                          subtaskPayload
+	                      );
 	                      upsertTaskInCache(createdSubtask);
                         expandBacklogAncestors(createdSubtask);
 	                    }
@@ -12894,6 +12980,15 @@
       wrap.style.width = "100%";
       wrap.style.maxWidth = "100%";
       wrap.style.minWidth = "0";
+      const selectionBar = document.createElement("div");
+      selectionBar.className = "tasks-bulk-due-bar";
+      selectionBar.innerHTML = `
+        <span class="tasks-bulk-due-count" aria-live="polite">0 tareas seleccionadas</span>
+        <label>Vencimiento <input type="date" data-action="bulk-due-date" aria-label="Nueva fecha de vencimiento para tareas seleccionadas"></label>
+        <button type="button" class="btn btn-primary btn-sm" data-action="apply-bulk-due" disabled>Aplicar fecha</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-action="clear-task-selection" disabled>Limpiar selección</button>
+      `;
+      wrap.appendChild(selectionBar);
       let scroll = null;
       let tableHost = wrap;
       if (!useBacklogDataTable) {
@@ -13012,6 +13107,10 @@
       };
       if (theadRow) {
         theadRow.innerHTML = "";
+        const selectTh = document.createElement("th");
+        selectTh.className = "tasks-select-column";
+        selectTh.innerHTML = '<input type="checkbox" data-action="select-visible-tasks" aria-label="Seleccionar todas las tareas visibles">';
+        theadRow.appendChild(selectTh);
         visibleColumns.forEach((key) => theadRow.appendChild(buildTh(key)));
       }
       // Use colgroup so width affects all cells.
@@ -13021,6 +13120,10 @@
         table.insertBefore(colgroup, table.firstChild);
       }
       colgroup.innerHTML = "";
+      const selectionCol = document.createElement("col");
+      selectionCol.className = "tasks-select-column";
+      selectionCol.style.width = "42px";
+      colgroup.appendChild(selectionCol);
       visibleColumns.forEach((key) => {
         const col = document.createElement("col");
         col.dataset.colKey = key;
@@ -13034,7 +13137,7 @@
         }
         colgroup.appendChild(col);
       });
-      const totalMinWidth = visibleColumns.reduce((sum, key) => sum + resolveWidthPx(key), 0);
+      const totalMinWidth = 42 + visibleColumns.reduce((sum, key) => sum + resolveWidthPx(key), 0);
       const effectiveMinWidth = Math.max(320, totalMinWidth);
       table.style.width = `${effectiveMinWidth}px`;
       table.style.minWidth = `${effectiveMinWidth}px`;
@@ -13397,6 +13500,15 @@
         tr.dataset.parentId = task.parent_id ? String(task.parent_id) : "";
         const rowVisible = Boolean(parentVisible);
         tr.classList.toggle("tasks-subrow-hidden", !rowVisible);
+        const selectTd = document.createElement("td");
+        selectTd.className = "tasks-select-column";
+        const selectInput = document.createElement("input");
+        selectInput.type = "checkbox";
+        selectInput.dataset.action = "select-task";
+        selectInput.setAttribute("aria-label", `Seleccionar ${task.titulo || `tarea ${task.id}`}`);
+        selectInput.checked = selectedTaskIds.has(String(task.id));
+        selectTd.appendChild(selectInput);
+        tr.appendChild(selectTd);
 
         const buildTitleTd = () => {
           const titleTd = document.createElement("td");
@@ -13662,6 +13774,7 @@
       if (scroll) wrap.appendChild(scroll);
 
 	      backlogList.appendChild(wrap);
+	      updateTaskSelectionUi();
 	      if (useBacklogDataTable) {
 	        initBacklogDataTable(table, visibleColumns);
           attachBacklogHorizontalBar(wrap, null, true);
@@ -14673,6 +14786,33 @@
       }
     };
 
+    const updateSelectedTasksDueDate = async (dateValue) => {
+      const ids = [...selectedTaskIds].filter((id) =>
+        (state.tasksCache || []).some((task) => String(task.id) === String(id))
+      );
+      if (!ids.length) {
+        setTasksStatus("Selecciona al menos una tarea.", "info");
+        return;
+      }
+      const date = String(dateValue || "").trim() || null;
+      let failed = 0;
+      for (const id of ids) {
+        try {
+          await updateTaskLocal(Number(id), { fecha_vencimiento: date }, "", { rerender: "none" });
+        } catch {
+          failed += 1;
+        }
+      }
+      clearTaskSelection();
+      refreshTasksUi("backlog");
+      setTasksStatus(
+        failed
+          ? `Fecha actualizada en ${ids.length - failed} de ${ids.length} tareas; ${failed} fallaron.`
+          : `Fecha de vencimiento actualizada en ${ids.length} tareas.`,
+        failed ? "error" : "ok"
+      );
+    };
+
     const updateOverdueInProgressToToday = async () => {
       const today = getTodayKey();
       const candidates = (state.tasksCache || []).filter((task) => {
@@ -14847,8 +14987,9 @@
           if (key && !byKey.has(key)) byKey.set(key, node);
         });
         if (!byKey.size) return;
-        const used = new Set();
-        const next = [];
+        const pinnedSelection = nodes.filter((node) => node?.classList?.contains("tasks-select-column"));
+        const used = new Set(pinnedSelection);
+        const next = [...pinnedSelection];
         visibleOrder.forEach((key) => {
           const node = byKey.get(key);
           if (node) {
@@ -15723,6 +15864,50 @@
 
       if (backlogList && !backlogList.dataset.bound) {
         backlogList.dataset.bound = "true";
+        backlogList.addEventListener("change", async (event) => {
+          const control = event.target;
+          const action = control?.dataset?.action;
+          if (action === "select-task") {
+            const id = String(control.closest("tr[data-task-id]")?.dataset?.taskId || "");
+            if (id) control.checked ? selectedTaskIds.add(id) : selectedTaskIds.delete(id);
+            updateTaskSelectionUi();
+            return;
+          }
+          if (action === "select-visible-tasks") {
+            const rows = [...backlogList.querySelectorAll(".tasks-notion-table tbody tr[data-task-id]")]
+              .filter((row) => !row.classList.contains("tasks-subrow-hidden"));
+            rows.forEach((row) => {
+              const id = String(row.dataset.taskId || "");
+              const checkbox = row.querySelector("[data-action='select-task']");
+              if (!id || !checkbox) return;
+              checkbox.checked = control.checked;
+              control.checked ? selectedTaskIds.add(id) : selectedTaskIds.delete(id);
+            });
+            updateTaskSelectionUi();
+            return;
+          }
+          const field = control?.dataset?.field;
+          const row = control?.closest?.("[data-task-id]");
+          const taskId = String(row?.dataset?.taskId || "");
+          if (field === "fecha_vencimiento" && taskId && selectedTaskIds.has(taskId)) {
+            event.stopImmediatePropagation();
+            const date = String(control.value || "");
+            const barInput = backlogList.querySelector("[data-action='bulk-due-date']");
+            if (barInput) barInput.value = date;
+            await updateSelectedTasksDueDate(date);
+          }
+        }, true);
+        backlogList.addEventListener("click", async (event) => {
+          const action = event.target.closest("[data-action]")?.dataset?.action;
+          if (action === "clear-task-selection") {
+            clearTaskSelection();
+            return;
+          }
+          if (action === "apply-bulk-due") {
+            const input = backlogList.querySelector("[data-action='bulk-due-date']");
+            await updateSelectedTasksDueDate(input?.value || "");
+          }
+        });
         backlogList.addEventListener(
           "wheel",
           (event) => {
@@ -16109,7 +16294,7 @@
             return;
           }
           if (action === "subtask") {
-            root.__tasksApi?.openTaskModal?.({ task: null, parentId: taskId, status: task.estado || "backlog" });
+            root.__tasksApi?.openTaskModal?.({ task: null, parentId: taskId });
             return;
           }
           if (action === "delete") {
@@ -16160,7 +16345,7 @@
             return;
           }
           if (action === "subtask") {
-            root.__tasksApi?.openTaskModal?.({ task: null, parentId: taskId, status: task.estado || "backlog" });
+            root.__tasksApi?.openTaskModal?.({ task: null, parentId: taskId });
             return;
           }
           if (action === "delete") {
@@ -20449,7 +20634,7 @@
   }
 
   async function reloadAll() {
-    const base = await loadBase();
+    const base = await loadBase({ tasksOnly: Boolean(qs("#tasks-root")) });
     state.base = base;
     state.dailyCapacityCache = {};
     state.dailyRealtimeSignature = buildDailyRealtimeSignature(
@@ -20492,7 +20677,7 @@
       const user = await initAuth();
       customizeNavbar(user);
       if (!user) return;
-      const base = await loadBase();
+      const base = await loadBase({ tasksOnly: Boolean(qs("#tasks-root")) });
       state.base = base;
       state.dailyCapacityCache = {};
       state.dailyRealtimeSignature = buildDailyRealtimeSignature(
