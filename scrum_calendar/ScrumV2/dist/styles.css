@@ -4656,6 +4656,15 @@ body.col-resize-active {
   display: grid;
   place-items: center;
   position: relative;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.event-icon:focus-visible,
+.calendar-event-link:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
 }
 
 .event-icon.more {
@@ -4733,6 +4742,21 @@ body.col-resize-active {
   color: var(--ink);
   text-align: center;
   line-height: 1.1;
+}
+
+.calendar-event-link {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+.calendar-event-link:hover {
+  text-decoration: underline;
 }
 
 .calendar-more {
@@ -5065,6 +5089,22 @@ body.col-resize-active {
   gap: 6px;
   font-size: 0.85rem;
   color: var(--muted);
+}
+
+#day-modal-list li {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+#day-modal-list strong {
+  color: var(--ink);
+}
+
+.day-event-comment {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .modal-actions {

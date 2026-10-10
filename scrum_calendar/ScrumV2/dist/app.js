@@ -2356,6 +2356,7 @@
           kind: "evento",
           label: formatEventLabel(evento),
           iconKey: iconByType[tipoName] || "event",
+          comment: String(evento.descripcion || "").trim(),
         });
         eventsByDate.set(key, list);
         cursor.setDate(cursor.getDate() + 1);
@@ -2480,22 +2481,29 @@
       if (dayEvents.length) {
         const grouped = new Map();
         dayEvents.forEach((item) => {
-          const entry = grouped.get(item.iconKey) || { count: 0, labels: [] };
+          const entry = grouped.get(item.iconKey) || { count: 0, labels: [], items: [] };
           entry.count += 1;
           entry.labels.push(item.label);
+          entry.items.push(item);
           grouped.set(item.iconKey, entry);
         });
         const icons = document.createElement("div");
         icons.className = "calendar-events";
         const entries = Array.from(grouped.entries());
         entries.slice(0, 4).forEach(([key, entry]) => {
-          const icon = document.createElement("span");
+          const icon = document.createElement("button");
+          icon.type = "button";
           icon.className = `event-icon icon-${key}`;
+          icon.setAttribute("aria-label", entry.labels.join(", "));
           icon.appendChild(createIcon(key));
           const count = document.createElement("span");
           count.className = "event-count";
           count.textContent = String(entry.count);
           icon.appendChild(count);
+          icon.addEventListener("click", (event) => {
+            event.stopPropagation();
+            openDayModal(dateKey, entry.items);
+          });
           icons.appendChild(icon);
         });
         if (entries.length > 4) {
@@ -2505,17 +2513,23 @@
           icons.appendChild(more);
         }
         topRow.appendChild(icons);
-        const labels = dayEvents.map((item) => item.label);
         const text = document.createElement("div");
         text.className = "calendar-text";
-        labels.slice(0, 2).forEach((label) => {
-          const line = document.createElement("span");
-          line.textContent = label;
+        dayEvents.slice(0, 2).forEach((item) => {
+          const line = document.createElement("button");
+          line.type = "button";
+          line.className = "calendar-event-link";
+          line.textContent = item.label;
+          line.addEventListener("click", (event) => {
+            event.stopPropagation();
+            openDayModal(dateKey, [item]);
+          });
           text.appendChild(line);
         });
-        if (labels.length > 2) {
+        if (dayEvents.length > 2) {
+          const labels = dayEvents.map((item) => item.label);
           const more = document.createElement("span");
-          more.textContent = `+${labels.length - 2} mas`;
+          more.textContent = `+${dayEvents.length - 2} mas`;
           more.title = labels.slice(2).join("\n");
           more.className = "calendar-more";
           text.appendChild(more);
@@ -2577,11 +2591,15 @@
       const persona = personaMap[evento.persona_id] || `Persona ${evento.persona_id}`;
       const jornada = evento.jornada ? evento.jornada.toUpperCase() : "";
       const jornadaText = jornada && jornada !== "COMPLETO" ? ` (${jornada})` : "";
-      dayEvents.push({ label: `${tipoName} - ${persona}${jornadaText}` });
+      dayEvents.push({
+        kind: "evento",
+        label: `${tipoName} - ${persona}${jornadaText}`,
+        comment: String(evento.descripcion || "").trim(),
+      });
     });
     feriados.forEach((feriado) => {
       if (feriado.fecha === dateKey) {
-        dayEvents.push({ label: `Feriado: ${feriado.nombre}` });
+        dayEvents.push({ kind: "feriado", label: `Feriado: ${feriado.nombre}` });
       }
     });
     const personasCumple =
@@ -2600,7 +2618,7 @@
       if (!m || !d) return;
       const key = `${target.getFullYear()}-${m}-${d}`;
       if (key === dateKey) {
-        dayEvents.push({ label: `Cumple: ${persona.nombre} ${persona.apellido}` });
+        dayEvents.push({ kind: "cumple", label: `Cumple: ${persona.nombre} ${persona.apellido}` });
       }
     });
     return dayEvents;
@@ -2827,9 +2845,7 @@
     if (!modal) return;
     const title = qs("#day-modal-title");
     const list = qs("#day-modal-list");
-    if (title) {
-      title.textContent = `Detalle del dia ${formatDate(dateKey)}`;
-    }
+    if (title) title.textContent = `Eventos del ${formatDate(dateKey)}`;
     if (list) {
       list.innerHTML = "";
       if (!dayEvents.length) {
@@ -2842,7 +2858,15 @@
         );
         ordered.forEach((item) => {
           const li = document.createElement("li");
-          li.textContent = item.label;
+          const label = document.createElement("strong");
+          label.textContent = item.label;
+          li.appendChild(label);
+          if (item.kind === "evento") {
+            const comment = document.createElement("p");
+            comment.className = "day-event-comment";
+            comment.textContent = item.comment ? `Comentario: ${item.comment}` : "Sin comentarios.";
+            li.appendChild(comment);
+          }
           list.appendChild(li);
         });
       }
