@@ -10027,18 +10027,14 @@
       if (!backlogList) return;
       const count = selectedTaskIds.size;
       const countEl = backlogList.querySelector(".tasks-bulk-due-count");
-      const applyBtn = backlogList.querySelector("[data-action='apply-bulk-due']");
       const clearBtn = backlogList.querySelector("[data-action='clear-task-selection']");
       if (countEl) countEl.textContent = `${count} ${count === 1 ? "tarea seleccionada" : "tareas seleccionadas"}`;
-      if (applyBtn) applyBtn.disabled = count === 0;
       if (clearBtn) clearBtn.disabled = count === 0;
     };
     const clearTaskSelection = () => {
       selectedTaskIds.clear();
       backlogList?.querySelectorAll("[data-action='select-task'], [data-action='select-visible-tasks']")
         .forEach((checkbox) => { checkbox.checked = false; });
-      const dateInput = backlogList?.querySelector("[data-action='bulk-due-date']");
-      if (dateInput) dateInput.value = "";
       updateTaskSelectionUi();
     };
     let backlogDataTableSearchFilter = null;
@@ -12984,8 +12980,6 @@
       selectionBar.className = "tasks-bulk-due-bar";
       selectionBar.innerHTML = `
         <span class="tasks-bulk-due-count" aria-live="polite">0 tareas seleccionadas</span>
-        <label>Vencimiento <input type="date" data-action="bulk-due-date" aria-label="Nueva fecha de vencimiento para tareas seleccionadas"></label>
-        <button type="button" class="btn btn-primary btn-sm" data-action="apply-bulk-due" disabled>Aplicar fecha</button>
         <button type="button" class="btn btn-outline-secondary btn-sm" data-action="clear-task-selection" disabled>Limpiar selección</button>
       `;
       wrap.appendChild(selectionBar);
@@ -15892,8 +15886,6 @@
           if (field === "fecha_vencimiento" && taskId && selectedTaskIds.has(taskId)) {
             event.stopImmediatePropagation();
             const date = String(control.value || "");
-            const barInput = backlogList.querySelector("[data-action='bulk-due-date']");
-            if (barInput) barInput.value = date;
             await updateSelectedTasksDueDate(date);
           }
         }, true);
@@ -15901,11 +15893,6 @@
           const action = event.target.closest("[data-action]")?.dataset?.action;
           if (action === "clear-task-selection") {
             clearTaskSelection();
-            return;
-          }
-          if (action === "apply-bulk-due") {
-            const input = backlogList.querySelector("[data-action='bulk-due-date']");
-            await updateSelectedTasksDueDate(input?.value || "");
           }
         });
         backlogList.addEventListener(
