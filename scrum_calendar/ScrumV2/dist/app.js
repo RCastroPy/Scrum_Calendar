@@ -1645,11 +1645,10 @@
 
   function nextSprintName(name) {
     if (!name) return name;
-    const match = name.match(/(.*?)(\d+)\s*$/);
+    const match = name.match(/^(.*?)(\d+)(\D*)$/);
     if (!match) return name;
-    const prefix = match[1].trimEnd();
-    const next = Number(match[2]) + 1;
-    return `${prefix} ${next}`.trim();
+    const next = (BigInt(match[2]) + 1n).toString().padStart(match[2].length, "0");
+    return `${match[1]}${next}${match[3]}`;
   }
 
   function colorByCapacityPercent(value) {
