@@ -1690,7 +1690,7 @@
 
   async function loadBase({ tasksOnly = false } = {}) {
     if (tasksOnly) {
-      const [sprints, cells, personas, feriados, releaseItemsResult, timeInfo] = await Promise.all([
+      const [sprints, cells, personas, feriados, releaseItemsResult, timeInfo, tasksResult, taskSegments] = await Promise.all([
         fetchJson("/sprints"),
         fetchJson("/celulas"),
         fetchJson("/personas"),
@@ -1706,6 +1706,10 @@
             error: err?.message || "No se pudo leer /release-items",
           })),
         fetchJson("/time").catch(() => null),
+        fetchJson("/tasks")
+          .then((items) => ({ items, error: "" }))
+          .catch((err) => ({ items: null, error: err?.message || "No se pudieron cargar las tareas." })),
+        fetchJson("/tasks/segments").catch(() => []),
       ]);
       state.releaseItemsSource = releaseItemsResult.error ? "cache" : "api";
       state.releaseItemsFetchError = releaseItemsResult.error;
@@ -1736,6 +1740,8 @@
         releaseImportItems: [],
         quarters: [],
         usuarios: [],
+        prefetchedTasks: tasksResult,
+        prefetchedTaskSegments: taskSegments,
       };
     }
     const usuariosPromise =
@@ -15103,10 +15109,12 @@
 
       try {
         setTasksStatus("Cargando tareas...", "info");
-        const [items, segments] = await Promise.all([
-          fetchJson("/tasks"),
-          fetchJson("/tasks/segments").catch(() => []),
-        ]);
+        const prefetched = base.prefetchedTasks;
+        const items = prefetched?.items;
+        const segments = base.prefetchedTaskSegments;
+        if (prefetched?.error) throw new Error(prefetched.error);
+        delete base.prefetchedTasks;
+        delete base.prefetchedTaskSegments;
         state.tasksCache = Array.isArray(items) ? items.map(normalizeTaskForClient) : [];
         state.tasksSegments = Array.isArray(segments) ? segments : [];
         sanitizeTaskSegmentFilter();
