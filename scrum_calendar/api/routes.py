@@ -2993,6 +2993,30 @@ def listar_sprints(db: Session = Depends(get_db)):
     return db.query(Sprint).order_by(Sprint.fecha_inicio.desc()).all()
 
 
+SPRINT_DUPLICATE_DETAIL = "Ya existe un sprint con ese nombre en la celula seleccionada."
+
+
+def sprint_name_exists(db: Session, celula_id: int, nombre: str, exclude_id: Optional[int] = None) -> bool:
+    query = db.query(Sprint.id).filter(
+        Sprint.celula_id == celula_id,
+        func.lower(func.trim(Sprint.nombre)) == nombre.lower(),
+    )
+    if exclude_id is not None:
+        query = query.filter(Sprint.id != exclude_id)
+    return query.first() is not None
+
+
+def commit_sprint(db: Session) -> None:
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+        if constraint == "uq_sprints_celula_nombre_ci" or "uq_sprints_celula_nombre_ci" in str(exc.orig):
+            raise HTTPException(status_code=409, detail=SPRINT_DUPLICATE_DETAIL) from exc
+        raise
+
+
 @router.post("/sprints", response_model=SprintOut, status_code=status.HTTP_201_CREATED)
 def crear_sprint(
     payload: SprintCreate,
@@ -3004,14 +3028,19 @@ def crear_sprint(
     celula = db.get(Celula, payload.celula_id)
     if not celula:
         raise HTTPException(status_code=404, detail="Celula no encontrada")
+    nombre = payload.nombre.strip()
+    if not nombre:
+        raise HTTPException(status_code=400, detail="Nombre de sprint requerido")
+    if sprint_name_exists(db, payload.celula_id, nombre):
+        raise HTTPException(status_code=409, detail=SPRINT_DUPLICATE_DETAIL)
     sprint = Sprint(
-        nombre=payload.nombre,
+        nombre=nombre,
         celula_id=payload.celula_id,
         fecha_inicio=payload.fecha_inicio,
         fecha_fin=payload.fecha_fin,
     )
     db.add(sprint)
-    db.commit()
+    commit_sprint(db)
     db.refresh(sprint)
     return sprint
 
@@ -3026,20 +3055,26 @@ def actualizar_sprint(
     sprint = db.get(Sprint, sprint_id)
     if not sprint:
         raise HTTPException(status_code=404, detail="Sprint no encontrado")
+    celula_id = payload.celula_id if payload.celula_id is not None else sprint.celula_id
+    nombre = payload.nombre.strip() if payload.nombre is not None else sprint.nombre
+    if not nombre:
+        raise HTTPException(status_code=400, detail="Nombre de sprint requerido")
+    if sprint_name_exists(db, celula_id, nombre, exclude_id=sprint_id):
+        raise HTTPException(status_code=409, detail=SPRINT_DUPLICATE_DETAIL)
     if payload.celula_id is not None:
         celula = db.get(Celula, payload.celula_id)
         if not celula:
             raise HTTPException(status_code=404, detail="Celula no encontrada")
         sprint.celula_id = payload.celula_id
     if payload.nombre is not None:
-        sprint.nombre = payload.nombre
+        sprint.nombre = nombre
     if payload.fecha_inicio is not None:
         sprint.fecha_inicio = payload.fecha_inicio
     if payload.fecha_fin is not None:
         sprint.fecha_fin = payload.fecha_fin
     if sprint.fecha_inicio > sprint.fecha_fin:
         raise HTTPException(status_code=400, detail="Rango de fechas invalido")
-    db.commit()
+    commit_sprint(db)
     db.refresh(sprint)
     return sprint
 

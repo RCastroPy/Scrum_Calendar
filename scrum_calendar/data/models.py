@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    func,
     Integer,
     Index,
     String,
@@ -134,6 +135,9 @@ class Sprint(Base):
     celula_id = Column(Integer, ForeignKey("celulas.id"), nullable=False)
     fecha_inicio = Column(Date, nullable=False)
     fecha_fin = Column(Date, nullable=False)
+    __table_args__ = (
+        Index("uq_sprints_celula_nombre_ci", celula_id, func.lower(func.trim(nombre)), unique=True),
+    )
 
     celula = relationship("Celula", back_populates="sprints")
     eventos = relationship("Evento", back_populates="sprint")

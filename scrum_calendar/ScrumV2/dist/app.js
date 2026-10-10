@@ -1689,7 +1689,7 @@
 
   async function loadBase({ tasksOnly = false } = {}) {
     if (tasksOnly) {
-      const [sprints, cells, personas, feriados, releaseItemsResult, timeInfo] = await Promise.all([
+      const [sprints, cells, personas, feriados, releaseItemsResult, timeInfo, tasksResult, taskSegments] = await Promise.all([
         fetchJson("/sprints"),
         fetchJson("/celulas"),
         fetchJson("/personas"),
@@ -1705,6 +1705,10 @@
             error: err?.message || "No se pudo leer /release-items",
           })),
         fetchJson("/time").catch(() => null),
+        fetchJson("/tasks")
+          .then((items) => ({ items, error: "" }))
+          .catch((err) => ({ items: null, error: err?.message || "No se pudieron cargar las tareas." })),
+        fetchJson("/tasks/segments").catch(() => []),
       ]);
       state.releaseItemsSource = releaseItemsResult.error ? "cache" : "api";
       state.releaseItemsFetchError = releaseItemsResult.error;
@@ -1735,6 +1739,8 @@
         releaseImportItems: [],
         quarters: [],
         usuarios: [],
+        prefetchedTasks: tasksResult,
+        prefetchedTaskSegments: taskSegments,
       };
     }
     const usuariosPromise =
@@ -3891,7 +3897,7 @@
           fecha_fin: sprintForm.fecha_fin.value,
         };
         const normalizedSprintName = normalizeText(payload.nombre);
-        const duplicateSprint = (base.sprints || []).find((sprint) => {
+        const duplicateSprint = (state.base?.sprints || base.sprints || []).find((sprint) => {
           if (Number(sprint.celula_id) !== Number(payload.celula_id)) return false;
           if (normalizeText(sprint.nombre || "") !== normalizedSprintName) return false;
           if (sprintForm.dataset.mode === "edit") {
@@ -3900,7 +3906,9 @@
           return true;
         });
         if (duplicateSprint) {
-          setStatus("#status-sprint", "Ya existe un sprint con ese nombre en la celula seleccionada.", "error");
+          const message = "Ya existe un sprint con ese nombre en la celula seleccionada.";
+          setStatus("#status-sprint", message, "error");
+          window.alert(message);
           return;
         }
         if (!payload.fecha_inicio || !payload.fecha_fin) {
@@ -3927,7 +3935,15 @@
         if (wasEditing) closeAdminModal(false);
         await reloadAll();
       } catch (err) {
-        setStatus("#status-sprint", err.message || "Error al crear sprint.", "error");
+        let message = err.message || "Error al crear sprint.";
+        try {
+          const parsed = JSON.parse(message);
+          if (typeof parsed?.detail === "string") message = parsed.detail;
+        } catch {
+          // Keep non-JSON network errors as-is.
+        }
+        setStatus("#status-sprint", message, "error");
+        if (message.includes("Ya existe un sprint")) window.alert(message);
       }
     });
 
@@ -15102,10 +15118,12 @@
 
       try {
         setTasksStatus("Cargando tareas...", "info");
-        const [items, segments] = await Promise.all([
-          fetchJson("/tasks"),
-          fetchJson("/tasks/segments").catch(() => []),
-        ]);
+        const prefetched = base.prefetchedTasks;
+        const items = prefetched?.items;
+        const segments = base.prefetchedTaskSegments;
+        if (prefetched?.error) throw new Error(prefetched.error);
+        delete base.prefetchedTasks;
+        delete base.prefetchedTaskSegments;
         state.tasksCache = Array.isArray(items) ? items.map(normalizeTaskForClient) : [];
         state.tasksSegments = Array.isArray(segments) ? segments : [];
         sanitizeTaskSegmentFilter();
