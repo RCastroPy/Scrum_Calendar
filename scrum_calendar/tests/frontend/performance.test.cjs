@@ -94,3 +94,21 @@ test('Task table no longer configures points, hours or importance as columns', (
     assert.equal(columns.includes(key), false, `${key} must not appear in the task-column configuration`);
   }
 });
+
+test('Parent modal shows active children despite search, date, priority, assignee and segment filters', () => {
+  const ctx = context({ state: {
+    tasksSearch: 'Parent title', tasksSegmentFilter: 'Parent segment',
+    tasksFilters: { statuses: ['backlog', 'todo', 'doing'], priorities: ['urgente'],
+      assignees: ['9'], dueFrom: '2026-10-11', dueTo: '2026-10-11', hideSubtasks: true },
+  }, normalizeTaskStatusKey: value => String(value || '').trim().toLowerCase() });
+  vm.runInContext(section('    const filterModalSubtasksByStatus =', '    const syncOpenTaskModalSubtasks =') + '\nthis.filterChildren = filterModalSubtasksByStatus;', ctx);
+  const children = [
+    { id: 1, titulo: 'Different child', estado: 'todo', prioridad: 'baja', segmento: 'Other', assignee_persona_id: 2, fecha_vencimiento: '2026-10-01' },
+    { id: 2, estado: 'done' }, { id: 3, estado: 'archived' },
+  ];
+  assert.deepEqual(Array.from(ctx.filterChildren(children), row => row.id), [1]);
+  ctx.state.tasksFilters.statuses.push('done');
+  assert.deepEqual(Array.from(ctx.filterChildren(children), row => row.id), [1, 2]);
+  ctx.state.tasksStatusFilter = 'archived';
+  assert.deepEqual(Array.from(ctx.filterChildren(children), row => row.id), [3]);
+});
