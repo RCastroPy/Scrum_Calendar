@@ -11562,6 +11562,13 @@
       syncAssigneeKpiState();
     };
 
+    const filterModalSubtasksByStatus = (items) => {
+      const statusFilter = normalizeTaskStatusKey(state.tasksStatusFilter || "");
+      const statuses = (state.tasksFilters?.statuses || []).map(normalizeTaskStatusKey).filter(Boolean);
+      const allowed = statusFilter ? new Set([statusFilter]) : new Set(statuses);
+      return allowed.size ? items.filter((task) => allowed.has(normalizeTaskStatusKey(task.estado || ""))) : items;
+    };
+
     const syncOpenTaskModalSubtasks = () => {
       const taskForm = qs("#task-form");
       if (!taskForm || typeof taskForm.__renderSubtasks !== "function") return;
@@ -12135,14 +12142,12 @@
 	          subtasksList.innerHTML = "";
 	          return;
 	        }
-	        const subtasks = sortTasks(
-            applyFiltersWithOptions(
-              (state.tasksCache || []).filter((t) => Number(t.parent_id || 0) === taskId),
-              { ignoreHideSubtasks: true, ignoreDueFilters: true }
-            )
-          );
+	        const children = (state.tasksCache || []).filter((t) => Number(t.parent_id || 0) === taskId);
+	        const subtasks = sortTasks(filterModalSubtasksByStatus(children));
 	        if (!subtasks.length) {
-	          subtasksList.innerHTML = `<p class="empty small mb-0">No hay subtareas.</p>`;
+	          subtasksList.innerHTML = `<p class="empty small mb-0">${children.length
+              ? "No hay subtareas con los estados seleccionados."
+              : "No hay subtareas."}</p>`;
 	          return;
 	        }
 	        subtasksList.innerHTML = subtasks

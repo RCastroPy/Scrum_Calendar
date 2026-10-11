@@ -82,6 +82,19 @@ with SessionLocal() as db:
         await page.locator('#tasks-backlog-table tbody tr[data-task-id]').first().waitFor();
         await geometry(page, `${name}: persisted layout after reload`);
         await page.locator('#tasks-backlog-table').screenshot({ path: `/tmp/scrumia-backlog-aligned-${name}.png` });
+        const taskResponse = await page.request.get('http://localhost:8013/tasks');
+        assert.ok(taskResponse.ok());
+        const tasks = await taskResponse.json();
+        const activeStatuses = ['backlog', 'todo', 'doing'];
+        const parent = tasks.find(task => !task.parent_id && activeStatuses.includes(task.estado) &&
+          tasks.some(child => child.parent_id === task.id && activeStatuses.includes(child.estado) && !child.titulo.includes(task.titulo)));
+        assert.ok(parent, 'Expected a local parent with active children');
+        await page.locator('#tasks-search').fill(parent.titulo);
+        await page.locator(`#tasks-backlog-table tr[data-task-id="${parent.id}"] button[data-action="edit"]`).click();
+        const children = tasks.filter(child => child.parent_id === parent.id && activeStatuses.includes(child.estado));
+        await page.locator(`#task-subtasks-list [data-task-id="${children[0].id}"]`).waitFor();
+        assert.equal(await page.locator('#task-subtasks-list .tasks-subtask-item').count(), children.length);
+        console.log(`${name}: parent title search still shows ${children.length} active children in modal`);
         assert.deepEqual(errors, []);
       } finally {
         await browser.close();
