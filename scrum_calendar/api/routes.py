@@ -459,6 +459,13 @@ def login(payload: AuthRequest, response: Response, request: Request, db: Sessio
     return user
 
 
+@router.get("/auth/login-form", include_in_schema=False)
+def abrir_login_form():
+    return RedirectResponse(
+        url="/ui/login.html", status_code=303, headers={"Cache-Control": "no-store"}
+    )
+
+
 @router.post("/auth/login-form")
 def login_form(
     response: Response,
