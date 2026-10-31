@@ -195,7 +195,7 @@
     releaseStatusFilters: [],
     releaseStatusOpen: false,
     releaseStatusValueFilter: "",
-    releaseQuarterFilter: "",
+    releaseQuarterFilter: null,
     releaseGanttQuarterFilter: "",
     releaseGanttZoom: 100,
     releaseCompNewFilters: [],
@@ -16440,6 +16440,30 @@
     if (root.__tasksRenderFilterChips) root.__tasksRenderFilterChips();
   }
 
+  function normalizeReleaseQuarter(value) {
+    const label = String(value || "").trim();
+    const match = /^(?:Q([1-4])[\s\/-]*(\d{4})|(\d{4})[\s\/-]*Q([1-4]))$/i.exec(label);
+    return match ? `Q${match[1] || match[4]} ${match[2] || match[3]}` : label;
+  }
+
+  function getReleaseQuarterFilterValue(item) {
+    const explicit = normalizeReleaseQuarter(item?.quarter);
+    if (explicit) return explicit;
+    const date = parseDateOnly(item?.start_date) || parseDateOnly(item?.due_date);
+    if (date) return `Q${Math.floor(date.getMonth() / 3) + 1} ${date.getFullYear()}`;
+    const rank = getSprintRank(item?.sprint_nombre);
+    if (rank) {
+      const quarter = Math.min(4, Math.max(1, Math.floor((rank % 100 - 1) / 13) + 1));
+      return `Q${quarter} ${Math.floor(rank / 100)}`;
+    }
+    return "__none__";
+  }
+
+  function resolveReleaseQuarterSelection(previous, options, initialQuarter) {
+    const selected = normalizeReleaseQuarter(previous === null ? initialQuarter : previous);
+    return options.includes(selected) ? selected : "";
+  }
+
   function classifyReleaseStatus(status) {
     const value = String(status || "").toLowerCase();
     if (!value) return "pendiente";
@@ -17321,34 +17345,15 @@
       };
     };
     const getQuarterLabel = (row) => {
-      if (row.quarter) return row.quarter;
-      const startDate = parseDateOnly(row.start_date);
-      const dueDate = parseDateOnly(row.due_date);
-      const date = startDate || dueDate;
-      if (date) {
-        const quarter = Math.floor(date.getMonth() / 3) + 1;
-        return `Q${quarter} ${date.getFullYear()}`;
-      }
-      if (row.sprint_nombre) {
-        const rank = getSprintRank(row.sprint_nombre);
-        if (rank) {
-          const year = Math.floor(rank / 100);
-          const week = rank % 100;
-          const quarter = Math.min(4, Math.max(1, Math.floor((week - 1) / 13) + 1));
-          return `Q${quarter} ${year}`;
-        }
-      }
-      return "-";
+      const value = getReleaseQuarterFilterValue(row);
+      return value === "__none__" ? "-" : value;
     };
     const isReleaseRow = (item) => {
       const issueType = normalizeText(item.issue_type || "");
       const tipo = normalizeText(item.release_tipo || "");
       return issueType === "release" || (!!tipo && tipo !== "tarea");
     };
-    const getQuarterFilterValue = (item) => {
-      const label = getQuarterLabel(item);
-      return label && label !== "-" ? label : "__none__";
-    };
+    const getQuarterFilterValue = getReleaseQuarterFilterValue;
 
     const toolbar = ensureToolbar();
     const quarterFilterEl = qs("#release-quarter-filter", toolbar);
@@ -17388,27 +17393,25 @@
       return select;
     };
     if (quarterFilterEl) {
-      const prev = state.releaseQuarterFilter || "";
+      const prev = state.releaseQuarterFilter;
       const todayForQuarter = getToday();
       const currentQuarterLabel = `Q${Math.floor(todayForQuarter.getMonth() / 3) + 1} ${todayForQuarter.getFullYear()}`;
+      const filterQuarterOptions = [...new Set([
+        ...quarterOptions.map(normalizeReleaseQuarter),
+        ...releasesFiltrados.map(getQuarterFilterValue),
+      ])].filter((value) => value && value !== "__none__").sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
       quarterFilterEl.innerHTML = `
         <option value="">Todos</option>
-        ${quarterOptions.map((label) => `<option value="${label}">${label}</option>`).join("")}
+        ${filterQuarterOptions.map((label) => `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`).join("")}
         <option value="__none__">Sin quarter</option>
       `;
       const optionValues = Array.from(quarterFilterEl.options).map((opt) => opt.value);
       const hasCurrentQuarterData = releasesFiltrados.some(
         (item) => getQuarterFilterValue(item) === currentQuarterLabel
       );
-      const prevHasData = prev
-        ? releasesFiltrados.some((item) => getQuarterFilterValue(item) === prev)
-        : false;
-      const exists = optionValues.includes(prev);
-      let nextQuarter = exists && prevHasData ? prev : "";
-      if (!nextQuarter && optionValues.includes(currentQuarterLabel)) {
-        nextQuarter = hasCurrentQuarterData ? currentQuarterLabel : "";
-      }
-      state.releaseQuarterFilter = nextQuarter;
+      state.releaseQuarterFilter = resolveReleaseQuarterSelection(
+        prev, optionValues, hasCurrentQuarterData ? currentQuarterLabel : ""
+      );
       quarterFilterEl.value = state.releaseQuarterFilter || "";
       if (!quarterFilterEl.dataset.bound) {
         quarterFilterEl.dataset.bound = "true";
@@ -17862,13 +17865,7 @@
       if (state.selectedCelulaId) return String(item.celula_id) === String(state.selectedCelulaId);
       return true;
     });
-    const getQuarterFilterValue = (item) => {
-      const explicitQuarter = String(item?.quarter || "").trim();
-      if (explicitQuarter) return explicitQuarter;
-      const date = parseDateOnly(item?.start_date || item?.due_date || "");
-      if (!date) return "__none__";
-      return `Q${Math.floor(date.getMonth() / 3) + 1} ${date.getFullYear()}`;
-    };
+    const getQuarterFilterValue = getReleaseQuarterFilterValue;
     const selectedQuarter = String(state.releaseQuarterFilter || "").trim();
     const selectedStatuses = (state.releaseStatusFilters || []).filter(Boolean);
     const quarterFilteredReleases = selectedQuarter
