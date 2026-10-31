@@ -1217,12 +1217,18 @@
                 Descripcion
                 <input type="text" name="descripcion" />
               </label>
+              <label>
+                Fecha de inicio
+                <input type="date" name="fecha_inicio" required />
+              </label>
+              <label>
+                Fecha de fin
+                <input type="date" name="fecha_fin" required />
+              </label>
               <p class="modal-date">Fecha seleccionada: <strong id="day-event-date"></strong></p>
               <button class="btn primary" type="submit">Guardar evento</button>
               <div class="form-status" id="day-event-status"></div>
             </div>
-            <input type="hidden" name="fecha_inicio" />
-            <input type="hidden" name="fecha_fin" />
           </form>
         </div>
       </div>

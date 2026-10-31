@@ -2663,7 +2663,10 @@
 
     form.dataset.date = dateKey;
     if (startInput) startInput.value = dateKey;
-    if (endInput) endInput.value = dateKey;
+    if (endInput) {
+      endInput.value = dateKey;
+      endInput.min = dateKey;
+    }
     if (dateLabel) dateLabel.textContent = formatDate(dateKey);
     if (statusEl) {
       statusEl.textContent = "";
@@ -2690,16 +2693,14 @@
       const typeId = typeSelect?.value ? Number(typeSelect.value) : null;
       const jornada = jornadaSelect?.value || "completo";
       if (!typeId) return new Set();
-      const target = parseDateOnly(dateKey);
-      if (!target) return new Set();
+      const rangeStart = startInput?.value || form.dataset.date || dateKey;
+      const rangeEnd = endInput?.value || rangeStart;
       const ids = new Set();
       (base.eventos || []).forEach((evento) => {
         if (Number(evento.tipo_evento_id) !== Number(typeId)) return;
         if ((evento.jornada || "completo") !== jornada) return;
-        const start = parseDateOnly(evento.fecha_inicio);
-        const end = parseDateOnly(evento.fecha_fin);
-        if (!start || !end) return;
-        if (target < start || target > end) return;
+        if (String(evento.fecha_inicio || "").slice(0, 10) !== rangeStart) return;
+        if (String(evento.fecha_fin || "").slice(0, 10) !== rangeEnd) return;
         ids.add(String(evento.persona_id));
       });
       return ids;
@@ -2721,6 +2722,7 @@
       }
       personaSelect.disabled = !available.length;
     };
+    form.__renderPersonaSelect = renderPersonaSelect;
     renderPersonaSelect();
 
     if (typeSelect) {
@@ -2773,15 +2775,32 @@
         } else {
           details.classList.add("is-hidden");
         }
-        renderPersonaSelect();
+        form.__renderPersonaSelect?.();
       });
     }
 
     if (jornadaSelect && !jornadaSelect.dataset.boundDayModal) {
       jornadaSelect.dataset.boundDayModal = "true";
       jornadaSelect.addEventListener("change", () => {
-        renderPersonaSelect();
+        form.__renderPersonaSelect?.();
       });
+    }
+
+    if (startInput && !startInput.dataset.boundDayEventRange) {
+      startInput.dataset.boundDayEventRange = "true";
+      startInput.addEventListener("change", () => {
+        if (endInput) {
+          endInput.min = startInput.value || "";
+          if (startInput.value && (!endInput.value || endInput.value < startInput.value)) {
+            endInput.value = startInput.value;
+          }
+        }
+        form.__renderPersonaSelect?.();
+      });
+    }
+    if (endInput && !endInput.dataset.boundDayEventRange) {
+      endInput.dataset.boundDayEventRange = "true";
+      endInput.addEventListener("change", () => form.__renderPersonaSelect?.());
     }
 
       if (!form.dataset.bound) {
@@ -2796,15 +2815,21 @@
           setStatus("#day-event-status", "Selecciona una persona.", "error");
           return;
         }
+        const currentDateKey = form.dataset.date || dateKey;
+        const rangeStart = startInput?.value || currentDateKey;
+        const rangeEnd = endInput?.value || rangeStart;
+        if (rangeEnd < rangeStart) {
+          setStatus("#day-event-status", "La fecha de fin debe ser igual o posterior a la fecha de inicio.", "error");
+          return;
+        }
         try {
           setStatus("#day-event-status", "Guardando...", "info");
-          const currentDateKey = form.dataset.date || dateKey;
           const payload = {
             persona_id: Number(personaSelect.value),
             tipo_evento_id: Number(typeSelect.value),
             sprint_id: sprintSelect?.value ? Number(sprintSelect.value) : null,
-            fecha_inicio: startInput?.value || currentDateKey,
-            fecha_fin: endInput?.value || currentDateKey,
+            fecha_inicio: rangeStart,
+            fecha_fin: rangeEnd,
             jornada: jornadaSelect?.value || "completo",
             descripcion: descInput?.value.trim() || null,
           };
@@ -7880,6 +7905,14 @@
       }
     }
 
+    const getGanttTotalDays = (row) => {
+      const start = parseDateOnly(row.start_date || "");
+      const end = parseDateOnly(row.end_date || row.due_date || "");
+      if (!start || !end || end < start) return null;
+      const startDay = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
+      const endDay = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
+      return Math.round((endDay - startDay) / 86400000);
+    };
     const getGanttDateRange = (row) => {
       const today = getToday();
       const start = parseDateOnly(row.start_date || "");
@@ -7942,7 +7975,11 @@
       if (ganttZoomLabel) ganttZoomLabel.textContent = `${zoomValue}%`;
       const dayWidth = Math.round(36 * (zoomValue / 100));
       const buildGanttRows = (sourceItems) =>
-        sourceItems.map((item) => ({ item, range: getGanttDateRange(item) }));
+        sourceItems.map((item) => ({
+          item,
+          range: getGanttDateRange(item),
+          startOrder: parseDateOnly(item.start_date || "")?.getTime() ?? Number.MAX_SAFE_INTEGER,
+        })).sort((a, b) => a.startOrder - b.startOrder);
       let ganttSprint = selectedSprint;
       let ganttItems = items;
       let ganttRows = buildGanttRows(ganttItems);
@@ -8071,6 +8108,9 @@
               const assignee = resolvePersonaNameFromItem(item, personaLookup, personaNameById) || "Sin asignar";
               const metaEnd = item.end_date || item.due_date || "-";
               const noDates = !range;
+              const totalDays = getGanttTotalDays(item);
+              const totalLabel = totalDays === null ? "Total sin calcular" : `Total ${totalDays} ${totalDays === 1 ? "dia" : "dias"}`;
+              const description = `${assignee} - ${getStatusLabel(item.status) || "Sin estado"} - ${item.start_date || "-"} > ${metaEnd} | ${totalLabel}${noDates ? " · Sin fechas" : ""}`;
               let barHtml = '<span class="daily-gantt-no-dates">Sin fechas</span>';
               if (range) {
                 const startKey = formatISO(range.start);
@@ -8086,7 +8126,7 @@
               return `
                 <div class="daily-gantt-task">
                   <strong>${escapeHtml(titleWithPoints)}</strong>
-                  <span>${escapeHtml(assignee)} · ${escapeHtml(getStatusLabel(item.status) || "Sin estado")} · ${escapeHtml(item.start_date || "-")} -> ${escapeHtml(metaEnd)}${noDates ? " · Sin fechas" : ""}</span>
+                  <span>${escapeHtml(description)}</span>
                 </div>
                 <div class="daily-gantt-track" style="grid-column:2 / span ${dates.length}; --day-width:${dayWidth}px">
                   ${dates
@@ -16523,6 +16563,10 @@
       statusEl.textContent = text;
       statusEl.dataset.type = type;
     };
+    const showReleaseSaveResult = (message, type) => {
+      setReleaseStatus(message, type);
+      window.alert(message);
+    };
     const isClosedReleaseStatus = (value) => {
       const normalized = normalizeText(value);
       return normalized.includes("finalizada") || normalized.includes("finalizado") || normalized.includes("cancelada");
@@ -16603,7 +16647,7 @@
         })
         .join("");
     };
-    const getReleaseCreateErrorMessage = (error) => {
+    const getReleaseSaveErrorMessage = (error, mode = "create") => {
       const rawMessage = String(error?.message || "").trim();
       let detail = rawMessage;
       try {
@@ -16613,9 +16657,11 @@
         // Keep the original message when the API response is not JSON.
       }
       if (normalizeText(detail).includes("ya existe un release con ese issue")) {
-        return "No se ha podido crear porque ya existe un release con el ISSUE.";
+        return mode === "create"
+          ? "No se ha podido crear porque ya existe un release con el ISSUE."
+          : "No se ha podido actualizar porque ya existe un release con el ISSUE.";
       }
-      return detail || "No se pudo crear el release.";
+      return detail || (mode === "create" ? "No se pudo crear el release." : "No se pudo actualizar el release.");
     };
     const RELEASE_COLUMNS_KEY = "scrum_calendar_release_columns_v1";
     const RELEASE_COLUMNS_DEFAULT = [
@@ -16721,8 +16767,10 @@
         }
         if (options.refresh !== false) initReleaseTable();
         return updated;
-      } catch {
-        setReleaseStatus("No se pudo actualizar el release.", "error");
+      } catch (error) {
+        const message = getReleaseSaveErrorMessage(error, "update");
+        setReleaseStatus(message, "error");
+        if (typeof options.onError === "function") options.onError(message);
         return null;
       }
     };
@@ -16733,7 +16781,7 @@
         if (options.refresh !== false) await reloadAll();
         return created;
       } catch (error) {
-        const message = getReleaseCreateErrorMessage(error);
+        const message = getReleaseSaveErrorMessage(error);
         setReleaseStatus(message, "error");
         if (typeof options.onError === "function") options.onError(message);
         return null;
@@ -16839,6 +16887,12 @@
       }
       return normalizeReleaseIssueInput(issueInput, prefix);
     };
+    const focusReleaseIssue = (form) => {
+      const input = form.querySelector('[name="issue_key"]');
+      if (!input) return;
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    };
     const ensureReleaseEditForm = () => {
       let form = qs("#release-edit-form");
       if (!form) {
@@ -16855,10 +16909,6 @@
             <div class="col-md-4">
               <label class="form-label" for="release-edit-issue-key">Issue</label>
               <input class="form-control" id="release-edit-issue-key" name="issue_key" type="text" required />
-            </div>
-            <div class="col-md-4">
-              <label class="form-label" for="release-edit-issue-type">Tipo issue</label>
-              <input class="form-control" id="release-edit-issue-type" name="issue_type" type="text" />
             </div>
             <div class="col-md-4">
               <label class="form-label" for="release-edit-release-type">Clase</label>
@@ -17055,7 +17105,7 @@
               form.querySelector('[name="issue_key"]'),
               form.dataset.issuePrefix || ""
             ),
-            issue_type: String(formData.get('issue_type') || '').trim() || null,
+            issue_type: 'Release',
             summary: String(formData.get('summary') || '').trim(),
             release_tipo: String(formData.get('release_tipo') || '').trim() || 'comprometido',
             quarter: normalizeReleaseQuarter(formData.get('quarter')) || null,
@@ -17066,10 +17116,7 @@
             tipo: String(formData.get('tipo') || '').trim() || null,
           };
           if (!payload.celula_id || !payload.issue_key || !payload.summary) {
-            if (statusMsg) {
-              statusMsg.textContent = 'Celula, Issue y Resumen son obligatorios.';
-              statusMsg.dataset.type = 'error';
-            }
+            showReleaseSaveResult('Celula, Issue y Resumen son obligatorios.', 'error');
             return;
           }
           if (mode === "create") {
@@ -17081,10 +17128,7 @@
               },
             });
             if (!created) {
-              if (statusMsg) {
-                statusMsg.textContent = createError || 'No se pudo crear el release.';
-                statusMsg.dataset.type = 'error';
-              }
+              showReleaseSaveResult(createError || 'No se pudo crear el release.', 'error');
               return;
             }
             const cellValue = form.querySelector('[name="celula_id"]')?.value || '';
@@ -17094,7 +17138,6 @@
             const issuePrefix = getReleaseCellIssuePrefix(cellValue);
             form.querySelector('[name="celula_id"]').value = cellValue;
             form.querySelector('[name="issue_key"]').value = issuePrefix;
-            form.querySelector('[name="issue_type"]').value = 'Release';
             form.querySelector('[name="summary"]').value = '';
             form.querySelector('[name="release_tipo"]').value = releaseTypeValue;
             form.querySelector('[name="tipo"]').value = typeValue;
@@ -17106,21 +17149,23 @@
             if (createStatusSelect) createStatusSelect.value = 'Backlog';
             form.dataset.issuePrefix = issuePrefix;
             syncReleaseIssuePrefix(form, { force: true });
-            setReleaseStatus('Release creado con éxito.', 'ok');
             initReleaseTable();
+            showReleaseSaveResult('Release creado con éxito.', 'ok');
+            focusReleaseIssue(form);
             return;
           }
-          const saved = await updateReleaseItem(releaseId, payload, { refresh: false });
+          let updateError = '';
+          const saved = await updateReleaseItem(releaseId, payload, {
+            refresh: false,
+            onError: (message) => { updateError = message; },
+          });
           if (!saved) {
-            if (statusMsg) {
-              statusMsg.textContent = 'No se pudo actualizar el release.';
-              statusMsg.dataset.type = 'error';
-            }
+            showReleaseSaveResult(updateError || 'No se pudo actualizar el release.', 'error');
             return;
           }
           closeAdminModal(false);
-          setReleaseStatus('Release actualizado.', 'ok');
           initReleaseTable();
+          showReleaseSaveResult('Release actualizado con éxito.', 'ok');
         });
       }
       const cellSelect = form.querySelector('[name="celula_id"]');
@@ -17158,7 +17203,6 @@
       form.dataset.editId = String(row.id || '');
       form.querySelector('[name="celula_id"]').value = row.celula_id || state.selectedCelulaId || '';
       form.querySelector('[name="issue_key"]').value = row.issue_key || '';
-      form.querySelector('[name="issue_type"]').value = row.issue_type || '';
       form.querySelector('[name="summary"]').value = row.summary || '';
       form.querySelector('[name="release_tipo"]').value = row.release_tipo || 'comprometido';
       form.querySelector('[name="quarter"]').value = normalizeReleaseQuarter(row.quarter);
@@ -17235,7 +17279,6 @@
       delete form.dataset.editId;
       form.reset();
       form.querySelector('[name="celula_id"]').value = state.selectedCelulaId || '';
-      form.querySelector('[name="issue_type"]').value = 'Release';
       form.querySelector('[name="release_tipo"]').value = 'comprometido';
       form.querySelector('[name="status"]').value = 'Backlog';
       const commentsPanel = form.querySelector("#release-edit-comments-panel");
@@ -17258,6 +17301,7 @@
       if (submitBtn) submitBtn.textContent = "Crear release";
       syncReleaseIssuePrefix(form, { force: true });
       openAdminModal(form, 'Nuevo release');
+      focusReleaseIssue(form);
     };
     const deleteReleaseItem = async (row) => {
       if (!row?.id) return;
