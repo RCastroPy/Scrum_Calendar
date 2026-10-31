@@ -37,7 +37,7 @@ with SessionLocal() as db:
         await page.goto('http://localhost:8013/ui/releases-table.html');
         const select = page.locator('#release-quarter-filter');
         await select.waitFor();
-        for (const [quarter, expected] of [['Q4 2026', 3], ['Q1 2027', 0], ['', 5], ['__none__', 1], ['Q1 2026', 1], ['Q4 2026', 3]]) {
+        for (const [quarter, expected] of [['Q4 2026', 2], ['Q1 2027', 0], ['', 5], ['__none__', 2], ['Q1 2026', 1], ['Q4 2026', 2]]) {
           await select.selectOption(quarter);
           assert.equal(await select.inputValue(), quarter);
           assert.equal(Number(await page.locator('#release-kpi-total').textContent()), expected);
@@ -47,6 +47,17 @@ with SessionLocal() as db:
           assert.equal(new Set(visibleIssues).size, expected);
           console.log(`${name}: ${quarter || 'Todos'} -> ${expected} releases, table and Gantt agree`);
         }
+        const optionPairs = nodes => nodes.filter(node => node.value && node.value !== '__none__').map(node => [node.value, node.textContent]);
+        const filterOptions = await select.locator('option').evaluateAll(optionPairs);
+        await page.locator('#release-create-btn').click();
+        assert.deepEqual(await page.locator('#release-edit-quarter option').evaluateAll(optionPairs), filterOptions);
+        await page.locator('.admin-modal-close').click();
+        const legacyRow = page.locator('#release-table tbody tr').filter({ hasText: 'FILTER-2' });
+        assert.equal(await legacyRow.locator('select').first().inputValue(), 'Q4 2026');
+        await legacyRow.getByRole('button', { name: 'Editar', exact: true }).click();
+        assert.deepEqual(await page.locator('#release-edit-quarter option').evaluateAll(optionPairs), filterOptions);
+        assert.equal(await page.locator('#release-edit-quarter').inputValue(), 'Q4 2026');
+        console.log(`${name}: filter, create form, edit form and legacy row share canonical Quarter options`);
         assert.deepEqual(errors, []);
       } finally {
         await browser.close();
