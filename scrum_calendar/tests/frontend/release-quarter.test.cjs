@@ -11,14 +11,22 @@ const ctx = vm.createContext({
 });
 vm.runInContext(code, ctx);
 
-test('Equivalent quarter formats match explicit and date-derived releases', () => {
-  for (const value of ['2026 Q4', 'Q4 2026', 'Q4-2026', ' q4/2026 ']) {
+test('Quarter filtering uses the stored Quarter field in any supported format', () => {
+  for (const value of ['2026 Q4', 'Q4 2026', 'Q4-2026', ' q4/2026 ', 'Q4/26', 'Q 4 2026']) {
     assert.equal(ctx.getReleaseQuarterFilterValue({ quarter: value }), 'Q4 2026');
   }
-  assert.equal(ctx.getReleaseQuarterFilterValue({ start_date: '2026-10-01' }), 'Q4 2026');
-  assert.equal(ctx.getReleaseQuarterFilterValue({ due_date: '2026-12-31' }), 'Q4 2026');
-  assert.equal(ctx.getReleaseQuarterFilterValue({ sprint_nombre: 'Sprint 202640-SM' }), 'Q4 2026');
+  assert.equal(ctx.getReleaseQuarterFilterValue({ start_date: '2026-10-01' }), '__none__');
+  assert.equal(ctx.getReleaseQuarterFilterValue({ due_date: '2026-12-31' }), '__none__');
+  assert.equal(ctx.getReleaseQuarterFilterValue({ sprint_nombre: 'Sprint 202640-SM' }), '__none__');
   assert.equal(ctx.getReleaseQuarterFilterValue({}), '__none__');
+});
+
+test('Shared options combine catalog and stored quarters with one label per Quarter', () => {
+  const options = ctx.buildReleaseQuarterOptions([
+    { quarter: 'Q4-2026' }, { quarter: 'Q4 2026' }, { quarter: '2025 Q1' },
+    { start_date: '2024-10-01' },
+  ], ['2026 Q4', 'Q1 2027']);
+  assert.deepEqual(Array.from(options), ['Q1 2025', 'Q1 2027', 'Q4 2026']);
 });
 
 test('Explicit quarter and Todos selections survive rerender, including empty quarters', () => {

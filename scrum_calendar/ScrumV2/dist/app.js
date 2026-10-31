@@ -1840,7 +1840,7 @@
       releaseItems: releaseItems || [],
       sprintImportItems: sprintImportItems || [],
       releaseImportItems: releaseImportItems || [],
-      quarters: quarters || [],
+      quarters: (quarters || []).map((quarter) => ({ ...quarter, label: normalizeReleaseQuarter(quarter.label) })),
       usuarios: usuarios || [],
     };
   }
@@ -4181,7 +4181,7 @@
       quarterForm.addEventListener("submit", async (event) => {
         event.preventDefault();
         const wasEditing = quarterForm.dataset.mode === "edit";
-        const label = quarterForm.label?.value?.trim();
+        const label = normalizeReleaseQuarter(quarterForm.label?.value);
         if (!label) {
           setStatus("#status-quarter", "Ingresa un quarter valido.", "error");
           return;
@@ -16442,21 +16442,22 @@
 
   function normalizeReleaseQuarter(value) {
     const label = String(value || "").trim();
-    const match = /^(?:Q([1-4])[\s\/-]*(\d{4})|(\d{4})[\s\/-]*Q([1-4]))$/i.exec(label);
-    return match ? `Q${match[1] || match[4]} ${match[2] || match[3]}` : label;
+    const match = /^(?:Q\s*([1-4])[\s\/-]*(\d{2}|\d{4})|(\d{4})[\s\/-]*Q\s*([1-4]))$/i.exec(label);
+    if (!match) return label;
+    const year = Number(match[2] || match[3]);
+    return `Q${match[1] || match[4]} ${year < 100 ? year + 2000 : year}`;
   }
 
   function getReleaseQuarterFilterValue(item) {
-    const explicit = normalizeReleaseQuarter(item?.quarter);
-    if (explicit) return explicit;
-    const date = parseDateOnly(item?.start_date) || parseDateOnly(item?.due_date);
-    if (date) return `Q${Math.floor(date.getMonth() / 3) + 1} ${date.getFullYear()}`;
-    const rank = getSprintRank(item?.sprint_nombre);
-    if (rank) {
-      const quarter = Math.min(4, Math.max(1, Math.floor((rank % 100 - 1) / 13) + 1));
-      return `Q${quarter} ${Math.floor(rank / 100)}`;
-    }
-    return "__none__";
+    return normalizeReleaseQuarter(item?.quarter) || "__none__";
+  }
+
+  function buildReleaseQuarterOptions(rows, manual = []) {
+    return [...new Set([
+      ...manual.map(normalizeReleaseQuarter),
+      ...rows.map(getReleaseQuarterFilterValue),
+    ])].filter((value) => value && value !== "__none__")
+      .sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
   }
 
   function resolveReleaseQuarterSelection(previous, options, initialQuarter) {
@@ -16638,23 +16639,6 @@
       end_date: "End Date",
       due_date: "Due Date",
       days_count: "Dias",
-    };
-    const buildQuarterOptions = (rows, manual = []) => {
-      const set = new Set();
-      manual.forEach((value) => {
-        if (value) set.add(value);
-      });
-      rows.forEach((item) => {
-        if (item.quarter) {
-          set.add(item.quarter);
-          return;
-        }
-        const label = getQuarterLabel(item);
-        if (label && label !== "-") {
-          set.add(label);
-        }
-      });
-      return Array.from(set).sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
     };
     const loadReleaseColumnsConfig = () => {
       if (state.releaseColumnsConfig) return state.releaseColumnsConfig;
@@ -17074,7 +17058,7 @@
             issue_type: String(formData.get('issue_type') || '').trim() || null,
             summary: String(formData.get('summary') || '').trim(),
             release_tipo: String(formData.get('release_tipo') || '').trim() || 'comprometido',
-            quarter: String(formData.get('quarter') || '').trim() || null,
+            quarter: normalizeReleaseQuarter(formData.get('quarter')) || null,
             status: String(formData.get('status') || '').trim() || null,
             start_date: String(formData.get('start_date') || '').trim() || null,
             end_date: String(formData.get('end_date') || '').trim() || null,
@@ -17159,7 +17143,7 @@
       }
       const quarterSelect = form.querySelector('[name="quarter"]');
       if (quarterSelect) {
-        quarterSelect.innerHTML = '<option value="">Sin quarter</option>' + quarterOptions.map((value) => `<option value="${value}">${value}</option>`).join('');
+        quarterSelect.innerHTML = '<option value="">Sin quarter</option>' + quarterOptions.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('');
       }
       const statusSelect = form.querySelector('[name="status"]');
       if (statusSelect) {
@@ -17177,7 +17161,7 @@
       form.querySelector('[name="issue_type"]').value = row.issue_type || '';
       form.querySelector('[name="summary"]').value = row.summary || '';
       form.querySelector('[name="release_tipo"]').value = row.release_tipo || 'comprometido';
-      form.querySelector('[name="quarter"]').value = row.quarter || '';
+      form.querySelector('[name="quarter"]').value = normalizeReleaseQuarter(row.quarter);
       const statusSelect = form.querySelector('[name="status"]');
       if (statusSelect) {
         statusSelect.dataset.current = row.status || '';
@@ -17372,7 +17356,7 @@
     });
 
     const manualQuarters = (base.quarters || []).map((item) => item.label).filter(Boolean);
-    const quarterOptions = manualQuarters.length ? buildQuarterOptions([], manualQuarters) : buildQuarterOptions(releasesFiltrados);
+    const quarterOptions = buildReleaseQuarterOptions((base.releaseItems || []).filter(isReleaseRow), manualQuarters);
     const buildQuarterSelect = (row) => {
       const select = document.createElement("select");
       select.className = "table-input form-select form-select-sm";
@@ -17386,7 +17370,7 @@
         opt.textContent = value;
         select.appendChild(opt);
       });
-      select.value = row.quarter || "";
+      select.value = normalizeReleaseQuarter(row.quarter);
       select.addEventListener("change", async () => {
         await updateReleaseItem(row.id, { quarter: select.value || null });
       });
@@ -17396,13 +17380,9 @@
       const prev = state.releaseQuarterFilter;
       const todayForQuarter = getToday();
       const currentQuarterLabel = `Q${Math.floor(todayForQuarter.getMonth() / 3) + 1} ${todayForQuarter.getFullYear()}`;
-      const filterQuarterOptions = [...new Set([
-        ...quarterOptions.map(normalizeReleaseQuarter),
-        ...releasesFiltrados.map(getQuarterFilterValue),
-      ])].filter((value) => value && value !== "__none__").sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
       quarterFilterEl.innerHTML = `
         <option value="">Todos</option>
-        ${filterQuarterOptions.map((label) => `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`).join("")}
+        ${quarterOptions.map((label) => `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`).join("")}
         <option value="__none__">Sin quarter</option>
       `;
       const optionValues = Array.from(quarterFilterEl.options).map((opt) => opt.value);

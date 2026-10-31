@@ -295,6 +295,9 @@ def normalize_quarter_label(value: str) -> str:
     raw = (value or "").strip().upper()
     if not raw:
         return ""
+    year_first = re.fullmatch(r"([0-9]{4})\s*[-/ ]?\s*Q\s*([1-4])", raw)
+    if year_first:
+        return f"Q{int(year_first.group(2))} {int(year_first.group(1))}"
     match = re.match(r"Q\s*([1-4])\s*[-/ ]?\s*([0-9]{2,4})", raw)
     if match:
         quarter_num = int(match.group(1))
@@ -3124,7 +3127,10 @@ def eliminar_sprint(
 
 @router.get("/quarters", response_model=List[QuarterOptionOut])
 def listar_quarters(db: Session = Depends(get_db)):
-    return db.query(QuarterOption).order_by(QuarterOption.label).all()
+    return [
+        QuarterOptionOut.model_validate(item).model_copy(update={"label": normalize_quarter_label(item.label)})
+        for item in db.query(QuarterOption).order_by(QuarterOption.label).all()
+    ]
 
 
 @router.post("/quarters", response_model=QuarterOptionOut, status_code=status.HTTP_201_CREATED)
@@ -3136,9 +3142,12 @@ def crear_quarter(
     label = normalize_quarter_label(payload.label)
     if not label:
         raise HTTPException(status_code=400, detail="Quarter invalido")
-    existente = db.query(QuarterOption).filter(QuarterOption.label == label).first()
+    existente = next(
+        (item for item in db.query(QuarterOption).all() if normalize_quarter_label(item.label) == label),
+        None,
+    )
     if existente:
-        return existente
+        return QuarterOptionOut.model_validate(existente).model_copy(update={"label": label})
     item = QuarterOption(label=label)
     db.add(item)
     db.commit()
@@ -3159,10 +3168,10 @@ def actualizar_quarter(
     label = normalize_quarter_label(payload.label)
     if not label:
         raise HTTPException(status_code=400, detail="Quarter invalido")
-    existente = (
-        db.query(QuarterOption)
-        .filter(QuarterOption.label == label, QuarterOption.id != quarter_id)
-        .first()
+    existente = next(
+        (option for option in db.query(QuarterOption).filter(QuarterOption.id != quarter_id).all()
+         if normalize_quarter_label(option.label) == label),
+        None,
     )
     if existente:
         raise HTTPException(status_code=409, detail="Quarter ya existe")
