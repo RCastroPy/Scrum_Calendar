@@ -5059,6 +5059,12 @@ body.col-resize-active {
   color: var(--ink);
 }
 
+#day-modal .modal-content {
+  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+}
+
 .modal-head {
   display: flex;
   align-items: center;
